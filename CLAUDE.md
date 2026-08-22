@@ -83,6 +83,58 @@ amma-kitchen-agent/
   README.md
 ```
 
+## The differentiator: Agent Trust Layer + agent-readable growth surface
+
+The buildathon brief is an OR: grow the merchant's revenue, OR make the merchant
+transactable by an AI buyer end to end. The negotiation core + adapters answer the
+second half. To also answer the first half, and to stand out from teams that only
+build two toy protocol shapes, we added three small, self-contained pieces:
+
+- **`audit_log.py`** — SQLite-backed append-only event log (brought forward from
+  original step 7). Every negotiation decision is recorded here: agent id, protocol,
+  cart, decision, reason, total, payment id (filled in once Razorpay confirms).
+- **`trust.py`** — the actual differentiator. NPCI's Unified Agent Protocol (UAP) is
+  a real, still-unlaunched framework aiming to let merchants safely authenticate and
+  authorize AI agents over UPI, starting with exactly our use case (low-value,
+  high-frequency food/grocery orders). `trust.py` is a small working preview of that
+  problem: every buyer agent gets a trust tier (NEW / STANDARD / TRUSTED) computed
+  purely from this system's own audit history (never self-reported by the agent).
+  Trust tier widens only the *flexible negotiation margin* (5% -> 10% -> 15%). It
+  never touches the budget cap or the human-confirm threshold — those are the
+  merchant's absolute limits and stay fixed regardless of trust. A single disallowed-
+  category attempt resets an agent straight back to NEW. Critically, `trust.py` reads
+  `audit_log` and produces an adjusted `Mandate`; it never imports or calls into
+  `negotiation.py`, and `negotiation.py` has zero knowledge trust exists. The pure
+  decision core is unmodified by this feature.
+- **`negotiation.suggest_upsell()`** — a separate, optional, non-blocking pure
+  function (not part of `evaluate()`) that, given an already-APPROVED cart, suggests
+  at most one add-on item that keeps the order strictly below the human-confirm
+  threshold. Never influences the APPROVE/COUNTER_OFFER/ESCALATE decision itself.
+  This is the revenue-growth lever, and it's designed to be gated by trust tier later
+  (e.g. only offer upsells to STANDARD+ agents) without any change to `evaluate()`.
+- **`catalog.py`** — a small FastAPI app exposing `GET /catalog`: a structured,
+  machine-fetchable product feed modeled loosely on the real Agentic Commerce
+  Protocol's (ACP, OpenAI + Stripe) product-feed shape. It also publishes the
+  merchant's own order limits (budget cap, human-confirm threshold, allowed
+  categories) so a well-behaved buyer agent can self-limit its request before ever
+  hitting the negotiation core, instead of wasting round-trips on requests that were
+  always going to fail. This is the concrete answer to "agent-readable catalog" from
+  the brief's example directions, and to "makes a merchant sellable to AI buyers."
+
+Pitch line: *"We built the trust layer NPCI hasn't shipped yet — and we did it
+without touching the file that makes the actual money decision."*
+
+Planned next (not yet built): reshape the two protocol adapters to be spec-accurate
+to the real named protocols in the brief's "why now" line, and add a third. ACP-style
+adapter should mirror real ACP's product-feed + stateful checkout + delegate-token
+shape. AP2-style adapter should mirror Google's real Intent Mandate -> Cart Mandate
+-> Payment Mandate chain. A third, x402-style adapter would simulate the HTTP 402
+challenge/response flow (server replies 402 Payment Required with a price, buyer
+agent retries with a payment proof) but settle via Razorpay test-mode instead of
+stablecoins — demonstrating the same negotiation core bridging a Web3-native agent
+payment UX to India's real payment rails. This proves genuine protocol-agnosticism
+against three protocols judges will actually recognize by name, not two invented ones.
+
 ## Build order (do NOT skip ahead — each phase should work before starting the next)
 
 1. **Scope lock**: confirm the mandate schema (budget cap, category allow-list, human

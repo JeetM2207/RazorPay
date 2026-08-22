@@ -142,3 +142,38 @@ def evaluate(
         )
 
     return NegotiationResult(Decision.APPROVE, "within budget and below human confirm threshold", total)
+
+
+def suggest_upsell(
+    cart: list[CartLine] | list[tuple[str, int]],
+    mandate: Mandate = MANDATE,
+    menu: dict[str, MenuItem] = MENU,
+) -> MenuItem | None:
+    """Optional revenue hook for an already-APPROVED cart.
+
+    Suggests at most one additional item that keeps the order strictly
+    below the human-confirm threshold. This is intentionally NOT part of
+    evaluate() and never influences APPROVE/COUNTER_OFFER/ESCALATE -- it
+    is a separate, non-blocking suggestion a caller may choose to offer
+    the buyer agent after approval.
+    """
+    lines = tuple(
+        line if isinstance(line, CartLine) else CartLine(*line) for line in cart
+    )
+    current_total = _cart_total(lines, menu)
+    headroom = mandate.human_confirm_threshold_inr - 1 - current_total
+    if headroom <= 0:
+        return None
+
+    cart_items = {line.item for line in lines}
+    candidates = [
+        item
+        for name, item in menu.items()
+        if name not in cart_items
+        and item.category in mandate.allowed_categories
+        and item.stock > 0
+        and item.price_inr <= headroom
+    ]
+    if not candidates:
+        return None
+    return max(candidates, key=lambda item: item.price_inr)
