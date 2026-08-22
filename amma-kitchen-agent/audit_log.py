@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS audit_events (
     decision TEXT NOT NULL,
     reason TEXT NOT NULL,
     total_inr INTEGER NOT NULL,
-    payment_id TEXT
+    payment_id TEXT,
+    payment_link_id TEXT
 );
 """
 
@@ -66,6 +67,18 @@ def mark_paid(event_id: int, payment_id: str, db_path: str = DEFAULT_DB_PATH) ->
     with sqlite3.connect(db_path) as conn:
         conn.execute(
             "UPDATE audit_events SET payment_id = ? WHERE id = ?", (payment_id, event_id)
+        )
+
+
+def attach_payment_link(
+    event_id: int, payment_link_id: str, db_path: str = DEFAULT_DB_PATH
+) -> None:
+    """Record a just-created (not-yet-paid) Razorpay Payment Link against
+    an event. Distinct from mark_paid, which records actual capture."""
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE audit_events SET payment_link_id = ? WHERE id = ?",
+            (payment_link_id, event_id),
         )
 
 
