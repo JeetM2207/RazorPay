@@ -150,6 +150,49 @@ def test_human_confirm_rejected_when_session_not_awaiting_confirmation(client, m
     assert resp.status_code == 409
 
 
+def test_human_confirm_with_reduced_cart_approves_the_smaller_order(client, monkeypatch):
+    _mock_payment_link(monkeypatch, link_id="plink_reduced", short_url="https://rzp.io/rzp/reduced")
+
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-13", "items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    ).json()
+    assert body["status"] == "requires_human"
+
+    # Reject the second biryani, but still sell the one that IS approvable.
+    reduced = client.post(
+        f"/acp/checkout_sessions/{body['session_id']}/human_confirm",
+        json={"items": [{"item_id": "chicken_biryani", "qty": 1}]},
+    ).json()
+    assert reduced["status"] == "ready_for_payment"
+    assert reduced["decision_detail"]["decision"] == "APPROVE"
+    assert reduced["decision_detail"]["total_inr"] == 220
+    # This is a genuine fresh APPROVE from the real negotiation core, not
+    # an override -- it must not carry the override label.
+    assert "override" not in reduced["decision_detail"]["reason"]
+
+    complete = client.post(
+        f"/acp/checkout_sessions/{body['session_id']}/complete",
+        json={"delegate_token": reduced["delegate_token"]},
+    )
+    assert complete.status_code == 200
+    assert complete.json()["payment_link_url"] == "https://rzp.io/rzp/reduced"
+
+
+def test_human_confirm_with_reduced_cart_that_still_escalates_is_rejected(client):
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-14", "items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    ).json()
+
+    # Human proposes a "smaller" cart that's actually still too big.
+    resp = client.post(
+        f"/acp/checkout_sessions/{body['session_id']}/human_confirm",
+        json={"items": [{"item_id": "chicken_biryani", "qty": 2}, {"item_id": "veg_thali", "qty": 1}]},
+    )
+    assert resp.status_code == 409
+
+
 def test_human_reject_closes_session_without_payment(client):
     body = client.post(
         "/acp/checkout_sessions",

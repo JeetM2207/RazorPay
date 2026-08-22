@@ -53,6 +53,14 @@ class CompleteRequest(BaseModel):
     delegate_token: str
 
 
+class HumanConfirmRequest(BaseModel):
+    # If provided, the human is proposing a SMALLER/adjusted cart instead
+    # of a blanket override of the original ask. This goes back through
+    # the real negotiation core (not an override) -- it only proceeds if
+    # it genuinely clears the gate on its own.
+    items: list[CartItemIn] | None = None
+
+
 def _apply_decision(session_id: str, cart: list[tuple[str, int]]) -> dict:
     session = _SESSIONS[session_id]
     session.pop("human_overridden", None)
@@ -125,14 +133,32 @@ def accept_upsell(session_id: str) -> dict:
 
 
 @app.post("/acp/checkout_sessions/{session_id}/human_confirm")
-def human_confirm(session_id: str) -> dict:
+def human_confirm(session_id: str, req: HumanConfirmRequest = HumanConfirmRequest()) -> dict:
     """Stands in for a human ops person clicking 'confirm' on an escalated
-    order (until the real dashboard, build order step 7, exists)."""
+    order (until the real dashboard, build order step 7, exists).
+
+    If req.items is given, the human is proposing a smaller/adjusted cart
+    (e.g. "reject the extra biryani, but still sell the one dosa") -- that
+    goes back through the real negotiation core via _apply_decision, not
+    an override, so it only proceeds if it genuinely clears the gate."""
     session = _SESSIONS.get(session_id)
     if not session:
         raise HTTPException(404, "unknown session")
     if session["status"] != "requires_human":
         raise HTTPException(409, "session is not awaiting human confirmation")
+
+    if req.items is not None:
+        new_cart = [(item.item_id, item.qty) for item in req.items]
+        result = _apply_decision(session_id, new_cart)
+        if result["status"] != "ready_for_payment":
+            raise HTTPException(
+                409,
+                f"the proposed reduced cart did not resolve to an approvable "
+                f"order (status={result['status']}, "
+                f"reason={result['decision_detail']['reason']}); try a smaller cart",
+            )
+        return result
+
     if _HUMAN_OVERRIDABLE_MARKER not in session["detail"]["reason"]:
         raise HTTPException(
             403,

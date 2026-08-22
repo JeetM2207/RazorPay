@@ -1,13 +1,19 @@
 """Stands in for a human ops person clicking 'confirm' on an escalated
 order, until the real dashboard (build order step 7) exists.
 
-Only works for orders escalated specifically for being at/above the
-human-confirm threshold. Disallowed categories and unknown items are hard
-merchant rules and can never be approved this way -- the endpoint itself
-enforces that, this script just surfaces the result.
+With no extra arguments, approves the order exactly as asked (only works
+for orders escalated specifically for being at/above the human-confirm
+threshold -- disallowed categories and unknown items are hard merchant
+rules and can never be approved this way; the endpoint enforces that).
+
+With item:qty arguments, proposes a SMALLER cart instead of a blanket
+approval -- e.g. rejecting the part that's too much while still selling
+what's left. This goes back through the real negotiation core, so it
+only succeeds if the smaller cart genuinely clears the gate on its own.
 
 Run:
     python human_confirm.py <session_id>
+    python human_confirm.py <session_id> chicken_biryani:1
 """
 
 import os
@@ -41,24 +47,38 @@ def _poll_payment(payment_link_id: str) -> None:
         time.sleep(3)
 
 
+def _parse_reduced_cart(args: list[str]) -> list[dict] | None:
+    if not args:
+        return None
+    items = []
+    for arg in args:
+        item_id, qty = arg.split(":")
+        items.append({"item_id": item_id, "qty": int(qty)})
+    return items
+
+
 def main() -> None:
     if len(sys.argv) < 2:
-        print("Usage: python human_confirm.py <session_id>")
+        print("Usage: python human_confirm.py <session_id> [item_id:qty ...]")
         sys.exit(1)
     session_id = sys.argv[1]
+    reduced_cart = _parse_reduced_cart(sys.argv[2:])
+    request_body = {"items": reduced_cart} if reduced_cart is not None else {}
 
-    resp = requests.post(f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/human_confirm")
+    resp = requests.post(
+        f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/human_confirm", json=request_body
+    )
     if resp.status_code != 200:
         print(f"Could not confirm (HTTP {resp.status_code}): {resp.json()}")
         sys.exit(1)
 
-    body = resp.json()
-    print(f"Human-confirmed session {session_id}. status={body['status']}")
-    print(f"  reason: {body['decision_detail']['reason']}")
+    confirmed = resp.json()
+    print(f"Human-confirmed session {session_id}. status={confirmed['status']}")
+    print(f"  reason: {confirmed['decision_detail']['reason']}")
 
     complete = requests.post(
         f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/complete",
-        json={"delegate_token": body["delegate_token"]},
+        json={"delegate_token": confirmed["delegate_token"]},
     ).json()
     print(f"\nPay at: {complete['payment_link_url']}  (Rs.{complete['amount_inr']})")
     print("Use domestic test card 4100 2800 0000 1007, any future expiry/CVV, OTP any 4-10 digits.")
