@@ -3,9 +3,10 @@
 Plays the role of an external AI shopping assistant speaking ACP's shape:
 open a checkout session, negotiate, and pay via a delegate token.
 
-Claude is used ONLY to turn natural language into a structured cart via
-forced tool use -- it never sees or influences the APPROVE/COUNTER_OFFER/
-ESCALATE decision, which happens entirely inside the ACP adapter.
+Claude (reached via OpenRouter -- see llm_client.py) is used ONLY to turn
+natural language into a structured cart via forced tool use -- it never
+sees or influences the APPROVE/COUNTER_OFFER/ESCALATE decision, which
+happens entirely inside the ACP adapter.
 
 Run (with adapter_acp:app already running in another terminal):
     uvicorn adapter_acp:app --port 8000
@@ -18,12 +19,12 @@ import time
 from pathlib import Path
 
 import requests
-from anthropic import Anthropic
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 load_dotenv()
 
+from llm_client import call_with_forced_tool
 from mandate import MENU
 from razorpay_client import client as razorpay_sdk_client
 
@@ -37,46 +38,34 @@ AGENT_ID = sys.argv[2] if len(sys.argv) > 2 else "buyer-agent-a-demo"
 # which this simulator represents by simply declining.
 AUTO_ACCEPT_UPSELL_LIMIT_INR = 100
 
-anthropic_client = Anthropic()
-
-PROPOSE_CART_TOOL = {
-    "name": "propose_cart",
-    "description": (
-        "Convert the buyer's natural language food order into a structured "
-        "cart of catalog item ids and quantities."
-    ),
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "items": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "item_id": {"type": "string", "enum": list(MENU.keys())},
-                        "qty": {"type": "integer", "minimum": 1},
-                    },
-                    "required": ["item_id", "qty"],
-                },
-            }
-        },
-        "required": ["items"],
-    },
-}
-
 
 def parse_request_to_cart(text: str) -> list[dict]:
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-5",
-        max_tokens=512,
-        tools=[PROPOSE_CART_TOOL],
-        tool_choice={"type": "tool", "name": "propose_cart"},
-        messages=[{"role": "user", "content": text}],
+    args = call_with_forced_tool(
+        text,
+        tool_name="propose_cart",
+        description=(
+            "Convert the buyer's natural language food order into a structured "
+            "cart of catalog item ids and quantities."
+        ),
+        parameters={
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "item_id": {"type": "string", "enum": list(MENU.keys())},
+                            "qty": {"type": "integer", "minimum": 1},
+                        },
+                        "required": ["item_id", "qty"],
+                    },
+                }
+            },
+            "required": ["items"],
+        },
     )
-    for block in response.content:
-        if block.type == "tool_use":
-            return block.input["items"]
-    raise RuntimeError("Claude did not return a structured cart")
+    return args["items"]
 
 
 def _drive_session_to_conclusion(resp: dict) -> dict:
