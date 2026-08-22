@@ -22,66 +22,134 @@ audit trail and one failure handled gracefully.
 
 ## Architecture
 
+Two independent parties, each with its own limits, each enforced on its own side.
+Nothing reaches Razorpay until both have said yes.
+
 ```
-Buyer agent A (ACP-style, flat request)   \
-                                            >--> Adapter --> Negotiation core --> Audit + Razorpay test API
-Buyer agent B (AP2-style, mandate object) /
+  human buyer                                              human merchant
+      |                                                          |
+      v                                                          v
+  BUYER SIDE                                              MERCHANT SIDE
+  buyer_mandate.py  --cleared-->  adapter_acp.py  \        trust.py
+  (customer's own                 adapter_ap2.py   >--> orchestrator.py
+   spending limits)               (protocol shape) /          |
+      |                                                       v
+      +-- refused here: the merchant is                 negotiation.py
+          never contacted, and has no                   (APPROVE / COUNTER /
+          record of it                                   ESCALATE)
+                                                              |
+                                                              v
+                                                   audit_log.py + Razorpay
+                                                              ^
+                                                              |
+                                            webhook_handler.py / reconcile_payments.py
 ```
 
+- **Buyer's gate** (`buyer_mandate.py`): the customer's instructions to their shopping
+  agent. Pure, deterministic, and run *before* any merchant is contacted. See "Two
+  parties, two mandates" below — this distinction matters and was got wrong once.
 - **Negotiation core** (`negotiation.py`): pure, deterministic logic. Given a cart request
   and the merchant's mandate (budget cap, allowed categories, current inventory), it
   returns one of: APPROVE, COUNTER_OFFER (with 1-2 alternatives inside a small flexible
   margin), or ESCALATE (needs human confirmation because the gap exceeds the flexible
   margin, or the category isn't allowed at all).
-- **IMPORTANT: the LLM never directly authorizes a payment.** The LLM (Claude, via the
-  Messages API with tool use) is used to parse natural-language buyer requests into a
-  structured cart proposal, and to phrase responses back in natural language. The actual
-  APPROVE / COUNTER_OFFER / ESCALATE decision is plain Python, unit-testable, with no model
-  call in the loop. This is the single most important design rule in this project — do not
-  let a prompt make the financial decision.
+- **IMPORTANT: the LLM never directly authorizes a payment.** The model is used to parse
+  natural-language buyer requests into a structured cart proposal, and nothing else. The
+  actual APPROVE / COUNTER_OFFER / ESCALATE decision is plain Python, unit-testable, with
+  no model call in the loop. This is the single most important design rule in this project
+  — do not let a prompt make the financial decision. Both `negotiation.py` and
+  `buyer_mandate.py` have tests asserting they import nothing model- or payment-related.
+- **Orchestrator** (`orchestrator.py`): shared plumbing every adapter reuses — trust
+  lookup, call the core, write the audit event, and (only on approval) create the real
+  Razorpay payment. It re-validates the cart at payment time as defense in depth. No
+  business logic of its own; it never decides anything.
 - **Adapters** (`adapter_acp.py`, `adapter_ap2.py`): thin translation layers. Each takes an
   incoming request in its own shape, converts it into the negotiation core's internal
   request format, calls the core, and formats the response back into that protocol's shape.
-  Neither adapter contains any business logic of its own.
-- **Buyer agent simulators** (`buyer_agent_a.py`, `buyer_agent_b.py`): small scripts (can
-  use Claude too) that play the role of an external AI shopping assistant, each speaking
-  through its respective adapter. These let us demo agent-to-agent commerce end to end
-  without needing real ChatGPT/Gemini integration.
+  Neither adapter contains any business logic of its own. ACP is modeled on the real
+  OpenAI + Stripe protocol (stateful checkout sessions, single-use expiring delegate
+  tokens); AP2 on Google's real Intent Mandate -> Cart Mandate -> Payment Mandate chain.
+- **Buyer agent simulators** (`buyer_agent_a.py`, `buyer_agent_b.py`): small scripts that
+  play the role of an external AI shopping assistant, each speaking through its respective
+  adapter. These let us demo agent-to-agent commerce end to end without needing real
+  ChatGPT/Gemini integration.
+- **Human consoles** (`app.py` + `web/`): the same flows driven by real people instead of
+  scripts. `/buyer` and `/merchant` are separate URLs so two humans can each take a side.
 - **Razorpay integration** (`razorpay_client.py`, `webhook_handler.py`): real test-mode
-  Orders API and Payments API calls, not mocked. Webhook handling MUST be idempotent —
-  Razorpay delivers webhooks with at-least-once semantics, so the same `payment.captured`
-  event may arrive more than once. Never double-log or double-fulfill.
+  API calls, not mocked. Webhook handling MUST be idempotent — Razorpay delivers webhooks
+  with at-least-once semantics, so the same event may arrive more than once. Never
+  double-log or double-fulfill.
 - **Audit trail** (`audit_log.py`): append-only, human-readable log of every decision —
   what was requested, what was checked, what passed/failed and why, what happened next.
-  This is shown live in the demo video.
-- **Dashboard** (`dashboard.py`): one FastAPI route rendering the audit trail as a simple
-  HTML table. Not fancy — legible on camera is the only requirement.
+- **Dashboard** (`dashboard.py`): renders the audit trail as a legible HTML table.
 
 ## Tech stack
 
-- Python, FastAPI
-- Claude API (Messages API + tool use) for NL parsing and response phrasing only
-- SQLite for mandate config + audit log
-- Razorpay test-mode API keys (Orders API, Payments API, Webhooks)
+- Python, FastAPI, vanilla JS/CSS for the consoles (no build step, no CDN)
+- Claude (`anthropic/claude-sonnet-5`) for NL-to-cart parsing only, reached via
+  **OpenRouter's** OpenAI-compatible endpoint (`llm_client.py`). This was a billing
+  convenience during the buildathon, not an architectural choice — the model is still
+  Claude, and it still only ever proposes a cart.
+- SQLite for the audit log and the webhook idempotency ledger
+- Razorpay test-mode API keys (Payment Links, Payments, Webhooks)
 
 ## Repo structure
 
 ```
 amma-kitchen-agent/
-  negotiation.py         # pure decision logic, unit tested, no LLM calls
-  mandate.py              # mandate schema + loading (budget, categories, thresholds)
-  adapter_acp.py            # thin ACP-style translation layer
-  adapter_ap2.py              # thin AP2-style (mandate object) translation layer
-  buyer_agent_a.py               # simulated ACP-style buyer
-  buyer_agent_b.py                 # simulated AP2-style buyer
-  razorpay_client.py                 # test-mode order/payment calls
-  webhook_handler.py                   # idempotent payment.captured / failed handling
-  audit_log.py                           # append-only log + query
-  dashboard.py                             # FastAPI route rendering the audit trail
-  tests/
-    test_negotiation.py                      # the tests that actually matter most
-  README.md
+  app.py                  # THE server: mounts everything, serves both consoles
+  web/                    # buyer + merchant consoles (vanilla HTML/CSS/JS)
+    index.html  buyer.html  merchant.html  shared.css
+
+  buyer_mandate.py        # BUYER's limits — pure, runs before any merchant is contacted
+  mandate.py              # MERCHANT's rules + today's menu (plain data)
+  negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
+  trust.py                # per-agent trust tier from audit history; widens margin only
+  orchestrator.py         # shared plumbing: trust -> core -> audit -> Razorpay
+
+  adapter_acp.py          # ACP-shaped: checkout sessions + delegate tokens
+  adapter_ap2.py          # AP2-shaped: Intent -> Cart -> Payment mandate chain
+  buyer_agent_a.py        # scripted ACP buyer (Claude parses NL to a cart)
+  buyer_agent_b.py        # scripted AP2 buyer
+  llm_client.py           # Claude via OpenRouter, forced tool use
+
+  razorpay_client.py      # test-mode payment links / payments
+  webhook_handler.py      # idempotent payment_link.paid / expired / cancelled
+  idempotency.py          # the claim ledger both the webhook and reconciler share
+  reconcile_payments.py   # safety net for webhooks that never arrived
+  audit_log.py            # append-only log + queries
+  catalog.py              # agent-readable product feed (ACP-style)
+  dashboard.py            # audit trail as HTML
+
+  demo.py                 # one-command scripted walkthrough (starts its own servers)
+  human_confirm.py / human_reject.py          # merchant CLI, ACP
+  human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
+  simulate_webhook_delivery.py                # send the same webhook twice, locally
+  scripts/                # early plumbing probes, kept for reference
+  tests/                  # 94 tests; test_negotiation.py matters most
 ```
+
+## How to run it
+
+```
+uvicorn app:app --port 8000     # everything: adapters, webhooks, consoles, audit
+```
+
+| Path | What it is |
+| --- | --- |
+| `/` | landing page + the two-person demo walkthrough |
+| `/buyer` | a human plays the customer's AI agent |
+| `/merchant` | a human plays Amma, deciding escalations from both protocols |
+| `/audit` | the full audit trail |
+| `/catalog` | agent-readable product feed (JSON) |
+| `/docs` | both protocols' API reference |
+
+`python demo.py` runs the whole story scripted instead, starting and stopping its own
+servers on separate ports. `python -m pytest` runs the suite.
+
+Payment testing uses Razorpay's **domestic** test card `4100 2800 0000 1007` (any future
+expiry, any CVV, any 4-10 digit OTP). The commonly-quoted `4111 1111 1111 1111` is
+rejected as an international card on a default test account.
 
 ## Two parties, two mandates (added after the consoles were built)
 
@@ -168,38 +236,50 @@ Two further pieces were added while building steps 6-7, both worth calling out:
 Pitch line: *"We built the trust layer NPCI hasn't shipped yet — and we did it
 without touching the file that makes the actual money decision."*
 
-Planned next (not yet built): reshape the two protocol adapters to be spec-accurate
-to the real named protocols in the brief's "why now" line, and add a third. ACP-style
-adapter should mirror real ACP's product-feed + stateful checkout + delegate-token
-shape. AP2-style adapter should mirror Google's real Intent Mandate -> Cart Mandate
--> Payment Mandate chain. A third, x402-style adapter would simulate the HTTP 402
-challenge/response flow (server replies 402 Payment Required with a price, buyer
-agent retries with a payment proof) but settle via Razorpay test-mode instead of
-stablecoins — demonstrating the same negotiation core bridging a Web3-native agent
-payment UX to India's real payment rails. This proves genuine protocol-agnosticism
-against three protocols judges will actually recognize by name, not two invented ones.
+Both adapters were subsequently built spec-accurate to the real named protocols in the
+brief's "why now" line, rather than as invented shapes: ACP with a product feed,
+stateful checkout sessions and single-use delegate tokens; AP2 with Google's real
+Intent -> Cart -> Payment mandate chain. Adding AP2 required **zero** changes to
+`negotiation.py` or `orchestrator.py` — `git log` shows that commit adding only new
+files, and a test asserts both adapters share the identical orchestrator module object.
 
-## Build order (do NOT skip ahead — each phase should work before starting the next)
+**Still unbuilt, and the strongest remaining idea:** a third x402-style adapter. x402
+(Coinbase) is the most-used agentic payment protocol by volume and uses the literal
+HTTP 402 status code — the server replies `402 Payment Required` with a price, and the
+agent retries carrying a signed payment proof. Implementing that challenge/response
+flow but settling via **Razorpay test-mode instead of stablecoins** would show the same
+negotiation core bridging a Web3-native agent payment UX onto India's real payment
+rails. Three protocols judges recognize by name, one unchanged brain.
 
-1. **Scope lock**: confirm the mandate schema (budget cap, category allow-list, human
-   confirm threshold, flexible negotiation margin) and today's menu/inventory for Amma's
-   Kitchen. Write it down in `mandate.py` as plain data, not prose.
-2. **Catalog + real Razorpay test-mode payment, no guardrails yet**: get one hardcoded cart
-   successfully paid through Razorpay's real test-mode API. Prove the plumbing works before
-   adding intelligence.
-3. **Negotiation core**: implement APPROVE / COUNTER_OFFER / ESCALATE as pure functions.
-   Write unit tests for this before wiring it to anything else — this is the highest-value
-   part of the whole project.
-4. **Adapter A (ACP-style) + buyer agent A**: wire the simplest protocol shape first.
-5. **Adapter B (AP2-style) + buyer agent B**: prove the same negotiation core serves a
-   structurally different request shape with zero changes to negotiation.py.
-6. **Webhook handling with idempotency**: this is the real, non-obvious hard part. Test by
-   deliberately sending the same webhook event twice.
-7. **Audit trail dashboard**: make it presentable, not just correct.
-8. **Deliberate failure demo**: trigger a real rejection (over-budget or disallowed
-   category) end to end and confirm it's logged with a clear reason, and that no payment
-   call was ever made for it.
-9. **Polish + record the 5-minute pitch video.**
+## Build order — status
+
+Each phase had to work before the next was started. Steps 1-8 are done; only the pitch
+itself remains.
+
+1. **DONE** — Scope lock: mandate schema and menu written into `mandate.py` as plain data.
+2. **DONE** — Real Razorpay test-mode payment for one hardcoded cart, proving the plumbing
+   before adding any intelligence.
+3. **DONE** — Negotiation core as pure functions, unit tested before being wired to
+   anything. Still the highest-value part of the project.
+4. **DONE** — Adapter A (ACP) + buyer agent A, wired end to end to a real payment.
+5. **DONE** — Adapter B (AP2) + buyer agent B, serving a structurally different request
+   shape with zero changes to `negotiation.py`.
+6. **DONE** — Idempotent webhook handling, enforced by a DB-level UNIQUE constraint rather
+   than a check-then-write. Verified with duplicate deliveries, and with real Razorpay
+   deliveries over an ngrok tunnel.
+7. **DONE** — Audit trail dashboard, plus `reconcile_payments.py` as the safety net for
+   webhooks that never arrive.
+8. **DONE** — Deliberate failure demo. Required adding `party_catering_tray` to the menu:
+   before it, every category was allowed, so the category rule could never actually fire
+   and the "failure" had to be faked with an unknown item. At Rs.350 it sits under both
+   the budget cap and the confirm threshold and is in stock, so the *only* thing refusing
+   it is its category — which makes the demo unambiguous. A test asserts Razorpay is never
+   called for it, rather than leaving that to narration.
+9. **REMAINING** — Polish + record the 5-minute pitch video.
+
+Built beyond the original plan: the two-sided mandate model, the agent trust layer, the
+upsell hook, the agent-readable catalog, payment reconciliation, the one-command
+`demo.py`, and the two human web consoles.
 
 ## What "done" looks like for the pitch
 
@@ -210,3 +290,10 @@ against three protocols judges will actually recognize by name, not two invented
 - The audit trail is shown on screen, human-readable, not a raw log dump.
 - The pitch explains the actual insight in one line: the intelligence is protocol-agnostic;
   only the adapters are protocol-specific.
+
+Two beats worth adding to that list, both now demonstrable live with two people:
+
+- An order stopped by the **buyer's own agent** before the merchant is ever contacted —
+  showing bounded autonomy is not just something merchants impose on agents.
+- An escalation appearing in the merchant's queue and, on approval, the buyer's screen
+  **unblocking itself** — the handoff between two humans and two agents, in one shot.
