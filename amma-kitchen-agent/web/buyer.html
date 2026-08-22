@@ -51,6 +51,24 @@
         </div>
 
         <div class="card">
+          <h2>What your customer authorised you to spend</h2>
+          <p class="note" style="margin:0 0 12px">
+            Your own limits, not Amma's. An order over these is stopped by your agent
+            before Amma is ever contacted &mdash; she gets no say in it and no record of it.
+          </p>
+          <div style="display:flex; gap:14px; flex-wrap:wrap">
+            <div style="flex:1 1 150px">
+              <label for="spendCap">Never spend more than</label>
+              <input type="text" id="spendCap" inputmode="numeric">
+            </div>
+            <div style="flex:1 1 150px">
+              <label for="confirmAbove">Check with me from</label>
+              <input type="text" id="confirmAbove" inputmode="numeric">
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
           <h2>Say what you want</h2>
           <textarea id="nlText" placeholder="Get me two chicken biryanis and a filter coffee"></textarea>
           <div class="btn-row" style="margin-top:11px">
@@ -78,8 +96,13 @@
           </div>
         </div>
 
+        <div class="card" id="buyerGateCard" style="display:none">
+          <h2>Your side first</h2>
+          <div id="buyerGateBox"></div>
+        </div>
+
         <div class="card" id="outcomeCard" style="display:none">
-          <h2>What came back</h2>
+          <h2>What Amma's Kitchen said</h2>
           <div id="outcomeBox"></div>
         </div>
       </div>
@@ -135,6 +158,10 @@ async function boot() {
     "<span>budget cap <b>" + rupee(MANDATE.budget_cap_inr) + "</b></span>" +
     "<span>human confirmation from <b>" + rupee(MANDATE.human_confirm_threshold_inr) + "</b></span>" +
     "<span>agent-orderable categories <b>" + MANDATE.allowed_categories.join(", ") + "</b></span>";
+
+  const defaults = await api("/api/buyer-mandate-defaults");
+  $("spendCap").value = defaults.spend_cap_inr;
+  $("confirmAbove").value = defaults.confirm_above_inr;
 
   $("agentId").value = "shopper-" + Math.random().toString(36).slice(2, 7);
   renderMenu();
@@ -229,11 +256,108 @@ async function refreshTier() {
 
 /* ------------------------------------------------------------ ordering */
 
+/* Step one is always the buyer's OWN gate. Only a cart the customer has
+   authorised is allowed to reach a merchant at all. */
 async function submitOrder() {
   const agentId = $("agentId").value.trim();
   if (!agentId) return toast("Give your agent an identity first.", true);
 
   const items = Object.entries(cart).map(([item_id, qty]) => ({ item_id, qty }));
+
+  busy($("submitBtn"), true, "Checking your limits");
+  let gate;
+  try {
+    gate = await api("/api/buyer-check", {
+      method: "POST",
+      body: JSON.stringify({
+        items,
+        spend_cap_inr: parseInt($("spendCap").value, 10) || 0,
+        confirm_above_inr: parseInt($("confirmAbove").value, 10) || 0,
+      }),
+    });
+  } catch (err) {
+    busy($("submitBtn"), false);
+    return toast(err.message, true);
+  }
+  busy($("submitBtn"), false);
+
+  renderBuyerGate(gate);
+  if (gate.decision === "REFUSE") return;           // never leaves your side
+  if (gate.decision === "ASK_USER") return;          // wait for the customer
+  await sendToMerchant(items);
+}
+
+function renderBuyerGate(gate) {
+  $("buyerGateCard").style.display = "";
+  $("outcomeCard").style.display = "none";
+
+  if (gate.decision === "PROCEED") {
+    $("buyerGateBox").innerHTML = `
+      <div class="result approve">
+        <div class="result-head">
+          <span class="badge badge-ok">WITHIN YOUR MANDATE</span>
+          <span class="muted">${rupee(gate.total_inr)}</span>
+        </div>
+        <div class="result-reason">${gate.reason} — sending to Amma's Kitchen.</div>
+      </div>`;
+    return;
+  }
+
+  if (gate.decision === "REFUSE") {
+    $("buyerGateBox").innerHTML = `
+      <div class="result rejected">
+        <div class="result-head">
+          <span class="badge badge-stop">YOUR AGENT REFUSED</span>
+          <span class="muted">${rupee(gate.total_inr)}</span>
+        </div>
+        <div class="result-reason">${gate.reason}.</div>
+      </div>
+      <p class="note">
+        Amma's Kitchen was never contacted, and has no record of this — it was never
+        her decision to make. Raise your own cap above, or order less.
+      </p>`;
+    return;
+  }
+
+  // ASK_USER — the customer themselves has to say yes.
+  $("buyerGateBox").innerHTML = `
+    <div class="result escalate">
+      <div class="result-head">
+        <span class="badge badge-warn">YOUR APPROVAL NEEDED</span>
+        <span class="muted">${rupee(gate.total_inr)}</span>
+      </div>
+      <div class="result-reason">${gate.reason}.</div>
+    </div>
+    <p class="note">
+      You are the customer here, not the merchant. Nothing has been sent to Amma yet.
+    </p>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn" id="buyerApproveBtn">Yes, go ahead and ask Amma</button>
+      <button class="btn btn-ghost" id="buyerCancelBtn">No, cancel</button>
+    </div>`;
+
+  $("buyerApproveBtn").dataset.label = $("buyerApproveBtn").innerHTML;
+  $("buyerApproveBtn").addEventListener("click", async () => {
+    busy($("buyerApproveBtn"), true, "Sending");
+    const items = Object.entries(cart).map(([item_id, qty]) => ({ item_id, qty }));
+    await sendToMerchant(items);
+    $("buyerGateBox").innerHTML = `
+      <div class="result approve">
+        <div class="result-head"><span class="badge badge-ok">YOU APPROVED IT</span></div>
+        <div class="result-reason">Sent to Amma's Kitchen — her own rules apply next.</div>
+      </div>`;
+  });
+  $("buyerCancelBtn").addEventListener("click", () => {
+    $("buyerGateBox").innerHTML = `
+      <div class="result rejected">
+        <div class="result-head"><span class="badge badge-stop">YOU CANCELLED IT</span></div>
+        <div class="result-reason">Nothing was sent to Amma's Kitchen.</div>
+      </div>`;
+  });
+}
+
+async function sendToMerchant(items) {
+  const agentId = $("agentId").value.trim();
   busy($("submitBtn"), true, "Negotiating");
 
   try {
@@ -460,6 +584,7 @@ $("protoSeg").addEventListener("click", (e) => {
   for (const b of $("protoSeg").children) b.setAttribute("aria-pressed", String(b === btn));
   session = null; stopPolling();
   $("outcomeCard").style.display = "none";
+  $("buyerGateCard").style.display = "none";
   setProtoNote();
 });
 

@@ -1,4 +1,14 @@
-"""Merchant mandate + today's menu for Amma's Kitchen. Plain data, no logic.
+"""The MERCHANT's mandate + today's menu for Amma's Kitchen. Plain data.
+
+These are Amma's rules for accepting orders from AI agents -- what she
+will sell to an agent at all, how large an order she'll take, and when
+she wants to look at one herself before committing to cook it. They are
+hers, and they are enforced on her side by negotiation.py.
+
+They are NOT the customer's spending limits. Those are a separate thing,
+belonging to a separate party, enforced before a merchant is ever
+contacted -- see buyer_mandate.py. An order can pass one side's rules and
+still be stopped by the other's.
 
 Everything the negotiation core is allowed to know about what can be sold,
 for how much, and how far it can bend, lives here. Nothing else should

@@ -30,6 +30,7 @@ load_dotenv()
 import adapter_acp
 import adapter_ap2
 import audit_log
+import buyer_mandate
 import catalog
 import dashboard
 import trust
@@ -51,6 +52,17 @@ app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 class ParseCartRequest(BaseModel):
     text: str
+
+
+class BuyerCheckItem(BaseModel):
+    item_id: str
+    qty: int
+
+
+class BuyerCheckRequest(BaseModel):
+    items: list[BuyerCheckItem]
+    spend_cap_inr: int
+    confirm_above_inr: int
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -137,6 +149,33 @@ def parse_cart(req: ParseCartRequest) -> dict:
         raise
     except Exception as exc:
         raise HTTPException(502, f"could not parse that request: {exc}")
+
+
+@app.post("/api/buyer-check")
+def buyer_check(req: BuyerCheckRequest) -> dict:
+    """The BUYER agent's own gate, run before any merchant is contacted.
+
+    This enforces the customer's instructions to their agent, which are a
+    different thing from the merchant's rules and belong to a different
+    party. An order refused here never reaches Amma at all -- she has no
+    say in it, and no record of it, because it was never her business.
+    """
+    mandate = buyer_mandate.BuyerMandate(
+        spend_cap_inr=req.spend_cap_inr, confirm_above_inr=req.confirm_above_inr
+    )
+    cart = [(item.item_id, item.qty) for item in req.items]
+    result = buyer_mandate.check_cart(cart, mandate=mandate)
+    return {
+        "decision": result.decision.value,
+        "reason": result.reason,
+        "total_inr": result.total_inr,
+    }
+
+
+@app.get("/api/buyer-mandate-defaults")
+def buyer_mandate_defaults() -> dict:
+    d = buyer_mandate.DEFAULT_BUYER_MANDATE
+    return {"spend_cap_inr": d.spend_cap_inr, "confirm_above_inr": d.confirm_above_inr}
 
 
 @app.get("/api/pending")

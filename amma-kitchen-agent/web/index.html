@@ -59,6 +59,7 @@
         <h3>Buyer console</h3>
         <p>Order as a customer's AI shopping assistant would, over a real agent protocol.</p>
         <ul>
+          <li>Set what your customer authorised you to spend</li>
           <li>Order in plain English, or pick from the menu</li>
           <li>Choose ACP or AP2 — the same brain answers both</li>
           <li>Take a counter-offer, accept an upsell, then pay for real</li>
@@ -84,17 +85,27 @@
     </div>
 
     <div class="howto">
-      <h2 style="margin-bottom:2px">Running the two-person demo</h2>
+      <h2 style="margin-bottom:2px">Two parties, two sets of limits</h2>
+      <p style="color:var(--ink-2); font-size:14px; margin:8px 0 0">
+        The customer's spending limits and the merchant's selling rules are separate things,
+        owned by separate people, enforced on separate sides. An order can be stopped by the
+        buyer's own agent before Amma ever hears about it, cleared by the customer and still
+        refused by Amma, or need a human on both sides.
+      </p>
+
+      <h2 style="margin:22px 0 2px">Running the two-person demo</h2>
       <ol>
         <li>Open <b>/buyer</b> on one screen and <b>/merchant</b> on another — two people, two roles.</li>
-        <li>As the buyer, order <b>2 chicken biryanis</b> (₹440). It crosses the ₹400 human-confirm
-            threshold, so it will not auto-approve.</li>
-        <li>As the merchant, the escalation appears within a second or two. Approve it, refuse it,
-            or counter with one biryani instead of two.</li>
+        <li>As the buyer, order <b>3 chicken biryanis</b> (₹660). Your own agent refuses it: it is
+            over the ₹600 your customer authorised. Amma is never contacted.</li>
+        <li>Drop to <b>2 biryanis</b> (₹440). Now your agent asks <em>you</em> first, because it is
+            over your ₹300 check-with-me line. Approve it as the customer.</li>
+        <li>Only now does it reach Amma — and it crosses <em>her</em> ₹400 threshold, so it lands in
+            the merchant queue. Approve, refuse, or counter with one biryani instead of two.</li>
         <li>The buyer's screen unblocks on its own. Pay with test card
             <span class="mono">4100 2800 0000 1007</span>, any future expiry and CVV, any 4–10 digit OTP.</li>
         <li>Now order the <b>party catering tray</b>. It is affordable and in stock, and it is still
-            refused — and not even the merchant can wave that one through.</li>
+            refused — and not even Amma can wave that one through.</li>
       </ol>
     </div>
   </div>

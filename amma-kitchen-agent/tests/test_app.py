@@ -105,6 +105,59 @@ def test_events_endpoint_returns_recent_decisions(client):
     assert events[0]["decision"] == "APPROVE"
 
 
+def test_buyer_check_runs_the_buyers_own_gate(client):
+    """The buyer's limits are enforced on the buyer's side, and an order
+    refused there must leave no trace in the merchant's audit trail --
+    the merchant genuinely never saw it."""
+    resp = client.post(
+        "/api/buyer-check",
+        json={
+            "items": [{"item_id": "chicken_biryani", "qty": 3}],
+            "spend_cap_inr": 600,
+            "confirm_above_inr": 300,
+        },
+    ).json()
+    assert resp["decision"] == "REFUSE"
+    assert resp["total_inr"] == 660
+
+    assert client.get("/api/events").json()["events"] == []
+    assert client.get("/api/pending").json()["pending"] == []
+
+
+def test_buyer_check_asks_the_customer_in_the_middle_band(client):
+    resp = client.post(
+        "/api/buyer-check",
+        json={
+            "items": [{"item_id": "chicken_biryani", "qty": 2}],
+            "spend_cap_inr": 600,
+            "confirm_above_inr": 300,
+        },
+    ).json()
+    assert resp["decision"] == "ASK_USER"
+
+
+def test_buyer_check_is_independent_of_the_merchant_gate(client):
+    """A cart the merchant would auto-approve can still be refused by a
+    strict customer, and neither side defers to the other."""
+    strict = {
+        "items": [{"item_id": "masala_dosa", "qty": 1}],
+        "spend_cap_inr": 50,
+        "confirm_above_inr": 25,
+    }
+    assert client.post("/api/buyer-check", json=strict).json()["decision"] == "REFUSE"
+
+    merchant = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "indep", "items": [{"item_id": "masala_dosa", "qty": 1}]},
+    ).json()
+    assert merchant["decision_detail"]["decision"] == "APPROVE"
+
+
+def test_buyer_mandate_defaults_are_served_to_the_console(client):
+    body = client.get("/api/buyer-mandate-defaults").json()
+    assert body["spend_cap_inr"] > body["confirm_above_inr"]
+
+
 def test_parse_cart_reports_clearly_when_no_model_key_is_set(client, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     resp = client.post("/api/parse-cart", json={"text": "two biryanis"})

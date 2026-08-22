@@ -83,6 +83,33 @@ amma-kitchen-agent/
   README.md
 ```
 
+## Two parties, two mandates (added after the consoles were built)
+
+An early ambiguity worth recording, because it confused us and would confuse a
+judge: `mandate.py` holds the **merchant's** rules, not the customer's. Amma's
+budget cap and human-confirm threshold are hers — "I won't take agent orders over
+Rs.500, and I want to see anything over Rs.400 before I commit to cooking it."
+Legitimate, but they are not the customer's spending limits, and for a while they
+were the only limits in the system, so an over-budget order went to the *merchant*
+for approval when it should have gone to the *buyer's* own human.
+
+`buyer_mandate.py` closes that gap. It is the customer's instructions to their
+shopping agent ("never spend over Rs.600; check with me from Rs.300"), it is pure
+and deterministic in exactly the way `negotiation.py` is, and it is enforced on the
+buyer's side **before any merchant is contacted**. Consequences worth keeping:
+
+- An order over the customer's cap is refused by their own agent. The merchant is
+  never called and has no audit record of it — it was never her decision to make.
+- There is deliberately no "confirm past the hard cap" path. A customer who wants
+  to spend more raises their own cap; they don't approve past it in the moment.
+- Neither side defers to the other. A cart can clear the customer's mandate and
+  still be refused by the merchant's, or vice versa, or need a human on both sides.
+- `buyer_mandate.py` must never import `negotiation.py`, `orchestrator.py`, or
+  anything Razorpay — there is a test asserting this on real imports, not mentions.
+
+This also makes AP2's Intent Mandate concept real rather than decorative: the
+customer's spending authorization is data that travels with the request.
+
 ## The differentiator: Agent Trust Layer + agent-readable growth surface
 
 The buildathon brief is an OR: grow the merchant's revenue, OR make the merchant
