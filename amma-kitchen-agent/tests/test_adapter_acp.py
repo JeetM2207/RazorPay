@@ -150,6 +150,50 @@ def test_human_confirm_rejected_when_session_not_awaiting_confirmation(client, m
     assert resp.status_code == 409
 
 
+def test_human_reject_closes_session_without_payment(client):
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-10", "items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    ).json()
+    assert body["status"] == "requires_human"
+
+    rejected = client.post(f"/acp/checkout_sessions/{body['session_id']}/human_reject").json()
+    assert rejected["status"] == "rejected"
+    assert rejected["delegate_token"] is None
+    assert "human rejected" in rejected["decision_detail"]["reason"]
+
+
+def test_cannot_confirm_or_complete_after_rejection(client):
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-11", "items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    ).json()
+    session_id = body["session_id"]
+    client.post(f"/acp/checkout_sessions/{session_id}/human_reject")
+
+    confirm_after_reject = client.post(f"/acp/checkout_sessions/{session_id}/human_confirm")
+    assert confirm_after_reject.status_code == 409
+
+    complete_after_reject = client.post(
+        f"/acp/checkout_sessions/{session_id}/complete", json={"delegate_token": "anything"}
+    )
+    assert complete_after_reject.status_code == 409
+
+
+def test_human_reject_works_even_for_disallowed_category_style_escalation(client):
+    # Unlike human_confirm, rejection carries no special power, so it must
+    # work regardless of why the order was escalated.
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-12", "items": [{"item_id": "not_a_real_item", "qty": 1}]},
+    ).json()
+    assert body["status"] == "requires_human"
+
+    rejected = client.post(f"/acp/checkout_sessions/{body['session_id']}/human_reject")
+    assert rejected.status_code == 200
+    assert rejected.json()["status"] == "rejected"
+
+
 def test_accept_upsell_extends_cart_and_stays_approved(client, monkeypatch):
     _mock_payment_link(monkeypatch)
 

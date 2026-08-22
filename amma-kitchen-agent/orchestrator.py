@@ -108,3 +108,26 @@ def record_human_override(agent_id: str, protocol: str, cart: list[tuple[str, in
         total_inr=original_detail["total_inr"],
         db_path=db_path,
     )
+
+
+def record_human_rejection(
+    agent_id: str, protocol: str, cart: list[tuple[str, int]], original_detail: dict
+) -> int:
+    """A human explicitly declined an escalated order.
+
+    Recorded as its own terminal audit entry (decision="REJECTED", a value
+    outside negotiation.Decision on purpose -- it's a human action, never
+    something the negotiation core itself produces) so the trail can tell
+    "a human said no" apart from "nobody has looked at this yet".
+    """
+    db_path = audit_log.DEFAULT_DB_PATH
+    cart_payload = [{"item": name, "qty": qty} for name, qty in cart]
+    return audit_log.record_event(
+        agent_id=agent_id,
+        protocol=protocol,
+        cart=cart_payload,
+        decision="REJECTED",
+        reason=f"human rejected ESCALATE ({original_detail['reason']})",
+        total_inr=original_detail["total_inr"],
+        db_path=db_path,
+    )

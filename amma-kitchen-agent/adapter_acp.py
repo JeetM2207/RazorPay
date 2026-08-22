@@ -166,6 +166,38 @@ def human_confirm(session_id: str) -> dict:
     }
 
 
+@app.post("/acp/checkout_sessions/{session_id}/human_reject")
+def human_reject(session_id: str) -> dict:
+    """Stands in for a human ops person explicitly declining an escalated
+    order -- distinct from simply never acting on it. Unlike human_confirm,
+    this works for ANY escalation reason: rejecting never grants new
+    power, so there's nothing to restrict."""
+    session = _SESSIONS.get(session_id)
+    if not session:
+        raise HTTPException(404, "unknown session")
+    if session["status"] != "requires_human":
+        raise HTTPException(409, "session is not awaiting human confirmation")
+
+    new_event_id = orchestrator.record_human_rejection(
+        session["agent_id"], "acp", session["cart"], session["detail"]
+    )
+    session["detail"] = {
+        **session["detail"],
+        "event_id": new_event_id,
+        "decision": "REJECTED",
+        "reason": f"human rejected: {session['detail']['reason']}",
+    }
+    session["status"] = "rejected"
+    session.pop("delegate_token", None)
+
+    return {
+        "session_id": session_id,
+        "status": session["status"],
+        "decision_detail": session["detail"],
+        "delegate_token": None,
+    }
+
+
 @app.post("/acp/checkout_sessions/{session_id}/complete")
 def complete_session(session_id: str, req: CompleteRequest) -> dict:
     session = _SESSIONS.get(session_id)
