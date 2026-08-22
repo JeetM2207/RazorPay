@@ -49,6 +49,24 @@
 
     <div id="queue"></div>
 
+    <h2 style="margin-top:34px">
+      Alerts to Amma's phone <span id="smsTransport" class="badge badge-mute">mock</span>
+    </h2>
+    <div class="card">
+      <div id="smsOutbox"></div>
+      <div style="display:flex; gap:9px; margin-top:14px; flex-wrap:wrap">
+        <input type="text" id="smsReply" placeholder="Reply as Amma: 1, 2, or 1 #42"
+               style="flex:1 1 240px" autocomplete="off">
+        <button class="btn btn-sm" id="smsSendBtn">Send reply</button>
+      </div>
+      <p class="note">
+        This posts to the same <span class="mono">/webhook/sms-reply</span> endpoint Twilio
+        calls, so the loop you see here is the real one &mdash; no phone required.
+        Replies are parsed by a regex, never a model: the answer is one digit, and a wrong
+        guess would move somebody's money.
+      </p>
+    </div>
+
     <h2 style="margin-top:34px">Buyer agents &amp; earned trust</h2>
     <div class="card card-flush">
       <table>
@@ -135,7 +153,52 @@ async function boot() {
 }
 
 async function tick() {
-  await Promise.all([renderQueue(), renderAgents(), renderEvents()]);
+  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms()]);
+}
+
+/* ----------------------------------------------------------------- sms */
+
+async function renderSms() {
+  const body = await api("/api/sms");
+  if (!changed("sms", body)) return;
+
+  const badge = $("smsTransport");
+  badge.textContent = body.transport === "twilio" ? "live via Twilio" : "mock outbox";
+  badge.className = "badge " + (body.transport === "twilio" ? "badge-ok" : "badge-mute");
+
+  $("smsOutbox").innerHTML = body.outbox.length
+    ? body.outbox.map((m) => {
+        const answered = body.escalations.find(
+          (e) => m.body.includes(`Order #${e.order_id}`) && e.answered
+        );
+        return `
+          <div style="border:1px solid var(--line); border-radius:9px; padding:12px 14px;
+                      background:var(--surface-2); margin-bottom:9px">
+            <div style="display:flex; justify-content:space-between; gap:10px; margin-bottom:6px">
+              <span class="mono muted">to ${m.to}</span>
+              ${answered
+                ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${answered.outcome}</span>`
+                : `<span class="badge badge-warn">awaiting reply</span>`}
+            </div>
+            <div class="mono" style="white-space:pre-wrap; font-size:12px">${m.body}</div>
+            ${m.error ? `<div class="note" style="color:var(--stop)">delivery failed: ${m.error}</div>` : ""}
+          </div>`;
+      }).join("")
+    : `<div class="empty">No alerts yet. An escalation texts Amma automatically.</div>`;
+}
+
+async function sendSmsReply() {
+  const text = $("smsReply").value.trim();
+  if (!text) return toast("Type a reply first — try 1 or 2.", true);
+
+  const res = await fetch("/webhook/sms-reply", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ Body: text, From: "+91-merchant-console" }),
+  });
+  toast(await res.text());
+  $("smsReply").value = "";
+  tick();
 }
 
 /* --------------------------------------------------------------- queue */
@@ -308,6 +371,11 @@ async function renderEvents() {
       }).join("")
     : `<tr><td colspan="7" class="empty">Nothing yet.</td></tr>`;
 }
+
+$("smsSendBtn").addEventListener("click", sendSmsReply);
+$("smsReply").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") sendSmsReply();
+});
 
 boot();
 </script>

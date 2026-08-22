@@ -77,6 +77,20 @@ def format_escalation_alert(
     )
 
 
+def _match_channel(recipient: str) -> str:
+    """Twilio addresses WhatsApp as `whatsapp:+91...`. If the sender is a
+    WhatsApp address, the recipient has to be one too.
+
+    WhatsApp matters for India specifically: sending SMS to Indian numbers
+    requires TRAI/DLT sender registration, which takes days and business
+    paperwork. Twilio's WhatsApp Sandbox needs neither -- you join it by
+    texting a code -- so it is the realistic channel for a demo here.
+    """
+    if _FROM.startswith("whatsapp:") and not recipient.startswith("whatsapp:"):
+        return f"whatsapp:{recipient}"
+    return recipient
+
+
 def send_sms(body: str, to: str | None = None) -> SentMessage:
     recipient = to or MERCHANT_PHONE or "+91-merchant-mock"
     now = datetime.now(timezone.utc).isoformat()
@@ -89,7 +103,9 @@ def send_sms(body: str, to: str | None = None) -> SentMessage:
     try:
         from twilio.rest import Client
 
-        Client(_ACCOUNT_SID, _AUTH_TOKEN).messages.create(body=body, from_=_FROM, to=recipient)
+        Client(_ACCOUNT_SID, _AUTH_TOKEN).messages.create(
+            body=body, from_=_FROM, to=_match_channel(recipient)
+        )
         message = SentMessage(recipient, body, "twilio", now)
     except Exception as exc:  # a transport failure must not break an order
         message = SentMessage(recipient, body, "twilio", now, error=str(exc))
