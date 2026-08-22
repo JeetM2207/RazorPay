@@ -337,7 +337,10 @@ async function renderEvents() {
     total: events.length,
     escalated: events.filter((e) => e.decision === "ESCALATE").length,
     gated: events.filter((e) => ["ESCALATE", "REJECTED"].includes(e.decision) && !e.payment_link_id).length,
-    revenue: events.filter((e) => e.payment_id).reduce((s, e) => s + e.total_inr, 0),
+    // Only genuine Razorpay captures count as revenue; `sim_` does not.
+    revenue: events
+      .filter((e) => e.payment_id && !e.payment_id.startsWith("sim_"))
+      .reduce((s, e) => s + e.total_inr, 0),
   };
   $("stats").innerHTML = [
     [stats.total, "recent decisions"],
@@ -353,7 +356,9 @@ async function renderEvents() {
           : e.decision === "REJECTED" ? "badge-stop"
           : e.decision === "PAYMENT_NOT_COMPLETED" ? "badge-mute" : "badge-warn";
         const pay = e.payment_id
-          ? `<span class="badge badge-ok">PAID</span>`
+          ? (e.payment_id.startsWith("sim_")
+              ? `<span class="badge badge-warn">SIMULATED</span>`
+              : `<span class="badge badge-ok">PAID</span>`)
           : e.payment_link_id
             ? `<span class="muted">link issued</span>`
             : ["ESCALATE", "REJECTED", "COUNTER_OFFER"].includes(e.decision)

@@ -438,37 +438,30 @@ async function waitForMerchant(intentId) {
 
 async function settle(mandate, hardCap) {
   const total = mandate.decision_detail.total_inr;
-  await step(`Locking Cart Mandate at <b>${rupee(total)}</b>…`, "step", 520);
+
+  await step(`Payment Mandate locked. Total: <b>${rupee(total)}</b>.`, "step", 560);
   const cart = (await api(`/ap2/intent-mandates/${mandate.id}/cart-mandate`, { method: "POST" })).cart_mandate;
 
-  await step("Presenting Payment Mandate to Razorpay…", "step", 520);
-  const pm = (await api(`/ap2/cart-mandates/${cart.id}/payment-mandate`, { method: "POST" })).payment_mandate;
-  log(`&gt; Payment Mandate ${pm.id.slice(0, 10)}… bound to hash ${pm.matched_mandate_hash.slice(0, 12)}…`, "quiet");
+  await step(`Utilising pre-authorised card ****1007 (within your ${rupee(hardCap)} cap).`, "step", 560);
+  setState("SETTLING", "#e3b341");
+  await step("Executing server-to-server payment…", "step", 320);
 
-  setState("AWAITING CAPTURE", "#e3b341");
-  log(`&gt; Card ****1007 authorised up to ${rupee(hardCap)}; this is ${rupee(total)}. Opening checkout.`, "info");
-  window.open(pm.payment_link_url, "_blank");
-  log(`&gt; <a href="${pm.payment_link_url}" target="_blank" style="color:#79c0ff">${pm.payment_link_url}</a>`, "quiet");
-  log("&gt; (test card 4100 2800 0000 1007, any future expiry/CVV, any 4-10 digit OTP)", "quiet");
+  const working = cursor();
+  const pm = (await api(`/ap2/cart-mandates/${cart.id}/execute-payment`, { method: "POST" })).payment_mandate;
+  working.remove();
 
-  const dots = cursor();
-  while (true) {
-    await sleep(3000);
-    const { status } = await api("/api/payment-status/" + pm.payment_link_id);
-    if (status === "paid") {
-      dots.remove();
-      log(`&gt; <b>Payment captured. ${rupee(total)} settled.</b>`, "ok");
-      log("&gt; Order placed. My work here is done.", "ok");
-      setState("COMPLETE", "#56d364");
-      return;
-    }
-    if (status === "cancelled" || status === "expired") {
-      dots.remove();
-      log(`&gt; Payment link ${status}. Nothing was charged.`, "err");
-      setState("NOT PAID", "#f85149");
-      return;
-    }
+  log(`&gt; Razorpay order <b>${pm.order_id}</b> created.`, "quiet");
+  log(`&gt; Success: payment <b>${pm.payment_id}</b> confirmed.`, "ok");
+
+  if (pm.simulated) {
+    // Never let the demo imply money moved when it did not.
+    log(`&gt; Note: ${pm.method}. The order above is real; the capture is`, "warn");
+    log(`&gt; simulated and marked <b>sim_</b> in the audit trail, not <b>pay_</b>.`, "warn");
   }
+
+  log("&gt; Transaction complete. Amma's Kitchen has been notified.", "ok");
+  log("&gt; No human touched a card form. My work here is done.", "ok");
+  setState("COMPLETE", "#56d364");
 }
 
 /* -------------------------------------------------------------- events */

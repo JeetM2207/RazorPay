@@ -269,6 +269,53 @@ def create_cart_mandate(intent_id: str) -> dict:
     }
 
 
+@router.post("/ap2/cart-mandates/{cart_mandate_id}/execute-payment")
+def execute_payment_mandate(cart_mandate_id: str) -> dict:
+    """Settle a locked Cart Mandate without a browser, on the strength of
+    the card the human pre-authorised.
+
+    Separate from /payment-mandate rather than a flag on it: that route
+    hands a human a link to click, this one charges. Two different acts,
+    two different endpoints, both auditable.
+
+    Same guards as the link route -- a cart mandate is single-use and
+    expires -- because "autonomous" must not mean "less checked".
+    """
+    import autonomous_payment
+
+    cart_mandate = _CART_MANDATES.get(cart_mandate_id)
+    if not cart_mandate:
+        raise HTTPException(404, "unknown cart mandate")
+    if cart_mandate["used"]:
+        raise HTTPException(409, "cart mandate already used")
+    if time.time() > cart_mandate["expires_at"]:
+        raise HTTPException(403, "cart mandate expired")
+
+    cart_mandate["used"] = True
+    settlement = autonomous_payment.execute(
+        event_id=cart_mandate["event_id"],
+        cart=cart_mandate["cart"],
+        amount_inr=cart_mandate["total_inr"],
+    )
+
+    matched_mandate_hash = hashlib.sha256(
+        f"{cart_mandate['intent_mandate_id']}:{cart_mandate_id}:{cart_mandate['total_inr']}".encode()
+    ).hexdigest()
+
+    return {
+        "payment_mandate": {
+            "id": uuid.uuid4().hex,
+            "cart_mandate_id": cart_mandate_id,
+            "matched_mandate_hash": matched_mandate_hash,
+            "amount_inr": settlement.amount_inr,
+            "order_id": settlement.order_id,
+            "payment_id": settlement.payment_id,
+            "simulated": settlement.simulated,
+            "method": settlement.method,
+        }
+    }
+
+
 @router.post("/ap2/cart-mandates/{cart_mandate_id}/payment-mandate")
 def create_payment_mandate(cart_mandate_id: str) -> dict:
     cart_mandate = _CART_MANDATES.get(cart_mandate_id)

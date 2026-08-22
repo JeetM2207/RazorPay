@@ -70,8 +70,13 @@ def _tier_badge(tier: str) -> str:
 
 def _payment_cell(event: dict) -> str:
     if event["payment_id"]:
+        # A `sim_` reference was asserted by us, not settled by Razorpay.
+        # It must never render the same as money that actually moved.
+        simulated = event["payment_id"].startswith("sim_")
+        label = "SIMULATED" if simulated else "PAID"
+        cls = "pending" if simulated else "paid"
         return (
-            f"<span class='paid'>PAID</span>"
+            f"<span class='{cls}'>{label}</span>"
             f"<div class='mono muted'>{html.escape(event['payment_id'])}</div>"
         )
     if event["payment_link_id"]:
@@ -85,7 +90,9 @@ def _payment_cell(event: dict) -> str:
 
 
 def _summary(events: list[dict]) -> dict:
-    captured = [e for e in events if e["payment_id"]]
+    # Revenue counts only genuine Razorpay captures. A simulated
+    # settlement is shown in the log but never inflates the total.
+    captured = [e for e in events if e["payment_id"] and not e["payment_id"].startswith("sim_")]
     return {
         "total": len(events),
         "approved": sum(1 for e in events if e["decision"] == "APPROVE"),
