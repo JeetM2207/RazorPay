@@ -18,7 +18,7 @@ import json
 import os
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import APIRouter, FastAPI, HTTPException, Request
 
 import audit_log
 import idempotency
@@ -26,7 +26,7 @@ import razorpay_client
 
 load_dotenv()
 
-app = FastAPI(title="Amma's Kitchen -- Razorpay Webhook Handler")
+router = APIRouter()
 
 _WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 
@@ -58,7 +58,7 @@ def _handle_not_paid(payment_link_id: str, event_type: str, db_path: str) -> str
     return "processed"
 
 
-@app.post("/webhooks/razorpay")
+@router.post("/webhooks/razorpay")
 async def handle_razorpay_webhook(request: Request) -> dict:
     body = await request.body()
     signature = request.headers.get("X-Razorpay-Signature", "")
@@ -94,3 +94,7 @@ async def handle_razorpay_webhook(request: Request) -> dict:
         result = _handle_not_paid(payment_link_id, event_type, db_path)
 
     return {"status": result, "event": event_type, "payment_link_id": payment_link_id}
+
+
+app = FastAPI(title="Amma's Kitchen -- Razorpay Webhook Handler")
+app.include_router(router)

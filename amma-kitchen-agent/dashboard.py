@@ -16,14 +16,14 @@ Run:
 import html
 import json
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.responses import HTMLResponse
 
 import audit_log
 import trust
 from mandate import MANDATE
 
-app = FastAPI(title="Amma's Kitchen -- Audit Trail")
+router = APIRouter()
 
 # Decisions that must never have resulted in a Razorpay call. The
 # dashboard highlights these specifically, because "no payment call was
@@ -261,8 +261,20 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 </html>"""
 
 
-@app.get("/", response_class=HTMLResponse)
+@router.get("/audit", response_class=HTMLResponse)
 def dashboard(limit: int = 200, refresh: int = 5) -> HTMLResponse:
     db_path = audit_log.DEFAULT_DB_PATH
     events = audit_log.get_all_events(db_path=db_path, limit=limit)
     return HTMLResponse(_render(events, db_path, refresh))
+
+
+app = FastAPI(title="Amma's Kitchen -- Audit Trail")
+app.include_router(router)
+
+
+@app.get("/", response_class=HTMLResponse)
+def _root_alias(limit: int = 200, refresh: int = 5) -> HTMLResponse:
+    """Convenience only, for `uvicorn dashboard:app` standalone. On the
+    unified server (app.py) the audit trail lives at /audit and `/` is
+    the landing page."""
+    return dashboard(limit=limit, refresh=refresh)

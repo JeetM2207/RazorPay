@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merchant console — Amma's Kitchen</title>
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  .queue-card { border-left: 3px solid var(--warn); }
+  .queue-card.hard { border-left-color: var(--stop); }
+  .queue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .queue-cart { font-size: 15px; font-weight: 620; margin-bottom: 4px; }
+  .reduce { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-strong); }
+  .reduce-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .reduce-row .name { flex: 1; font-size: 14px; }
+  .stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
+  .stat {
+    flex: 1 1 140px; background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 15px 17px;
+  }
+  .stat .n { font-size: 23px; font-weight: 680; letter-spacing: -.5px; }
+  .stat .l { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-role">Merchant</span>
+    </div>
+    <div class="topbar-links">
+      <span class="live"><span class="dot"></span> live</span>
+      <a href="/buyer">Buyer console</a>
+      <a href="/audit">Full audit trail</a>
+      <a href="/">Home</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <h1>Orders needing your decision</h1>
+    <p class="lede">
+      These are the ones the system refused to decide on its own. Everything else it
+      already handled inside the bounds you set — and everything it refused outright
+      never reached Razorpay at all.
+    </p>
+
+    <div class="mandate-strip" id="mandateStrip"></div>
+    <div class="stat-row" id="stats"></div>
+
+    <div id="queue"></div>
+
+    <h2 style="margin-top:34px">Buyer agents &amp; earned trust</h2>
+    <div class="card card-flush">
+      <table>
+        <thead><tr><th>Agent</th><th>Trust tier</th><th class="right">Completed orders</th></tr></thead>
+        <tbody id="agentRows"></tbody>
+      </table>
+    </div>
+    <p class="note">
+      Trust comes from this system's own record of each agent, never from what the agent
+      claims. A higher tier widens only how far the negotiation will bend — your budget
+      cap and confirmation threshold never move.
+    </p>
+
+    <h2 style="margin-top:34px">Recent decisions</h2>
+    <div class="card card-flush">
+      <table>
+        <thead>
+          <tr><th>#</th><th>Agent</th><th>Protocol</th><th>Cart</th>
+              <th class="right">Total</th><th>Decision</th><th>Payment</th></tr>
+        </thead>
+        <tbody id="eventRows"></tbody>
+      </table>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const rupee = (n) => "₹" + n;
+const HARD_RULE = (reason) => !reason.includes("human confirmation threshold");
+
+let MANDATE = null;
+let reduceState = {};   // session_id -> { item_id: qty }
+
+/* These panels refresh every couple of seconds. Re-rendering them
+   unconditionally would replace the DOM under the merchant's cursor --
+   a button can vanish between mousedown and mouseup, losing the click,
+   and any text selection is destroyed. So each panel only touches the
+   DOM when its data has actually changed. */
+const lastSig = {};
+function changed(key, data) {
+  const sig = JSON.stringify(data);
+  if (lastSig[key] === sig) return false;
+  lastSig[key] = sig;
+  return true;
+}
+
+function toast(msg, isErr) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || ("HTTP " + res.status));
+  return body;
+}
+
+const titleize = (s) => s.replace(/_/g, " ");
+
+/* ---------------------------------------------------------------- boot */
+
+async function boot() {
+  MANDATE = (await api("/api/menu")).mandate;
+  $("mandateStrip").innerHTML =
+    "<span>Your mandate &mdash;</span>" +
+    "<span>budget cap <b>" + rupee(MANDATE.budget_cap_inr) + "</b></span>" +
+    "<span>you are asked from <b>" + rupee(MANDATE.human_confirm_threshold_inr) + "</b></span>" +
+    "<span>agents may order <b>" + MANDATE.allowed_categories.join(", ") + "</b></span>";
+  tick();
+  setInterval(tick, 2000);
+}
+
+async function tick() {
+  await Promise.all([renderQueue(), renderAgents(), renderEvents()]);
+}
+
+/* --------------------------------------------------------------- queue */
+
+async function renderQueue() {
+  const { pending } = await api("/api/pending");
+  if (!changed("queue", [pending, reduceState])) return;
+
+  if (!pending.length) {
+    $("queue").innerHTML = `<div class="card"><div class="empty">
+      Nothing waiting. Orders inside your limits are approved automatically —
+      open the <a href="/buyer" target="_blank">buyer console</a> to send one through.
+    </div></div>`;
+    return;
+  }
+
+  $("queue").innerHTML = pending.map((p) => {
+    const d = p.decision_detail;
+    const hard = HARD_RULE(d.reason);
+    const cartLabel = p.cart.map((l) => `${l.qty} × ${titleize(l.item)}`).join(", ");
+
+    const reduceRows = p.cart.map((l) => {
+      const current = (reduceState[p.session_id] || {})[l.item] ?? l.qty;
+      return `<div class="reduce-row">
+                <span class="name">${titleize(l.item)}</span>
+                <div class="stepper">
+                  <button onclick="adjust('${p.session_id}','${l.item}',-1,${l.qty})">&minus;</button>
+                  <span class="qty">${current}</span>
+                  <button onclick="adjust('${p.session_id}','${l.item}',1,${l.qty})">+</button>
+                </div>
+              </div>`;
+    }).join("");
+
+    return `
+      <div class="card queue-card ${hard ? "hard" : ""}">
+        <div class="queue-head">
+          <span class="badge ${hard ? "badge-stop" : "badge-warn"}">${hard ? "REFUSED BY RULE" : "NEEDS YOUR OK"}</span>
+          <span class="proto">${p.protocol.toUpperCase()}</span>
+          <span class="mono muted">${p.agent_id}</span>
+          <span class="badge badge-mute">${d.trust_tier}</span>
+        </div>
+
+        <div class="queue-cart">${cartLabel} &mdash; ${rupee(d.total_inr)}</div>
+        <div class="muted" style="font-size:13.5px">${d.reason}</div>
+
+        ${hard ? `
+          <p class="note" style="color:var(--stop)">
+            This one breaks a hard rule of yours, not just a threshold. You can decline it and
+            close it out, but the system will not let it be approved here — that is deliberate.
+          </p>
+          <div class="btn-row" style="margin-top:12px">
+            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject')">Decline and close</button>
+          </div>
+        ` : `
+          <div class="btn-row" style="margin-top:14px">
+            <button class="btn btn-ok btn-sm" onclick="decide('${p.session_id}','${p.protocol}','confirm')">Approve as asked</button>
+            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject')">Decline</button>
+            <button class="btn btn-ghost btn-sm" onclick="toggleReduce('${p.session_id}')">Counter with less</button>
+          </div>
+          <div class="reduce" id="reduce-${p.session_id}" style="display:${reduceState[p.session_id] ? "" : "none"}">
+            ${reduceRows}
+            <button class="btn btn-sm" onclick="sendReduced('${p.session_id}','${p.protocol}')">Send this smaller order back</button>
+            <p class="note">
+              A smaller cart is not an override — it goes through the same check as any other
+              order, and is only approved if it genuinely passes on its own.
+            </p>
+          </div>
+        `}
+      </div>`;
+  }).join("");
+}
+
+function toggleReduce(sessionId) {
+  const el = $("reduce-" + sessionId);
+  if (!reduceState[sessionId]) reduceState[sessionId] = {};
+  el.style.display = el.style.display === "none" ? "" : "none";
+  if (el.style.display === "none") delete reduceState[sessionId];
+}
+
+function adjust(sessionId, itemId, delta, originalQty) {
+  reduceState[sessionId] = reduceState[sessionId] || {};
+  const current = reduceState[sessionId][itemId] ?? originalQty;
+  reduceState[sessionId][itemId] = Math.max(0, current + delta);
+  renderQueue();
+}
+
+async function decide(sessionId, protocol, action) {
+  const path = protocol === "acp"
+    ? `/acp/checkout_sessions/${sessionId}/human_${action}`
+    : `/ap2/intent-mandates/${sessionId}/human-${action}`;
+  try {
+    await api(path, { method: "POST", body: action === "confirm" ? "{}" : undefined });
+    toast(action === "confirm" ? "Approved — the buyer can pay now." : "Declined and closed on the record.");
+    delete reduceState[sessionId];
+    tick();
+  } catch (err) {
+    toast(err.message, true);
+    tick();
+  }
+}
+
+async function sendReduced(sessionId, protocol) {
+  const items = Object.entries(reduceState[sessionId] || {})
+    .filter(([, qty]) => qty > 0)
+    .map(([item_id, qty]) => ({ item_id, qty }));
+  if (!items.length) return toast("Leave at least one item on the order.", true);
+
+  const path = protocol === "acp"
+    ? `/acp/checkout_sessions/${sessionId}/human_confirm`
+    : `/ap2/intent-mandates/${sessionId}/human-confirm`;
+  try {
+    await api(path, { method: "POST", body: JSON.stringify({ items }) });
+    toast("Smaller order approved — it passed the check on its own.");
+    delete reduceState[sessionId];
+    tick();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+/* -------------------------------------------------------------- panels */
+
+async function renderAgents() {
+  const { agents } = await api("/api/agents");
+  if (!changed("agents", agents)) return;
+  $("agentRows").innerHTML = agents.length
+    ? agents.map((a) => `
+        <tr>
+          <td class="mono">${a.agent_id}</td>
+          <td><span class="badge ${a.tier === "TRUSTED" ? "badge-ok" : a.tier === "STANDARD" ? "badge-info" : "badge-mute"}">${a.tier}</span></td>
+          <td class="right">${a.completed}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="3" class="empty">No agents have ordered yet.</td></tr>`;
+}
+
+async function renderEvents() {
+  const { events } = await api("/api/events?limit=25");
+  if (!changed("events", events)) return;
+  const stats = {
+    total: events.length,
+    escalated: events.filter((e) => e.decision === "ESCALATE").length,
+    gated: events.filter((e) => ["ESCALATE", "REJECTED"].includes(e.decision) && !e.payment_link_id).length,
+    revenue: events.filter((e) => e.payment_id).reduce((s, e) => s + e.total_inr, 0),
+  };
+  $("stats").innerHTML = [
+    [stats.total, "recent decisions"],
+    [stats.escalated, "escalated to you"],
+    [stats.gated, "stopped before Razorpay"],
+    [rupee(stats.revenue), "captured (recent)"],
+  ].map(([n, l]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+
+  $("eventRows").innerHTML = events.length
+    ? events.map((e) => {
+        const cart = JSON.parse(e.cart_json || "[]").map((l) => `${l.qty}×${titleize(l.item)}`).join(", ");
+        const cls = e.decision === "APPROVE" ? "badge-ok"
+          : e.decision === "REJECTED" ? "badge-stop"
+          : e.decision === "PAYMENT_NOT_COMPLETED" ? "badge-mute" : "badge-warn";
+        const pay = e.payment_id
+          ? `<span class="badge badge-ok">PAID</span>`
+          : e.payment_link_id
+            ? `<span class="muted">link issued</span>`
+            : ["ESCALATE", "REJECTED", "COUNTER_OFFER"].includes(e.decision)
+              ? `<span style="color:var(--stop); font-weight:600">no Razorpay call</span>`
+              : `<span class="muted">—</span>`;
+        return `<tr>
+          <td class="mono muted">${e.id}</td>
+          <td class="mono">${e.agent_id}</td>
+          <td><span class="proto">${e.protocol.toUpperCase()}</span></td>
+          <td>${cart || "<span class='muted'>—</span>"}</td>
+          <td class="right">${rupee(e.total_inr)}</td>
+          <td><span class="badge ${cls}">${e.decision.replace(/_/g, " ")}</span></td>
+          <td class="nowrap">${pay}</td>
+        </tr>`;
+      }).join("")
+    : `<tr><td colspan="7" class="empty">Nothing yet.</td></tr>`;
+}
+
+boot();
+</script>
+</body>
+</html>

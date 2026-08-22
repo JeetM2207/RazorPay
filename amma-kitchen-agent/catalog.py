@@ -9,14 +9,14 @@ agent can self-limit its request before ever hitting the negotiation core
 -- fewer wasted round-trips, fewer avoidable ESCALATEs.
 """
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 
 from mandate import MANDATE, MENU
 
-app = FastAPI(title="Amma's Kitchen Agent Catalog")
+router = APIRouter()
 
 
-@app.get("/catalog")
+@router.get("/catalog")
 def get_catalog() -> dict:
     return {
         "merchant": {"name": "Amma's Kitchen", "currency": "INR"},
@@ -42,3 +42,7 @@ def get_catalog() -> dict:
             "allowed_categories": list(MANDATE.allowed_categories),
         },
     }
+
+
+app = FastAPI(title="Amma's Kitchen Agent Catalog")
+app.include_router(router)

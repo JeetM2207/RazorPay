@@ -12,12 +12,15 @@ import secrets
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
 import orchestrator
 
-app = FastAPI(title="Amma's Kitchen -- ACP Adapter")
+# Routes live on a router so they can be mounted either standalone
+# (uvicorn adapter_acp:app) or alongside the AP2 adapter and the web UI
+# on one server (see app.py). Same routes either way.
+router = APIRouter()
 
 _SESSIONS: dict[str, dict] = {}
 _TOKEN_TTL_SECONDS = 600
@@ -87,7 +90,26 @@ def _apply_decision(session_id: str, cart: list[tuple[str, int]]) -> dict:
     }
 
 
-@app.post("/acp/checkout_sessions")
+@router.get("/acp/checkout_sessions")
+def list_sessions(status: str | None = None) -> dict:
+    """Lets the merchant console show a live queue of sessions needing a
+    human decision. Read-only; no business logic."""
+    sessions = [
+        {
+            "session_id": sid,
+            "agent_id": session["agent_id"],
+            "status": session.get("status"),
+            "protocol": "acp",
+            "cart": [{"item": name, "qty": qty} for name, qty in session.get("cart", [])],
+            "decision_detail": session.get("detail"),
+        }
+        for sid, session in _SESSIONS.items()
+        if status is None or session.get("status") == status
+    ]
+    return {"sessions": list(reversed(sessions))}
+
+
+@router.post("/acp/checkout_sessions")
 def create_session(req: CreateSessionRequest) -> dict:
     session_id = uuid.uuid4().hex
     _SESSIONS[session_id] = {"agent_id": req.agent_id}
@@ -95,7 +117,7 @@ def create_session(req: CreateSessionRequest) -> dict:
     return _apply_decision(session_id, cart)
 
 
-@app.get("/acp/checkout_sessions/{session_id}")
+@router.get("/acp/checkout_sessions/{session_id}")
 def get_session(session_id: str) -> dict:
     session = _SESSIONS.get(session_id)
     if not session:
@@ -108,7 +130,7 @@ def get_session(session_id: str) -> dict:
     }
 
 
-@app.post("/acp/checkout_sessions/{session_id}/accept_alternative")
+@router.post("/acp/checkout_sessions/{session_id}/accept_alternative")
 def accept_alternative(session_id: str, req: AcceptAlternativeRequest) -> dict:
     session = _SESSIONS.get(session_id)
     if not session:
@@ -120,7 +142,7 @@ def accept_alternative(session_id: str, req: AcceptAlternativeRequest) -> dict:
     return _apply_decision(session_id, new_cart)
 
 
-@app.post("/acp/checkout_sessions/{session_id}/accept_upsell")
+@router.post("/acp/checkout_sessions/{session_id}/accept_upsell")
 def accept_upsell(session_id: str) -> dict:
     session = _SESSIONS.get(session_id)
     if not session:
@@ -132,7 +154,7 @@ def accept_upsell(session_id: str) -> dict:
     return _apply_decision(session_id, new_cart)
 
 
-@app.post("/acp/checkout_sessions/{session_id}/human_confirm")
+@router.post("/acp/checkout_sessions/{session_id}/human_confirm")
 def human_confirm(session_id: str, req: HumanConfirmRequest = HumanConfirmRequest()) -> dict:
     """Stands in for a human ops person clicking 'confirm' on an escalated
     order (until the real dashboard, build order step 7, exists).
@@ -192,7 +214,7 @@ def human_confirm(session_id: str, req: HumanConfirmRequest = HumanConfirmReques
     }
 
 
-@app.post("/acp/checkout_sessions/{session_id}/human_reject")
+@router.post("/acp/checkout_sessions/{session_id}/human_reject")
 def human_reject(session_id: str) -> dict:
     """Stands in for a human ops person explicitly declining an escalated
     order -- distinct from simply never acting on it. Unlike human_confirm,
@@ -224,7 +246,7 @@ def human_reject(session_id: str) -> dict:
     }
 
 
-@app.post("/acp/checkout_sessions/{session_id}/complete")
+@router.post("/acp/checkout_sessions/{session_id}/complete")
 def complete_session(session_id: str, req: CompleteRequest) -> dict:
     session = _SESSIONS.get(session_id)
     if not session:
@@ -250,3 +272,7 @@ def complete_session(session_id: str, req: CompleteRequest) -> dict:
         "payment_link_url": link["short_url"],
         "amount_inr": session["detail"]["total_inr"],
     }
+
+
+app = FastAPI(title="Amma's Kitchen -- ACP Adapter")
+app.include_router(router)

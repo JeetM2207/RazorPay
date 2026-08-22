@@ -19,12 +19,14 @@ import hashlib
 import time
 import uuid
 
-from fastapi import FastAPI, HTTPException
+from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
 import orchestrator
 
-app = FastAPI(title="Amma's Kitchen -- AP2 Adapter")
+# See adapter_acp.py: routes live on a router so both adapters and the
+# web UI can be served from one process (app.py) or standalone.
+router = APIRouter()
 
 _INTENT_MANDATES: dict[str, dict] = {}
 _CART_MANDATES: dict[str, dict] = {}
@@ -88,7 +90,26 @@ def _intent_view(intent_id: str) -> dict:
     }
 
 
-@app.post("/ap2/intent-mandates")
+@router.get("/ap2/intent-mandates")
+def list_intent_mandates(status: str | None = None) -> dict:
+    """Lets the merchant console show a live queue of mandates needing a
+    human decision. Read-only; no business logic."""
+    mandates = [
+        {
+            "session_id": mid,
+            "agent_id": mandate["agent_id"],
+            "status": mandate.get("status"),
+            "protocol": "ap2",
+            "cart": [{"item": name, "qty": qty} for name, qty in mandate.get("cart", [])],
+            "decision_detail": mandate.get("detail"),
+        }
+        for mid, mandate in _INTENT_MANDATES.items()
+        if status is None or mandate.get("status") == status
+    ]
+    return {"sessions": list(reversed(mandates))}
+
+
+@router.post("/ap2/intent-mandates")
 def create_intent_mandate(req: IntentMandateRequest) -> dict:
     intent_id = uuid.uuid4().hex
     cart = [(item.item_id, item.qty) for item in req.intent.items]
@@ -99,14 +120,14 @@ def create_intent_mandate(req: IntentMandateRequest) -> dict:
     return _apply_intent_decision(intent_id, cart)
 
 
-@app.get("/ap2/intent-mandates/{intent_id}")
+@router.get("/ap2/intent-mandates/{intent_id}")
 def get_intent_mandate(intent_id: str) -> dict:
     if intent_id not in _INTENT_MANDATES:
         raise HTTPException(404, "unknown intent mandate")
     return _intent_view(intent_id)
 
 
-@app.post("/ap2/intent-mandates/{intent_id}/accept-alternative")
+@router.post("/ap2/intent-mandates/{intent_id}/accept-alternative")
 def accept_alternative(intent_id: str, req: AcceptAlternativeRequest) -> dict:
     mandate = _INTENT_MANDATES.get(intent_id)
     if not mandate:
@@ -120,7 +141,7 @@ def accept_alternative(intent_id: str, req: AcceptAlternativeRequest) -> dict:
     return _apply_intent_decision(intent_id, new_cart)
 
 
-@app.post("/ap2/intent-mandates/{intent_id}/accept-upsell")
+@router.post("/ap2/intent-mandates/{intent_id}/accept-upsell")
 def accept_upsell(intent_id: str) -> dict:
     mandate = _INTENT_MANDATES.get(intent_id)
     if not mandate:
@@ -134,7 +155,7 @@ def accept_upsell(intent_id: str) -> dict:
     return _apply_intent_decision(intent_id, new_cart)
 
 
-@app.post("/ap2/intent-mandates/{intent_id}/human-confirm")
+@router.post("/ap2/intent-mandates/{intent_id}/human-confirm")
 def human_confirm(intent_id: str, req: HumanConfirmRequest = HumanConfirmRequest()) -> dict:
     """Stands in for a human ops person confirming an escalated Intent
     Mandate (until the real dashboard, build order step 7, exists).
@@ -184,7 +205,7 @@ def human_confirm(intent_id: str, req: HumanConfirmRequest = HumanConfirmRequest
     return _intent_view(intent_id)
 
 
-@app.post("/ap2/intent-mandates/{intent_id}/human-reject")
+@router.post("/ap2/intent-mandates/{intent_id}/human-reject")
 def human_reject(intent_id: str) -> dict:
     mandate = _INTENT_MANDATES.get(intent_id)
     if not mandate:
@@ -205,7 +226,7 @@ def human_reject(intent_id: str) -> dict:
     return _intent_view(intent_id)
 
 
-@app.post("/ap2/intent-mandates/{intent_id}/cart-mandate")
+@router.post("/ap2/intent-mandates/{intent_id}/cart-mandate")
 def create_cart_mandate(intent_id: str) -> dict:
     mandate = _INTENT_MANDATES.get(intent_id)
     if not mandate:
@@ -237,7 +258,7 @@ def create_cart_mandate(intent_id: str) -> dict:
     }
 
 
-@app.post("/ap2/cart-mandates/{cart_mandate_id}/payment-mandate")
+@router.post("/ap2/cart-mandates/{cart_mandate_id}/payment-mandate")
 def create_payment_mandate(cart_mandate_id: str) -> dict:
     cart_mandate = _CART_MANDATES.get(cart_mandate_id)
     if not cart_mandate:
@@ -274,3 +295,7 @@ def create_payment_mandate(cart_mandate_id: str) -> dict:
             "payment_link_url": link["short_url"],
         }
     }
+
+
+app = FastAPI(title="Amma's Kitchen -- AP2 Adapter")
+app.include_router(router)
