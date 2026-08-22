@@ -121,6 +121,23 @@ build two toy protocol shapes, we added three small, self-contained pieces:
   always going to fail. This is the concrete answer to "agent-readable catalog" from
   the brief's example directions, and to "makes a merchant sellable to AI buyers."
 
+Two further pieces were added while building steps 6-7, both worth calling out:
+
+- **`idempotency.py` + `reconcile_payments.py`** — webhooks are the fast path for
+  learning a payment completed, but they can be missed (server down, tunnel closed,
+  every retry failed). Real payment systems keep a reconciliation job as the safety
+  net, so this one does too: it asks Razorpay directly about any order that has a
+  payment link but no recorded payment. Critically, the webhook handler and the
+  reconciler claim through the SAME idempotency ledger, so the two independent paths
+  to the same fact can never double-record it. This was not theoretical — running it
+  for real recovered two genuinely-paid orders whose webhooks predated the webhook
+  being configured at all.
+- **`dashboard.py`** — renders the audit trail with the merchant mandate stated at the
+  top, per-agent trust tiers, and an explicit "no Razorpay call made" marker on every
+  gated decision, so a viewer can *verify* the "rejected orders never touched money"
+  claim at a glance instead of taking it on trust. Auto-refreshes, so buyer agents can
+  be run in another terminal and rows appear live on camera.
+
 Pitch line: *"We built the trust layer NPCI hasn't shipped yet — and we did it
 without touching the file that makes the actual money decision."*
 

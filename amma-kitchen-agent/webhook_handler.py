@@ -6,21 +6,22 @@ can and will arrive more than once in production (retries, network
 blips, dashboard replays). This file exists specifically to make sure
 that never causes a double-fulfillment or a duplicated audit-trail entry.
 
-Idempotency is enforced at the database level via a UNIQUE constraint on
-(event_type, payment_link_id) in processed_webhook_events -- not just an
-application-level "have I seen this before?" check, which would have a
-race window between the check and the write under concurrent deliveries.
+Idempotency is enforced at the database level (see idempotency.py) via a
+UNIQUE constraint -- not an application-level "have I seen this before?"
+check, which would have a race window between the check and the write
+under concurrent deliveries. That same ledger is shared with
+reconcile_payments.py, so the webhook path and the reconciliation path
+can never double-record the same fact.
 """
 
 import json
 import os
-import sqlite3
-from datetime import datetime, timezone
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 
 import audit_log
+import idempotency
 import razorpay_client
 
 load_dotenv()
@@ -30,39 +31,6 @@ app = FastAPI(title="Amma's Kitchen -- Razorpay Webhook Handler")
 _WEBHOOK_SECRET = os.environ.get("RAZORPAY_WEBHOOK_SECRET", "")
 
 _HANDLED_EVENTS = ("payment_link.paid", "payment_link.expired", "payment_link.cancelled")
-
-_EVENTS_SCHEMA = """
-CREATE TABLE IF NOT EXISTS processed_webhook_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_type TEXT NOT NULL,
-    payment_link_id TEXT NOT NULL,
-    received_at TEXT NOT NULL,
-    UNIQUE(event_type, payment_link_id)
-);
-"""
-
-
-def _init_events_table(db_path: str) -> None:
-    with sqlite3.connect(db_path) as conn:
-        conn.execute(_EVENTS_SCHEMA)
-
-
-def _claim_event(event_type: str, payment_link_id: str, db_path: str) -> bool:
-    """Returns True only for the delivery that actually gets to process
-    this event. The UNIQUE constraint (not a prior SELECT) is what makes
-    this safe under near-simultaneous duplicate deliveries."""
-    _init_events_table(db_path)
-    try:
-        with sqlite3.connect(db_path) as conn:
-            conn.execute(
-                "INSERT INTO processed_webhook_events (event_type, payment_link_id, received_at) "
-                "VALUES (?, ?, ?)",
-                (event_type, payment_link_id, datetime.now(timezone.utc).isoformat()),
-            )
-        return True
-    except sqlite3.IntegrityError:
-        return False
-
 
 def _handle_paid(payment_link_id: str, payment_entity: dict, db_path: str) -> str:
     original = audit_log.get_event_by_payment_link(payment_link_id, db_path=db_path)
@@ -114,7 +82,7 @@ async def handle_razorpay_webhook(request: Request) -> dict:
         raise HTTPException(400, "missing payment_link id in webhook payload")
 
     db_path = audit_log.DEFAULT_DB_PATH
-    if not _claim_event(event_type, payment_link_id, db_path):
+    if not idempotency.claim_event(event_type, payment_link_id, db_path):
         # A duplicate delivery of an event we've already fully processed.
         # This is the case the whole file exists to get right.
         return {"status": "duplicate_ignored", "event": event_type, "payment_link_id": payment_link_id}
