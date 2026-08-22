@@ -112,6 +112,15 @@ async function api(path, opts) {
 
 const titleize = (s) => s.replace(/_/g, " ");
 
+/* Each protocol names its human-decision endpoints differently. This is
+   the only place the merchant console knows or cares which protocol an
+   order arrived on -- the decision itself is identical for all three. */
+const DECISION_PATH = {
+  acp:  (id, action) => `/acp/checkout_sessions/${id}/human_${action}`,
+  ap2:  (id, action) => `/ap2/intent-mandates/${id}/human-${action}`,
+  x402: (id, action) => `/x402/orders/${id}/human_${action}`,
+};
+
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
@@ -214,9 +223,7 @@ function adjust(sessionId, itemId, delta, originalQty) {
 }
 
 async function decide(sessionId, protocol, action) {
-  const path = protocol === "acp"
-    ? `/acp/checkout_sessions/${sessionId}/human_${action}`
-    : `/ap2/intent-mandates/${sessionId}/human-${action}`;
+  const path = DECISION_PATH[protocol](sessionId, action);
   try {
     await api(path, { method: "POST", body: action === "confirm" ? "{}" : undefined });
     toast(action === "confirm" ? "Approved — the buyer can pay now." : "Declined and closed on the record.");
@@ -234,9 +241,7 @@ async function sendReduced(sessionId, protocol) {
     .map(([item_id, qty]) => ({ item_id, qty }));
   if (!items.length) return toast("Leave at least one item on the order.", true);
 
-  const path = protocol === "acp"
-    ? `/acp/checkout_sessions/${sessionId}/human_confirm`
-    : `/ap2/intent-mandates/${sessionId}/human-confirm`;
+  const path = DECISION_PATH[protocol](sessionId, "confirm");
   try {
     await api(path, { method: "POST", body: JSON.stringify({ items }) });
     toast("Smaller order approved — it passed the check on its own.");

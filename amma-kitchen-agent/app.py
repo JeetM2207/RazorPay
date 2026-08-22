@@ -29,6 +29,7 @@ load_dotenv()
 
 import adapter_acp
 import adapter_ap2
+import adapter_x402
 import audit_log
 import buyer_mandate
 import catalog
@@ -43,6 +44,7 @@ app = FastAPI(title="Amma's Kitchen -- Agentic Commerce")
 
 app.include_router(adapter_acp.router)
 app.include_router(adapter_ap2.router)
+app.include_router(adapter_x402.router)
 app.include_router(webhook_handler.router)
 app.include_router(catalog.router)
 app.include_router(dashboard.router)
@@ -186,7 +188,8 @@ def pending() -> dict:
     operational."""
     acp = adapter_acp.list_sessions(status="requires_human")["sessions"]
     ap2 = adapter_ap2.list_intent_mandates(status="requires_human")["sessions"]
-    return {"pending": acp + ap2}
+    x402 = adapter_x402.list_orders(status="requires_human")["sessions"]
+    return {"pending": acp + ap2 + x402}
 
 
 @app.get("/api/agents")
