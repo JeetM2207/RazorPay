@@ -82,6 +82,19 @@ def attach_payment_link(
         )
 
 
+def get_event_by_payment_link(
+    payment_link_id: str, db_path: str = DEFAULT_DB_PATH
+) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM audit_events WHERE payment_link_id = ? ORDER BY id DESC LIMIT 1",
+            (payment_link_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def get_events_for_agent(agent_id: str, db_path: str = DEFAULT_DB_PATH) -> list[dict]:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
