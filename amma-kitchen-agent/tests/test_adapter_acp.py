@@ -102,6 +102,54 @@ def test_wrong_delegate_token_is_rejected(client, monkeypatch):
     assert resp.status_code == 403
 
 
+def test_human_confirm_allows_payment_after_threshold_escalation(client, monkeypatch):
+    _mock_payment_link(monkeypatch, link_id="plink_override", short_url="https://rzp.io/rzp/override")
+
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-7", "items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    ).json()
+    assert body["status"] == "requires_human"
+
+    confirmed = client.post(f"/acp/checkout_sessions/{body['session_id']}/human_confirm").json()
+    assert confirmed["status"] == "ready_for_payment"
+    assert "human override" in confirmed["decision_detail"]["reason"]
+    assert confirmed["delegate_token"]
+
+    complete = client.post(
+        f"/acp/checkout_sessions/{body['session_id']}/complete",
+        json={"delegate_token": confirmed["delegate_token"]},
+    )
+    assert complete.status_code == 200
+    assert complete.json()["payment_link_url"] == "https://rzp.io/rzp/override"
+
+
+def test_human_confirm_rejects_disallowed_category_escalation(client):
+    # No item in MENU is actually disallowed by the default mandate, so we
+    # exercise this via an unknown item instead -- both are hard merchant
+    # rules that must never be human-overridable through this endpoint.
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-8", "items": [{"item_id": "not_a_real_item", "qty": 1}]},
+    ).json()
+    assert body["status"] == "requires_human"
+
+    resp = client.post(f"/acp/checkout_sessions/{body['session_id']}/human_confirm")
+    assert resp.status_code == 403
+
+
+def test_human_confirm_rejected_when_session_not_awaiting_confirmation(client, monkeypatch):
+    _mock_payment_link(monkeypatch)
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-9", "items": [{"item_id": "masala_dosa", "qty": 1}]},
+    ).json()
+    assert body["status"] == "ready_for_payment"
+
+    resp = client.post(f"/acp/checkout_sessions/{body['session_id']}/human_confirm")
+    assert resp.status_code == 409
+
+
 def test_accept_upsell_extends_cart_and_stays_approved(client, monkeypatch):
     _mock_payment_link(monkeypatch)
 

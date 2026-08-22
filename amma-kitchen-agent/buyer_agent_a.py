@@ -35,8 +35,10 @@ AGENT_ID = sys.argv[2] if len(sys.argv) > 2 else "buyer-agent-a-demo"
 # A buyer-side spending rule, separate from the merchant's mandate: this
 # agent may accept a merchant-suggested upsell on its own authority only
 # if it adds at most this much -- otherwise it should ask its own human,
-# which this simulator represents by simply declining.
-AUTO_ACCEPT_UPSELL_LIMIT_INR = 100
+# which this simulator represents by simply declining. This represents
+# a customer having told their agent "extras up to Rs.250 are fine without
+# asking me" (the same idea as AP2's real Intent Mandate spending bands).
+AUTO_ACCEPT_UPSELL_LIMIT_INR = 250
 
 
 def parse_request_to_cart(text: str) -> list[dict]:
@@ -134,6 +136,7 @@ def main() -> None:
 
     if resp["status"] == "requires_human":
         print("\nESCALATED -- a human must confirm this order. No payment call was made.")
+        print(f"To confirm as the merchant: python human_confirm.py {resp['session_id']}")
         return
     if resp["status"] != "ready_for_payment":
         print(f"\nCould not reach a payable state (status={resp['status']}). Stopping.")

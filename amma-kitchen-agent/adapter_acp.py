@@ -28,6 +28,12 @@ _STATUS_FOR_DECISION = {
     "ESCALATE": "requires_human",
 }
 
+# Only an ESCALATE caused by the human-confirm threshold is something a
+# human can wave through here. A disallowed category or an unknown item
+# is a hard merchant rule, not a "needs a second opinion" situation, and
+# is never overridable through this endpoint.
+_HUMAN_OVERRIDABLE_MARKER = "human confirmation threshold"
+
 
 class CartItemIn(BaseModel):
     item_id: str
@@ -49,6 +55,7 @@ class CompleteRequest(BaseModel):
 
 def _apply_decision(session_id: str, cart: list[tuple[str, int]]) -> dict:
     session = _SESSIONS[session_id]
+    session.pop("human_overridden", None)
     detail = orchestrator.negotiate_and_record(session["agent_id"], "acp", cart)
     session["cart"] = cart
     session["detail"] = detail
@@ -117,6 +124,48 @@ def accept_upsell(session_id: str) -> dict:
     return _apply_decision(session_id, new_cart)
 
 
+@app.post("/acp/checkout_sessions/{session_id}/human_confirm")
+def human_confirm(session_id: str) -> dict:
+    """Stands in for a human ops person clicking 'confirm' on an escalated
+    order (until the real dashboard, build order step 7, exists)."""
+    session = _SESSIONS.get(session_id)
+    if not session:
+        raise HTTPException(404, "unknown session")
+    if session["status"] != "requires_human":
+        raise HTTPException(409, "session is not awaiting human confirmation")
+    if _HUMAN_OVERRIDABLE_MARKER not in session["detail"]["reason"]:
+        raise HTTPException(
+            403,
+            "this escalation is a hard merchant rule (disallowed category, "
+            "unknown item, or over the flexible margin) and cannot be "
+            "human-overridden here",
+        )
+
+    new_event_id = orchestrator.record_human_override(
+        session["agent_id"], "acp", session["cart"], session["detail"]
+    )
+    session["detail"] = {
+        **session["detail"],
+        "event_id": new_event_id,
+        "decision": "APPROVE",
+        "reason": f"human override: {session['detail']['reason']}",
+    }
+    session["status"] = "ready_for_payment"
+    session["human_overridden"] = True
+
+    delegate_token = secrets.token_urlsafe(24)
+    session["delegate_token"] = delegate_token
+    session["delegate_token_expires_at"] = time.time() + _TOKEN_TTL_SECONDS
+    session["delegate_token_used"] = False
+
+    return {
+        "session_id": session_id,
+        "status": session["status"],
+        "decision_detail": session["detail"],
+        "delegate_token": delegate_token,
+    }
+
+
 @app.post("/acp/checkout_sessions/{session_id}/complete")
 def complete_session(session_id: str, req: CompleteRequest) -> dict:
     session = _SESSIONS.get(session_id)
@@ -133,7 +182,10 @@ def complete_session(session_id: str, req: CompleteRequest) -> dict:
 
     session["delegate_token_used"] = True
     link = orchestrator.create_payment_for_cart(
-        session["agent_id"], session["detail"]["event_id"], session["cart"]
+        session["agent_id"],
+        session["detail"]["event_id"],
+        session["cart"],
+        skip_reevaluation=session.get("human_overridden", False),
     )
     return {
         "payment_link_id": link["id"],

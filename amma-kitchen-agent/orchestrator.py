@@ -53,21 +53,58 @@ def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int
     return response
 
 
-def create_payment_for_cart(agent_id: str, event_id: int, cart: list[tuple[str, int]]) -> dict:
+def create_payment_for_cart(
+    agent_id: str,
+    event_id: int,
+    cart: list[tuple[str, int]],
+    skip_reevaluation: bool = False,
+) -> dict:
     """Defense in depth: re-validates the cart right now, at payment time,
     rather than trusting a decision made moments earlier. Only ever called
-    after an adapter has already reached an APPROVE-shaped state."""
+    after an adapter has already reached an APPROVE-shaped state.
+
+    skip_reevaluation exists ONLY for the human-override path: once a
+    human has explicitly confirmed a specific escalated cart (recorded via
+    record_human_override), re-running evaluate() would just say ESCALATE
+    again forever -- the human's explicit, audited decision is what
+    authorizes payment in that case, not the algorithmic re-check.
+    """
     db_path = audit_log.DEFAULT_DB_PATH
-    adjusted_mandate, _ = trust.trust_adjusted_mandate(agent_id, MANDATE, db_path=db_path)
-    result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=MENU)
-    if result.decision != negotiation.Decision.APPROVE:
-        raise ValueError(f"cart no longer approved at payment time: {result.decision}")
+    if skip_reevaluation:
+        total_inr = sum(MENU[name].price_inr * qty for name, qty in cart)
+    else:
+        adjusted_mandate, _ = trust.trust_adjusted_mandate(agent_id, MANDATE, db_path=db_path)
+        result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=MENU)
+        if result.decision != negotiation.Decision.APPROVE:
+            raise ValueError(f"cart no longer approved at payment time: {result.decision}")
+        total_inr = result.total_inr
 
     description = " + ".join(f"{qty}x {name}" for name, qty in cart)
     link = razorpay_client.create_payment_link(
-        amount_inr=result.total_inr,
+        amount_inr=total_inr,
         description=f"Amma's Kitchen order: {description}",
         reference_id=f"order-{event_id}-{uuid.uuid4().hex[:6]}",
     )
     audit_log.attach_payment_link(event_id, link["id"], db_path=db_path)
     return link
+
+
+def record_human_override(agent_id: str, protocol: str, cart: list[tuple[str, int]], original_detail: dict) -> int:
+    """A human explicitly approved an order the negotiation core escalated.
+
+    This is recorded as its own, clearly-labeled audit event -- never
+    silently merged into or replacing the original algorithmic ESCALATE
+    entry. Anyone reading the audit trail sees both: what the machine
+    decided, and that a human separately chose to proceed anyway.
+    """
+    db_path = audit_log.DEFAULT_DB_PATH
+    cart_payload = [{"item": name, "qty": qty} for name, qty in cart]
+    return audit_log.record_event(
+        agent_id=agent_id,
+        protocol=protocol,
+        cart=cart_payload,
+        decision="APPROVE",
+        reason=f"human override of ESCALATE ({original_detail['reason']})",
+        total_inr=original_detail["total_inr"],
+        db_path=db_path,
+    )
