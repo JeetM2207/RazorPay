@@ -36,6 +36,8 @@ class MenuItem:
 MENU: dict[str, MenuItem] = {
     "veg_thali": MenuItem("veg_thali", "meals", 150, stock=20),
     "chicken_biryani": MenuItem("chicken_biryani", "meals", 220, stock=15),
+    "paneer_bhurji": MenuItem("paneer_bhurji", "meals", 150, stock=18),
+    "tandoori_roti": MenuItem("tandoori_roti", "meals", 50, stock=60),
     "masala_dosa": MenuItem("masala_dosa", "snacks", 80, stock=25),
     "filter_coffee": MenuItem("filter_coffee", "beverages", 30, stock=50),
     "gulab_jamun": MenuItem("gulab_jamun", "desserts", 60, stock=30),

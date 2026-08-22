@@ -3,8 +3,88 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Buyer console — Amma's Kitchen</title>
+<title>Buyer portal — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
+<style>
+  .split { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 20px; align-items: start; }
+  @media (max-width: 940px) { .split { grid-template-columns: 1fr; } }
+
+  .pane-label {
+    display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
+  }
+  .pane-num {
+    width: 22px; height: 22px; border-radius: 6px; flex: none;
+    background: var(--ink); color: #fff; font-size: 12px; font-weight: 700;
+    display: grid; place-items: center;
+  }
+  .pane-title { font-size: 13px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
+  .pane-sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 14px; }
+
+  .field { margin-bottom: 15px; }
+  .field-row { display: flex; gap: 12px; }
+  .field-row > * { flex: 1; }
+
+  .card-on-file {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 10px;
+    background: linear-gradient(135deg, #2a2724, #423b33);
+    color: #fff;
+  }
+  .card-chip {
+    width: 30px; height: 21px; border-radius: 4px; flex: none;
+    background: linear-gradient(135deg, #e8c37a, #b98f3f);
+  }
+  .card-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13.5px; letter-spacing: .5px; }
+  .card-note { font-size: 11px; color: #c9c2b8; margin-top: 1px; }
+
+  /* ---- terminal ---- */
+  .terminal {
+    background: #0d0f12; border: 1px solid #23272e; border-radius: var(--radius);
+    overflow: hidden; display: flex; flex-direction: column; height: 640px;
+  }
+  .term-bar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; background: #14181d; border-bottom: 1px solid #23272e;
+  }
+  .term-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .term-name {
+    margin-left: 6px; color: #8b949e; font-size: 12px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+  }
+  .term-state { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
+  .term-body {
+    flex: 1; overflow-y: auto; padding: 16px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12.5px; line-height: 1.75; color: #c9d1d9;
+  }
+  .term-body::-webkit-scrollbar { width: 9px; }
+  .term-body::-webkit-scrollbar-thumb { background: #2b3138; border-radius: 5px; }
+
+  .ln { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
+  .ln + .ln { margin-top: 3px; }
+  .ln .t { color: #4a525c; flex: none; }
+  .ln .m { flex: 1; }
+  .ln.info .m   { color: #c9d1d9; }
+  .ln.step .m   { color: #79c0ff; }
+  .ln.ok .m     { color: #56d364; }
+  .ln.warn .m   { color: #e3b341; }
+  .ln.err .m    { color: #f85149; }
+  .ln.quiet .m  { color: #6e7681; }
+  .ln.head .m   { color: #d2a8ff; font-weight: 600; }
+  .ln .m b      { color: #fff; font-weight: 600; }
+
+  .cursor {
+    display: inline-block; width: 7px; height: 14px; background: #56d364;
+    vertical-align: -2px; animation: blink 1.05s step-end infinite;
+  }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .term-ask {
+    border-top: 1px solid #23272e; background: #14181d; padding: 14px;
+  }
+  .term-ask p { margin: 0 0 10px; color: #e3b341; font-size: 12.5px;
+                font-family: ui-monospace, Menlo, Consolas, monospace; }
+</style>
 </head>
 <body>
   <div class="topbar">
@@ -20,90 +100,91 @@
   </div>
 
   <div class="page">
-    <h1>Order as an AI buyer agent</h1>
+    <h1>Send an agent to buy dinner</h1>
     <p class="lede">
-      You're standing in for a customer's AI shopping assistant. Pick the protocol you
-      speak — the merchant's negotiation logic is identical either way.
+      You set the limits and say what you want. The agent does the rest on its own,
+      and shows you every step it takes.
     </p>
 
-    <div class="mandate-strip" id="mandateStrip"></div>
-
-    <div class="grid-2">
-      <!-- ------------------------------------------------ left: compose -->
+    <div class="split">
+      <!-- ══════════════════ UI 1 — HUMAN USER PORTAL ══════════════════ -->
       <div>
+        <div class="pane-label">
+          <span class="pane-num">1</span>
+          <span class="pane-title">You</span>
+        </div>
+        <p class="pane-sub">The human customer. You are not doing the shopping.</p>
+
         <div class="card">
-          <h2>Who you are</h2>
-          <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:end">
-            <div style="flex:1 1 200px">
-              <label for="agentId">Agent identity</label>
-              <input type="text" id="agentId" placeholder="e.g. shopper-bot-1">
-            </div>
-            <div>
-              <label>Protocol</label>
-              <div class="seg" id="protoSeg">
-                <button data-proto="acp" aria-pressed="true">ACP</button>
-                <button data-proto="ap2" aria-pressed="false">AP2</button>
+          <div class="field">
+            <label for="address">Delivery address</label>
+            <input type="text" id="address" placeholder="Flat 402, Sunrise Apartments, Indiranagar">
+          </div>
+
+          <div class="field">
+            <label>Your spending mandate</label>
+            <div class="field-row">
+              <div>
+                <input type="text" id="hardCap" inputmode="numeric">
+                <div class="note" style="margin-top:5px">Hard cap &mdash; never exceed</div>
+              </div>
+              <div>
+                <input type="text" id="softCap" inputmode="numeric">
+                <div class="note" style="margin-top:5px">Soft cap &mdash; ask me first</div>
               </div>
             </div>
           </div>
-          <div class="kv" id="tierLine" style="margin-top:12px"></div>
-          <p class="note" id="protoNote"></p>
-        </div>
 
-        <div class="card">
-          <h2>What your customer authorised you to spend</h2>
-          <p class="note" style="margin:0 0 12px">
-            Your own limits, not Amma's. An order over these is stopped by your agent
-            before Amma is ever contacted &mdash; she gets no say in it and no record of it.
+          <div class="field">
+            <label>Payment profile</label>
+            <div class="card-on-file">
+              <span class="card-chip"></span>
+              <div>
+                <div class="card-num">**** **** **** 1007</div>
+                <div class="card-note">Authorised for autonomous payment under your hard cap</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="command">What do you want your AI to buy?</label>
+            <textarea id="command" rows="3">Order 1 paneer bhurji and 4 tandoori roti</textarea>
+          </div>
+
+          <button class="btn" id="deployBtn" style="width:100%">Deploy Agent</button>
+          <p class="note" id="portalNote">
+            Once deployed, the agent negotiates on its own. It comes back to you only if
+            something crosses your soft cap.
           </p>
-          <div style="display:flex; gap:14px; flex-wrap:wrap">
-            <div style="flex:1 1 150px">
-              <label for="spendCap">Never spend more than</label>
-              <input type="text" id="spendCap" inputmode="numeric">
-            </div>
-            <div style="flex:1 1 150px">
-              <label for="confirmAbove">Check with me from</label>
-              <input type="text" id="confirmAbove" inputmode="numeric">
-            </div>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>Say what you want</h2>
-          <textarea id="nlText" placeholder="Get me two chicken biryanis and a filter coffee"></textarea>
-          <div class="btn-row" style="margin-top:11px">
-            <button class="btn btn-ghost" id="parseBtn">Interpret with Claude</button>
-            <span class="note" style="margin:0; align-self:center">
-              The model only turns words into a cart. It never decides the outcome.
-            </span>
-          </div>
-        </div>
-
-        <div class="card">
-          <h2>Or build it by hand</h2>
-          <div class="menu-grid" id="menuGrid"></div>
         </div>
       </div>
 
-      <!-- ------------------------------------------------ right: outcome -->
+      <!-- ══════════════════ UI 2 — BUYER AI TERMINAL ══════════════════ -->
       <div>
-        <div class="card">
-          <h2>Your cart</h2>
-          <div id="cartBox"><div class="empty">Nothing selected yet.</div></div>
-          <div class="btn-row" style="margin-top:14px">
-            <button class="btn" id="submitBtn" disabled>Send to Amma's Kitchen</button>
-            <button class="btn btn-ghost btn-sm" id="clearBtn">Clear</button>
+        <div class="pane-label">
+          <span class="pane-num">2</span>
+          <span class="pane-title">Your buying agent</span>
+        </div>
+        <p class="pane-sub">Everything it thinks and does, as it happens.</p>
+
+        <div class="terminal">
+          <div class="term-bar">
+            <span class="term-dot" style="background:#ff5f57"></span>
+            <span class="term-dot" style="background:#febc2e"></span>
+            <span class="term-dot" style="background:#28c840"></span>
+            <span class="term-name">buyer-agent</span>
+            <span class="term-state" id="termState" style="color:#6e7681">IDLE</span>
           </div>
-        </div>
-
-        <div class="card" id="buyerGateCard" style="display:none">
-          <h2>Your side first</h2>
-          <div id="buyerGateBox"></div>
-        </div>
-
-        <div class="card" id="outcomeCard" style="display:none">
-          <h2>What Amma's Kitchen said</h2>
-          <div id="outcomeBox"></div>
+          <div class="term-body" id="term">
+            <div class="ln quiet"><span class="t">--:--:--</span><span class="m">Agent asleep. Fill in the form and deploy.</span></div>
+          </div>
+          <div class="term-ask" id="termAsk" style="display:none">
+            <p id="askText"></p>
+            <div class="btn-row">
+              <button class="btn btn-ok btn-sm" id="askYes">Approve</button>
+              <button class="btn btn-ghost btn-sm" id="askNo">Cancel</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -112,507 +193,289 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const rupee = (n) => "₹" + n;
+const titleize = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let MENU = [];
 let MANDATE = null;
-let cart = {};            // item_id -> qty
-let protocol = "acp";
-let session = null;       // { id, status, detail, delegate_token }
-let pollTimer = null;
-let payTimer = null;
+let running = false;
 
-/* ------------------------------------------------------------- helpers */
+/* ------------------------------------------------------------ terminal */
 
-function toast(msg, isErr) {
-  const el = document.createElement("div");
-  el.className = "toast" + (isErr ? " err" : "");
-  el.textContent = msg;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 4200);
+function stamp() {
+  return new Date().toLocaleTimeString("en-GB", { hour12: false });
 }
 
-async function api(path, opts) {
-  const res = await fetch(path, {
-    headers: { "Content-Type": "application/json" },
-    ...opts,
+function log(message, kind = "info") {
+  const line = document.createElement("div");
+  line.className = "ln " + kind;
+  line.innerHTML = `<span class="t">${stamp()}</span><span class="m">${message}</span>`;
+  $("term").appendChild(line);
+  $("term").scrollTop = $("term").scrollHeight;
+  return line;
+}
+
+/** A line that "thinks" briefly before the next one, so the log reads at
+ *  human pace instead of dumping all at once. */
+async function step(message, kind = "step", pause = 520) {
+  const line = log("&gt; " + message, kind);
+  await sleep(pause);
+  return line;
+}
+
+function setState(text, colour) {
+  $("termState").textContent = text;
+  $("termState").style.color = colour;
+}
+
+function clearTerminal() {
+  $("term").innerHTML = "";
+  $("termAsk").style.display = "none";
+}
+
+function cursor() {
+  return log('<span class="cursor"></span>', "quiet");
+}
+
+/** Ask the human, from inside the terminal, and wait for their answer. */
+function askHuman(question) {
+  return new Promise((resolve) => {
+    $("askText").innerHTML = question;
+    $("termAsk").style.display = "";
+    const done = (answer) => {
+      $("termAsk").style.display = "none";
+      $("askYes").removeEventListener("click", yes);
+      $("askNo").removeEventListener("click", no);
+      resolve(answer);
+    };
+    const yes = () => done(true);
+    const no = () => done(false);
+    $("askYes").addEventListener("click", yes);
+    $("askNo").addEventListener("click", no);
   });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || ("HTTP " + res.status));
-  return body;
-}
-
-function busy(btn, on, label) {
-  btn.disabled = on;
-  btn.innerHTML = on ? '<span class="spin"></span> ' + (label || "Working") : btn.dataset.label;
 }
 
 /* ---------------------------------------------------------------- boot */
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || "HTTP " + res.status);
+  return body;
+}
 
 async function boot() {
   const data = await api("/api/menu");
   MENU = data.items;
   MANDATE = data.mandate;
 
-  $("mandateStrip").innerHTML =
-    "<span>Merchant mandate &mdash;</span>" +
-    "<span>budget cap <b>" + rupee(MANDATE.budget_cap_inr) + "</b></span>" +
-    "<span>human confirmation from <b>" + rupee(MANDATE.human_confirm_threshold_inr) + "</b></span>" +
-    "<span>agent-orderable categories <b>" + MANDATE.allowed_categories.join(", ") + "</b></span>";
-
   const defaults = await api("/api/buyer-mandate-defaults");
-  $("spendCap").value = defaults.spend_cap_inr;
-  $("confirmAbove").value = defaults.confirm_above_inr;
-
-  $("agentId").value = "shopper-" + Math.random().toString(36).slice(2, 7);
-  renderMenu();
-  renderCart();
-  refreshTier();
-  setProtoNote();
-
-  for (const btn of document.querySelectorAll(".btn")) btn.dataset.label = btn.innerHTML;
+  $("hardCap").value = defaults.spend_cap_inr;
+  $("softCap").value = defaults.confirm_above_inr;
+  $("address").value = "Flat 402, Sunrise Apartments, Indiranagar";
 }
 
-function setProtoNote() {
-  $("protoNote").textContent = protocol === "acp"
-    ? "ACP (OpenAI + Stripe): one stateful checkout session, paid with a single-use delegate token."
-    : "AP2 (Google): a chain of signed mandates — Intent, then Cart, then Payment.";
-}
+const priceOf = (id) => (MENU.find((m) => m.id === id) || {}).price_inr || 0;
+const cartTotal = (items) => items.reduce((s, i) => s + priceOf(i.item_id) * i.qty, 0);
+const cartLabel = (items) =>
+  items.map((i) => `${i.qty}x ${titleize(i.item_id)}`).join(", ");
 
-/* ---------------------------------------------------------------- menu */
+/* ------------------------------------------------------- the agent run */
 
-function renderMenu() {
-  $("menuGrid").innerHTML = MENU.map((item) => {
-    const qty = cart[item.id] || 0;
-    return `
-      <div class="item ${item.agent_orderable ? "" : "blocked"}">
-        <div class="item-top">
-          <div>
-            <div class="item-name">${item.title}</div>
-            <div class="item-cat">${item.category.replace(/_/g, " ")}</div>
-          </div>
-          <div class="item-price">${rupee(item.price_inr)}</div>
-        </div>
-        ${item.agent_orderable
-          ? `<div class="stepper">
-               <button onclick="bump('${item.id}',-1)">&minus;</button>
-               <span class="qty">${qty}</span>
-               <button onclick="bump('${item.id}',1)">+</button>
-             </div>`
-          : `<div class="blocked-note">Not orderable by agents</div>
-             <div class="stepper">
-               <button onclick="bump('${item.id}',-1)">&minus;</button>
-               <span class="qty">${qty}</span>
-               <button onclick="bump('${item.id}',1)">+</button>
-             </div>`}
-      </div>`;
-  }).join("");
-}
+async function deploy() {
+  if (running) return;
+  running = true;
+  $("deployBtn").disabled = true;
+  $("deployBtn").textContent = "Agent running…";
+  clearTerminal();
+  setState("WAKING", "#e3b341");
 
-function bump(id, delta) {
-  const next = (cart[id] || 0) + delta;
-  if (next <= 0) delete cart[id];
-  else cart[id] = next;
-  renderMenu();
-  renderCart();
-}
+  const hardCap = parseInt($("hardCap").value, 10) || 0;
+  const softCap = parseInt($("softCap").value, 10) || 0;
+  const address = $("address").value.trim() || "(no address given)";
+  const prompt = $("command").value.trim();
 
-function renderCart() {
-  const ids = Object.keys(cart);
-  const total = ids.reduce((sum, id) => sum + MENU.find((m) => m.id === id).price_inr * cart[id], 0);
-
-  $("cartBox").innerHTML = ids.length === 0
-    ? '<div class="empty">Nothing selected yet.</div>'
-    : `<table>
-        <tbody>
-          ${ids.map((id) => {
-            const item = MENU.find((m) => m.id === id);
-            return `<tr>
-              <td>${cart[id]} &times; ${item.title}
-                ${item.agent_orderable ? "" : '<span class="badge badge-stop" style="margin-left:6px">blocked category</span>'}
-              </td>
-              <td class="right">${rupee(item.price_inr * cart[id])}</td>
-            </tr>`;
-          }).join("")}
-          <tr><td><b>Total</b></td><td class="right"><b>${rupee(total)}</b></td></tr>
-        </tbody>
-      </table>`;
-
-  $("submitBtn").disabled = ids.length === 0;
-}
-
-/* --------------------------------------------------------- trust tier */
-
-async function refreshTier() {
-  const id = $("agentId").value.trim();
-  if (!id) { $("tierLine").innerHTML = ""; return; }
-  const { agents } = await api("/api/agents");
-  const me = agents.find((a) => a.agent_id === id);
-  $("tierLine").innerHTML = me
-    ? `<span>Trust tier</span> <span class="badge ${me.tier === "TRUSTED" ? "badge-ok" : me.tier === "STANDARD" ? "badge-info" : "badge-mute"}">${me.tier}</span>
-       <span class="muted">&middot; ${me.completed} completed order(s) with this merchant</span>`
-    : `<span>Trust tier</span> <span class="badge badge-mute">NEW</span>
-       <span class="muted">&middot; no history with this merchant yet</span>`;
-}
-
-/* ------------------------------------------------------------ ordering */
-
-/* Step one is always the buyer's OWN gate. Only a cart the customer has
-   authorised is allowed to reach a merchant at all. */
-async function submitOrder() {
-  const agentId = $("agentId").value.trim();
-  if (!agentId) return toast("Give your agent an identity first.", true);
-
-  const items = Object.entries(cart).map(([item_id, qty]) => ({ item_id, qty }));
-
-  busy($("submitBtn"), true, "Checking your limits");
-  let gate;
   try {
-    gate = await api("/api/buyer-check", {
+    if (!prompt) throw new Error("You didn't say what to buy.");
+
+    setState("RUNNING", "#56d364");
+    await step(`Human mandate locked: hard cap <b>${rupee(hardCap)}</b>, ask above <b>${rupee(softCap)}</b>.`, "head", 620);
+    await step(`Card on file ****1007 authorised for autonomous payment under the hard cap.`, "quiet", 480);
+    await step(`Delivering to: ${address}`, "quiet", 420);
+    await step(`Reading human prompt: "${prompt}"`, "info", 620);
+
+    // ---- 1. natural language -> structured cart (real Claude call) ----
+    await step("Calling Claude to interpret this into a structured cart…", "step", 320);
+    const thinking = cursor();
+    let items;
+    try {
+      items = (await api("/api/parse-cart", { method: "POST", body: JSON.stringify({ text: prompt }) })).items;
+    } catch (err) {
+      thinking.remove();
+      log("&gt; Claude unavailable: " + err.message, "err");
+      log("&gt; Cannot draft a cart without interpreting the request. Stopping.", "err");
+      setState("STOPPED", "#f85149");
+      return;
+    }
+    thinking.remove();
+
+    const total = cartTotal(items);
+    await step(`Draft cart: <b>${cartLabel(items)}</b>. Estimated <b>${rupee(total)}</b>.`, "info", 620);
+
+    // ---- 2. the buyer's OWN mandate, before contacting anyone ----------
+    await step("Checking against my own mandate before contacting any merchant…", "step", 480);
+    const gate = await api("/api/buyer-check", {
+      method: "POST",
+      body: JSON.stringify({ items, spend_cap_inr: hardCap, confirm_above_inr: softCap }),
+    });
+
+    if (gate.decision === "REFUSE") {
+      log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks my mandate: ${gate.reason}.`, "err");
+      log("&gt; Amma's Kitchen was never contacted. This was not her decision to make.", "err");
+      setState("REFUSED", "#f85149");
+      return;
+    }
+
+    if (gate.decision === "ASK_USER") {
+      log(`&gt; ${rupee(gate.total_inr)} is at or above your soft cap. Coming back to you.`, "warn");
+      const approved = await askHuman(
+        `This costs <b>${rupee(gate.total_inr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
+      );
+      if (!approved) {
+        log("&gt; You declined. Nothing was sent to Amma's Kitchen.", "err");
+        setState("CANCELLED", "#f85149");
+        return;
+      }
+      log("&gt; You approved. Proceeding.", "ok");
+    } else {
+      await step(`${rupee(total)} is inside your ${rupee(hardCap)} mandate. Cleared, no need to disturb you.`, "ok", 520);
+    }
+
+    // ---- 3. pick a protocol and open contact --------------------------
+    await step("Selecting <b>AP2</b> — its mandate chain matches a pre-authorised card-on-file flow.", "step", 620);
+    await step("Initiating contact with Amma's Kitchen AI…", "step", 480);
+
+    let mandate = (await api("/ap2/intent-mandates", {
       method: "POST",
       body: JSON.stringify({
-        items,
-        spend_cap_inr: parseInt($("spendCap").value, 10) || 0,
-        confirm_above_inr: parseInt($("confirmAbove").value, 10) || 0,
+        agent_id: AGENT_ID,
+        intent: { items, auto_confirm_limit_inr: softCap },
       }),
-    });
+    })).intent_mandate;
+
+    log(`&gt; Intent Mandate opened. Amma's AI sees me as trust tier <b>${mandate.decision_detail.trust_tier}</b>.`, "quiet");
+    mandate = await handleMerchantResponse(mandate, hardCap, softCap);
+    if (!mandate) return;
+
+    // ---- 4. settle ----------------------------------------------------
+    await settle(mandate, hardCap);
   } catch (err) {
-    busy($("submitBtn"), false);
-    return toast(err.message, true);
-  }
-  busy($("submitBtn"), false);
-
-  renderBuyerGate(gate);
-  if (gate.decision === "REFUSE") return;           // never leaves your side
-  if (gate.decision === "ASK_USER") return;          // wait for the customer
-  await sendToMerchant(items);
-}
-
-function renderBuyerGate(gate) {
-  $("buyerGateCard").style.display = "";
-  $("outcomeCard").style.display = "none";
-
-  if (gate.decision === "PROCEED") {
-    $("buyerGateBox").innerHTML = `
-      <div class="result approve">
-        <div class="result-head">
-          <span class="badge badge-ok">WITHIN YOUR MANDATE</span>
-          <span class="muted">${rupee(gate.total_inr)}</span>
-        </div>
-        <div class="result-reason">${gate.reason} — sending to Amma's Kitchen.</div>
-      </div>`;
-    return;
-  }
-
-  if (gate.decision === "REFUSE") {
-    $("buyerGateBox").innerHTML = `
-      <div class="result rejected">
-        <div class="result-head">
-          <span class="badge badge-stop">YOUR AGENT REFUSED</span>
-          <span class="muted">${rupee(gate.total_inr)}</span>
-        </div>
-        <div class="result-reason">${gate.reason}.</div>
-      </div>
-      <p class="note">
-        Amma's Kitchen was never contacted, and has no record of this — it was never
-        her decision to make. Raise your own cap above, or order less.
-      </p>`;
-    return;
-  }
-
-  // ASK_USER — the customer themselves has to say yes.
-  $("buyerGateBox").innerHTML = `
-    <div class="result escalate">
-      <div class="result-head">
-        <span class="badge badge-warn">YOUR APPROVAL NEEDED</span>
-        <span class="muted">${rupee(gate.total_inr)}</span>
-      </div>
-      <div class="result-reason">${gate.reason}.</div>
-    </div>
-    <p class="note">
-      You are the customer here, not the merchant. Nothing has been sent to Amma yet.
-    </p>
-    <div class="btn-row" style="margin-top:12px">
-      <button class="btn" id="buyerApproveBtn">Yes, go ahead and ask Amma</button>
-      <button class="btn btn-ghost" id="buyerCancelBtn">No, cancel</button>
-    </div>`;
-
-  $("buyerApproveBtn").dataset.label = $("buyerApproveBtn").innerHTML;
-  $("buyerApproveBtn").addEventListener("click", async () => {
-    busy($("buyerApproveBtn"), true, "Sending");
-    const items = Object.entries(cart).map(([item_id, qty]) => ({ item_id, qty }));
-    await sendToMerchant(items);
-    $("buyerGateBox").innerHTML = `
-      <div class="result approve">
-        <div class="result-head"><span class="badge badge-ok">YOU APPROVED IT</span></div>
-        <div class="result-reason">Sent to Amma's Kitchen — her own rules apply next.</div>
-      </div>`;
-  });
-  $("buyerCancelBtn").addEventListener("click", () => {
-    $("buyerGateBox").innerHTML = `
-      <div class="result rejected">
-        <div class="result-head"><span class="badge badge-stop">YOU CANCELLED IT</span></div>
-        <div class="result-reason">Nothing was sent to Amma's Kitchen.</div>
-      </div>`;
-  });
-}
-
-async function sendToMerchant(items) {
-  const agentId = $("agentId").value.trim();
-  busy($("submitBtn"), true, "Negotiating");
-
-  try {
-    if (protocol === "acp") {
-      const res = await api("/acp/checkout_sessions", {
-        method: "POST",
-        body: JSON.stringify({ agent_id: agentId, items }),
-      });
-      session = { id: res.session_id, status: res.status, detail: res.decision_detail, token: res.delegate_token };
-    } else {
-      const res = await api("/ap2/intent-mandates", {
-        method: "POST",
-        body: JSON.stringify({ agent_id: agentId, intent: { items, auto_confirm_limit_inr: 250 } }),
-      });
-      const m = res.intent_mandate;
-      session = { id: m.id, status: m.status, detail: m.decision_detail, token: null };
-    }
-    renderOutcome();
-    refreshTier();
-  } catch (err) {
-    toast(err.message, true);
+    log("&gt; " + err.message, "err");
+    setState("ERROR", "#f85149");
   } finally {
-    busy($("submitBtn"), false);
+    running = false;
+    $("deployBtn").disabled = false;
+    $("deployBtn").textContent = "Deploy Agent";
   }
 }
 
-const READY = (s) => s === "ready_for_payment" || s === "cart_ready";
+/** Deal with whatever the merchant said back: approve, counter, escalate. */
+async function handleMerchantResponse(mandate, hardCap, softCap) {
+  const d = mandate.decision_detail;
 
-function renderOutcome() {
-  $("outcomeCard").style.display = "";
-  const d = session.detail;
-  const decision = d.decision;
-
-  const tone = decision === "APPROVE" ? "approve"
-    : decision === "COUNTER_OFFER" ? "counter"
-    : decision === "REJECTED" ? "rejected" : "escalate";
-  const badge = decision === "APPROVE" ? "badge-ok"
-    : decision === "REJECTED" ? "badge-stop" : "badge-warn";
-
-  let html = `
-    <div class="result ${tone}">
-      <div class="result-head">
-        <span class="badge ${badge}">${decision.replace("_", " ")}</span>
-        <span class="proto">${protocol.toUpperCase()}</span>
-        <span class="muted">${rupee(d.total_inr)}</span>
-      </div>
-      <div class="result-reason">${d.reason}</div>
-    </div>`;
-
-  // Counter-offer: pick an alternative.
-  if (decision === "COUNTER_OFFER" && d.alternatives.length) {
-    html += `<h2 style="margin-top:20px">Alternatives that fit</h2>`;
-    html += d.alternatives.map((alt, i) => {
-      const label = alt.map((l) => `${l.qty} × ${l.item.replace(/_/g, " ")}`).join(", ");
-      return `<div class="alt">
-                <div>${label}</div>
-                <button class="btn btn-sm" onclick="takeAlternative(${i})">Take this</button>
-              </div>`;
-    }).join("");
+  if (d.decision === "COUNTER_OFFER" && d.alternatives.length) {
+    log(`&gt; Amma countered: ${d.reason}.`, "warn");
+    const alt = d.alternatives[0];
+    const altLabel = alt.map((l) => `${l.qty}x ${titleize(l.item)}`).join(", ");
+    await step(`Her best alternative: ${altLabel}. Taking it.`, "step", 520);
+    mandate = (await api(`/ap2/intent-mandates/${mandate.id}/accept-alternative`, {
+      method: "POST", body: JSON.stringify({ index: 0 }),
+    })).intent_mandate;
   }
 
-  // Escalation: wait on a human.
-  if (session.status === "requires_human") {
-    html += `
-      <div class="card" style="margin-top:18px; background:var(--warn-soft); border-color:#f0dcb4">
-        <div class="live"><span class="dot"></span> Waiting for Amma to decide &mdash; this screen updates itself</div>
-        <p class="note" style="margin-top:8px">
-          Nothing has been sent to Razorpay. Open the
-          <a href="/merchant" target="_blank">merchant console</a> to act on it.
-        </p>
-      </div>`;
-    startPolling();
-  }
-
-  // Approved: upsell, then pay.
-  if (READY(session.status)) {
-    stopPolling();
-    if (d.upsell_suggestion) {
-      const u = d.upsell_suggestion;
-      html += `
-        <div class="alt" style="margin-top:18px; background:var(--accent-soft); border-color:var(--accent-line)">
-          <div>
-            <b>Amma suggests adding ${u.item.replace(/_/g, " ")}</b>
-            <div class="note" style="margin:2px 0 0">
-              ${rupee(u.price_inr)} &mdash; the bigger cart is re-checked against the mandate, not waved through.
-            </div>
-          </div>
-          <button class="btn btn-sm" onclick="takeUpsell()">Add it</button>
-        </div>`;
+  if (mandate.status === "requires_human") {
+    log(`&gt; Amma's AI escalated this to her: ${mandate.decision_detail.reason}.`, "warn");
+    log("&gt; Nothing has been charged. Waiting for her decision…", "quiet");
+    setState("WAITING ON MERCHANT", "#e3b341");
+    mandate = await waitForMerchant(mandate.id);
+    if (mandate.status === "rejected") {
+      log("&gt; Amma declined the order. Closing out — no payment was attempted.", "err");
+      setState("DECLINED", "#f85149");
+      return null;
     }
-    html += `
-      <div class="btn-row" style="margin-top:18px">
-        <button class="btn btn-ok" id="payBtn" onclick="pay()">Pay ${rupee(d.total_inr)} with Razorpay</button>
-      </div>
-      <div id="payState"></div>`;
+    log("&gt; Amma approved it.", "ok");
+    setState("RUNNING", "#56d364");
   }
 
-  if (decision === "REJECTED") {
-    stopPolling();
-    html += `<p class="note">Amma declined this order. It is closed, and no payment was ever attempted.</p>`;
-  }
+  // Upsell, if she offered one.
+  const upsell = mandate.decision_detail.upsell_suggestion;
+  if (upsell) {
+    const newTotal = mandate.decision_detail.total_inr + upsell.price_inr;
+    const because = upsell.basis === "bought together before"
+      ? "people who ordered this bought it too"
+      : "best value that still fits";
+    log(`&gt; She suggests adding ${titleize(upsell.item)} (${rupee(upsell.price_inr)}) — ${because}.`, "quiet");
 
-  $("outcomeBox").innerHTML = html;
-  for (const btn of document.querySelectorAll(".btn")) if (!btn.dataset.label) btn.dataset.label = btn.innerHTML;
-}
-
-async function takeAlternative(index) {
-  const path = protocol === "acp"
-    ? `/acp/checkout_sessions/${session.id}/accept_alternative`
-    : `/ap2/intent-mandates/${session.id}/accept-alternative`;
-  const res = await api(path, { method: "POST", body: JSON.stringify({ index }) });
-  absorb(res);
-  renderOutcome();
-}
-
-async function takeUpsell() {
-  const path = protocol === "acp"
-    ? `/acp/checkout_sessions/${session.id}/accept_upsell`
-    : `/ap2/intent-mandates/${session.id}/accept-upsell`;
-  try {
-    const res = await api(path, { method: "POST" });
-    absorb(res);
-    renderOutcome();
-    toast("Added — and re-checked against the mandate.");
-  } catch (err) { toast(err.message, true); }
-}
-
-function absorb(res) {
-  if (res.intent_mandate) {
-    const m = res.intent_mandate;
-    session = { id: m.id, status: m.status, detail: m.decision_detail, token: null };
-  } else {
-    session = { id: res.session_id, status: res.status, detail: res.decision_detail, token: res.delegate_token };
-  }
-}
-
-/* ----------------------------------------------- waiting on the human */
-
-function startPolling() {
-  stopPolling();
-  pollTimer = setInterval(async () => {
-    try {
-      const path = protocol === "acp"
-        ? `/acp/checkout_sessions/${session.id}`
-        : `/ap2/intent-mandates/${session.id}`;
-      const res = await api(path);
-      const prev = session.status;
-      absorb(res);
-      if (session.status !== prev) {
-        renderOutcome();
-        toast(READY(session.status) ? "Amma approved it." : "Amma has responded.");
-      }
-    } catch (_) { /* keep waiting */ }
-  }, 2000);
-}
-
-function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
-
-/* ---------------------------------------------------------------- pay */
-
-async function pay() {
-  const btn = $("payBtn");
-  busy(btn, true, "Creating payment");
-  try {
-    let link, linkId;
-    if (protocol === "acp") {
-      const res = await api(`/acp/checkout_sessions/${session.id}/complete`, {
-        method: "POST",
-        body: JSON.stringify({ delegate_token: session.token }),
-      });
-      link = res.payment_link_url; linkId = res.payment_link_id;
+    if (newTotal <= hardCap) {
+      await step(`${rupee(newTotal)} still inside your ${rupee(hardCap)} cap. Accepting.`, "ok", 520);
+      mandate = (await api(`/ap2/intent-mandates/${mandate.id}/accept-upsell`, { method: "POST" })).intent_mandate;
+      log(`&gt; Cart now <b>${rupee(mandate.decision_detail.total_inr)}</b>, re-checked against her rules.`, "quiet");
     } else {
-      const cart = await api(`/ap2/intent-mandates/${session.id}/cart-mandate`, { method: "POST" });
-      const pm = await api(`/ap2/cart-mandates/${cart.cart_mandate.id}/payment-mandate`, { method: "POST" });
-      link = pm.payment_mandate.payment_link_url; linkId = pm.payment_mandate.payment_link_id;
+      log(`&gt; ${rupee(newTotal)} would breach your cap. Declining it.`, "quiet");
     }
+  }
 
-    window.open(link, "_blank");
-    $("payState").innerHTML = `
-      <div class="card" style="margin-top:14px">
-        <div class="live"><span class="dot"></span> Waiting for Razorpay to confirm capture</div>
-        <p class="note" style="margin-top:8px">
-          Paying in the tab that just opened. Test card <span class="mono">4100 2800 0000 1007</span>,
-          any future expiry and CVV, any 4&ndash;10 digit OTP.
-          <br>If the tab didn't open: <a href="${link}" target="_blank">${link}</a>
-        </p>
-      </div>`;
-    btn.style.display = "none";
-    watchPayment(linkId);
-  } catch (err) {
-    toast(err.message, true);
-    busy(btn, false);
+  return mandate;
+}
+
+async function waitForMerchant(intentId) {
+  while (true) {
+    await sleep(2000);
+    const m = (await api(`/ap2/intent-mandates/${intentId}`)).intent_mandate;
+    if (m.status !== "requires_human") return m;
   }
 }
 
-function watchPayment(linkId) {
-  if (payTimer) clearInterval(payTimer);
-  payTimer = setInterval(async () => {
-    try {
-      const { status } = await api("/api/payment-status/" + linkId);
-      if (status === "paid") {
-        clearInterval(payTimer);
-        $("payState").innerHTML = `
-          <div class="card" style="margin-top:14px; background:var(--ok-soft); border-color:#bfe3cd">
-            <b style="color:var(--ok)">Payment captured.</b>
-            <p class="note" style="margin-top:6px">
-              Recorded in the <a href="/audit" target="_blank">audit trail</a>. Order again and your
-              trust tier rises &mdash; which widens how far Amma will negotiate, never her hard limits.
-            </p>
-          </div>`;
-        toast("Paid. Trust tier updated.");
-        refreshTier();
-      }
-    } catch (_) { /* keep watching */ }
-  }, 3000);
+async function settle(mandate, hardCap) {
+  const total = mandate.decision_detail.total_inr;
+  await step(`Locking Cart Mandate at <b>${rupee(total)}</b>…`, "step", 520);
+  const cart = (await api(`/ap2/intent-mandates/${mandate.id}/cart-mandate`, { method: "POST" })).cart_mandate;
+
+  await step("Presenting Payment Mandate to Razorpay…", "step", 520);
+  const pm = (await api(`/ap2/cart-mandates/${cart.id}/payment-mandate`, { method: "POST" })).payment_mandate;
+  log(`&gt; Payment Mandate ${pm.id.slice(0, 10)}… bound to hash ${pm.matched_mandate_hash.slice(0, 12)}…`, "quiet");
+
+  setState("AWAITING CAPTURE", "#e3b341");
+  log(`&gt; Card ****1007 authorised up to ${rupee(hardCap)}; this is ${rupee(total)}. Opening checkout.`, "info");
+  window.open(pm.payment_link_url, "_blank");
+  log(`&gt; <a href="${pm.payment_link_url}" target="_blank" style="color:#79c0ff">${pm.payment_link_url}</a>`, "quiet");
+  log("&gt; (test card 4100 2800 0000 1007, any future expiry/CVV, any 4-10 digit OTP)", "quiet");
+
+  const dots = cursor();
+  while (true) {
+    await sleep(3000);
+    const { status } = await api("/api/payment-status/" + pm.payment_link_id);
+    if (status === "paid") {
+      dots.remove();
+      log(`&gt; <b>Payment captured. ${rupee(total)} settled.</b>`, "ok");
+      log("&gt; Order placed. My work here is done.", "ok");
+      setState("COMPLETE", "#56d364");
+      return;
+    }
+    if (status === "cancelled" || status === "expired") {
+      dots.remove();
+      log(`&gt; Payment link ${status}. Nothing was charged.`, "err");
+      setState("NOT PAID", "#f85149");
+      return;
+    }
+  }
 }
 
 /* -------------------------------------------------------------- events */
 
-$("protoSeg").addEventListener("click", (e) => {
-  const btn = e.target.closest("button");
-  if (!btn) return;
-  protocol = btn.dataset.proto;
-  for (const b of $("protoSeg").children) b.setAttribute("aria-pressed", String(b === btn));
-  session = null; stopPolling();
-  $("outcomeCard").style.display = "none";
-  $("buyerGateCard").style.display = "none";
-  setProtoNote();
-});
+const AGENT_ID = "agent-" + Math.random().toString(36).slice(2, 7);
 
-$("parseBtn").addEventListener("click", async () => {
-  const text = $("nlText").value.trim();
-  if (!text) return toast("Type what you'd like first.", true);
-  busy($("parseBtn"), true, "Reading");
-  try {
-    const { items } = await api("/api/parse-cart", { method: "POST", body: JSON.stringify({ text }) });
-    cart = {};
-    for (const it of items) cart[it.item_id] = it.qty;
-    renderMenu(); renderCart();
-    toast("Claude read that as " + items.map((i) => i.qty + " × " + i.item_id.replace(/_/g, " ")).join(", "));
-  } catch (err) {
-    toast(err.message + " — use the menu below instead.", true);
-  } finally {
-    busy($("parseBtn"), false);
-  }
-});
-
-$("submitBtn").addEventListener("click", submitOrder);
-$("clearBtn").addEventListener("click", () => {
-  cart = {}; session = null; stopPolling();
-  $("outcomeCard").style.display = "none";
-  renderMenu(); renderCart();
-});
-$("agentId").addEventListener("change", refreshTier);
-
+$("deployBtn").addEventListener("click", deploy);
 boot();
 </script>
 </body>
