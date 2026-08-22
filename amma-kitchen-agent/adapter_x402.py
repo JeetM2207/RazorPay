@@ -153,6 +153,17 @@ def _negotiate(agent_id: str, cart: list[tuple[str, int]]) -> dict:
         "detail": detail,
         "status": _STATUS_FOR_DECISION[detail["decision"]],
     }
+
+    if _ORDERS[order_id]["status"] == "requires_human":
+        # Isolated and swallowed: a notification problem must never stop
+        # an order being recorded or resolvable through the console.
+        try:
+            import escalations
+
+            escalations.notify("x402", order_id, detail, cart)
+        except Exception:
+            pass
+
     return order_id
 
 

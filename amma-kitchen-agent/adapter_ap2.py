@@ -74,6 +74,17 @@ def _apply_intent_decision(intent_id: str, cart: list[tuple[str, int]]) -> dict:
     mandate["cart"] = cart
     mandate["detail"] = detail
     mandate["status"] = _STATUS_FOR_DECISION[detail["decision"]]
+
+    if mandate["status"] == "requires_human":
+        # Isolated and swallowed: a notification problem must never stop
+        # an order being recorded or resolvable through the console.
+        try:
+            import escalations
+
+            escalations.notify("ap2", intent_id, detail, cart)
+        except Exception:
+            pass
+
     return _intent_view(intent_id)
 
 

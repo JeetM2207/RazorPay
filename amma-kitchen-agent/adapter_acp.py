@@ -64,6 +64,18 @@ class HumanConfirmRequest(BaseModel):
     items: list[CartItemIn] | None = None
 
 
+def _notify_merchant(session_id: str, detail: dict, cart: list[tuple[str, int]]) -> None:
+    """Text Amma about an escalation. Isolated and swallowed on purpose:
+    a notification problem must never stop an order being recorded or
+    resolvable through the web console."""
+    try:
+        import escalations
+
+        escalations.notify("acp", session_id, detail, cart)
+    except Exception:
+        pass
+
+
 def _apply_decision(session_id: str, cart: list[tuple[str, int]]) -> dict:
     session = _SESSIONS[session_id]
     session.pop("human_overridden", None)
@@ -72,6 +84,9 @@ def _apply_decision(session_id: str, cart: list[tuple[str, int]]) -> dict:
     session["detail"] = detail
     status = _STATUS_FOR_DECISION[detail["decision"]]
     session["status"] = status
+
+    if status == "requires_human":
+        _notify_merchant(session_id, detail, cart)
 
     delegate_token = None
     if status == "ready_for_payment":

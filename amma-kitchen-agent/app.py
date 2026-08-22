@@ -34,6 +34,8 @@ import audit_log
 import buyer_mandate
 import catalog
 import dashboard
+import escalations
+import notification_service
 import trust
 import webhook_handler
 from mandate import MANDATE, MENU
@@ -46,6 +48,7 @@ app.include_router(adapter_acp.router)
 app.include_router(adapter_ap2.router)
 app.include_router(adapter_x402.router)
 app.include_router(webhook_handler.router)
+app.include_router(escalations.router)
 app.include_router(catalog.router)
 app.include_router(dashboard.router)
 
@@ -190,6 +193,17 @@ def pending() -> dict:
     ap2 = adapter_ap2.list_intent_mandates(status="requires_human")["sessions"]
     x402 = adapter_x402.list_orders(status="requires_human")["sessions"]
     return {"pending": acp + ap2 + x402}
+
+
+@app.get("/api/sms")
+def sms_state() -> dict:
+    """What the merchant console shows in place of a real phone: the
+    messages that went out, and what is still awaiting a reply."""
+    return {
+        "transport": "twilio" if notification_service.TWILIO_CONFIGURED else "mock",
+        "outbox": notification_service.outbox(),
+        "escalations": escalations.pending(),
+    }
 
 
 @app.get("/api/agents")
