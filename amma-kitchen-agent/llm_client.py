@@ -44,6 +44,7 @@ def call_with_forced_tool(
     }
     response = _client.chat.completions.create(
         model=MODEL,
+        max_tokens=300,
         messages=[{"role": "user", "content": user_text}],
         tools=[tool],
         tool_choice={"type": "function", "function": {"name": tool_name}},
