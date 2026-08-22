@@ -150,6 +150,39 @@ def test_human_confirm_rejected_when_session_not_awaiting_confirmation(client, m
     assert resp.status_code == 409
 
 
+def test_mandate_violation_is_refused_before_any_razorpay_call(client, monkeypatch):
+    """Build order step 8's core claim, asserted rather than narrated.
+
+    party_catering_tray is affordable and in stock; only its category
+    makes it unsellable to an agent. Nothing may reach Razorpay for it.
+    """
+    called = []
+    monkeypatch.setattr(
+        adapter_acp.orchestrator.razorpay_client,
+        "create_payment_link",
+        lambda **kwargs: called.append(kwargs) or {"id": "x", "short_url": "x"},
+    )
+
+    body = client.post(
+        "/acp/checkout_sessions",
+        json={"agent_id": "buyer-violator", "items": [{"item_id": "party_catering_tray", "qty": 1}]},
+    ).json()
+
+    assert body["status"] == "requires_human"
+    assert "category not allowed: bulk_catering" in body["decision_detail"]["reason"]
+    assert body["delegate_token"] is None
+    assert called == [], "Razorpay was called for an order the mandate forbids"
+
+    # Not even a human may wave a hard category rule through.
+    assert client.post(f"/acp/checkout_sessions/{body['session_id']}/human_confirm").status_code == 403
+
+    # And the audit trail carries no payment reference for it.
+    events = audit_log.get_events_for_agent("buyer-violator", db_path=audit_log.DEFAULT_DB_PATH)
+    assert events[0]["payment_link_id"] is None
+    assert events[0]["payment_id"] is None
+    assert called == []
+
+
 def test_human_confirm_with_reduced_cart_approves_the_smaller_order(client, monkeypatch):
     _mock_payment_link(monkeypatch, link_id="plink_reduced", short_url="https://rzp.io/rzp/reduced")
 

@@ -29,6 +29,10 @@ def get_catalog() -> dict:
                 "currency": "INR",
                 "availability": "in_stock" if item.stock > 0 else "out_of_stock",
                 "stock": item.stock,
+                # Published honestly: some items the merchant genuinely
+                # sells are still not orderable by an autonomous agent.
+                # Saying so here saves the agent a wasted round-trip.
+                "agent_orderable": item.category in MANDATE.allowed_categories,
             }
             for item in MENU.values()
         ],

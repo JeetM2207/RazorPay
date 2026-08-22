@@ -5,7 +5,7 @@ for how much, and how far it can bend, lives here. Nothing else should
 hardcode these numbers.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
@@ -17,12 +17,19 @@ class MenuItem:
 
 
 # Today's menu/inventory. Prices are illustrative test-mode numbers.
+#
+# Note party_catering_tray: Amma's Kitchen genuinely sells bulk catering,
+# but never lets an autonomous agent book it -- those orders need a human
+# conversation about headcount, date and dietary needs first. Its category
+# is deliberately absent from Mandate.allowed_categories below, which is
+# what makes it unsellable to an agent regardless of price or stock.
 MENU: dict[str, MenuItem] = {
     "veg_thali": MenuItem("veg_thali", "meals", 150, stock=20),
     "chicken_biryani": MenuItem("chicken_biryani", "meals", 220, stock=15),
     "masala_dosa": MenuItem("masala_dosa", "snacks", 80, stock=25),
     "filter_coffee": MenuItem("filter_coffee", "beverages", 30, stock=50),
     "gulab_jamun": MenuItem("gulab_jamun", "desserts", 60, stock=30),
+    "party_catering_tray": MenuItem("party_catering_tray", "bulk_catering", 350, stock=5),
 }
 
 

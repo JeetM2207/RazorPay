@@ -57,6 +57,27 @@ def test_escalate_on_disallowed_category():
     assert "category not allowed" in result.reason
 
 
+def test_escalate_on_real_menu_item_in_disallowed_category():
+    # party_catering_tray is Rs.350: comfortably under the Rs.500 cap AND
+    # under the Rs.400 human-confirm threshold, and in stock. The ONLY
+    # reason it is refused is its category, which proves category gating
+    # is doing the work here rather than price or availability.
+    result = evaluate([("party_catering_tray", 1)])
+    assert result.decision == Decision.ESCALATE
+    assert "category not allowed: bulk_catering" in result.reason
+    assert result.total_inr < MANDATE.human_confirm_threshold_inr
+
+
+def test_upsell_never_suggests_a_disallowed_category_item():
+    # party_catering_tray (Rs.350) would otherwise be the priciest item
+    # fitting the headroom on a small cart -- it must still never be
+    # offered, because agents cannot buy that category at all.
+    suggestion = suggest_upsell([("filter_coffee", 1)])
+    assert suggestion is not None
+    assert suggestion.name != "party_catering_tray"
+    assert suggestion.category in MANDATE.allowed_categories
+
+
 def test_escalate_on_unknown_item():
     result = evaluate([("mystery_item", 1)])
     assert result.decision == Decision.ESCALATE
