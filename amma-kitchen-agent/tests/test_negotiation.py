@@ -110,6 +110,67 @@ def test_upsell_respects_tight_headroom():
     assert suggestion.name == "gulab_jamun"
 
 
+def test_upsell_prefers_what_was_actually_bought_together():
+    # Without history the priciest fitting item (chicken_biryani, Rs.220)
+    # wins; with history saying gulab_jamun co-occurs, that wins instead.
+    assert suggest_upsell([("masala_dosa", 1)]).name == "chicken_biryani"
+    assert (
+        suggest_upsell([("masala_dosa", 1)], ranked_addons=["gulab_jamun"]).name
+        == "gulab_jamun"
+    )
+
+
+def test_history_can_never_introduce_an_item_that_breaks_the_threshold():
+    """The important guarantee: popularity only REORDERS candidates that
+    already passed the mandate's limits. A frequently-bought item that
+    would push the order to the human-confirm threshold is still refused."""
+    # veg_thali + masala_dosa + filter_coffee = Rs.260; headroom to the
+    # Rs.400 threshold is Rs.139, so chicken_biryani (Rs.220) cannot fit.
+    cart = [("veg_thali", 1), ("masala_dosa", 1), ("filter_coffee", 1)]
+    suggestion = suggest_upsell(cart, ranked_addons=["chicken_biryani", "gulab_jamun"])
+    assert suggestion.name == "gulab_jamun"
+    assert MENU[suggestion.name].price_inr + 260 < MANDATE.human_confirm_threshold_inr
+
+
+def test_history_cannot_introduce_a_disallowed_category():
+    # Even if catering were the most co-bought item in history, agents
+    # may not order that category at all.
+    suggestion = suggest_upsell([("masala_dosa", 1)], ranked_addons=["party_catering_tray"])
+    assert suggestion.name != "party_catering_tray"
+    assert suggestion.category in MANDATE.allowed_categories
+
+
+def test_unknown_names_in_history_are_ignored_not_crashed_on():
+    # An item that has since left the menu must not break the suggestion.
+    suggestion = suggest_upsell([("masala_dosa", 1)], ranked_addons=["discontinued_item"])
+    assert suggestion is not None
+    assert suggestion.name == "chicken_biryani"
+
+
+def test_suggest_upsell_stays_pure_and_deterministic():
+    """Same inputs, same answer -- no database, no clock, no I/O."""
+    cart = [("masala_dosa", 1)]
+    ranked = ["gulab_jamun"]
+    assert suggest_upsell(cart, ranked_addons=ranked).name == suggest_upsell(
+        cart, ranked_addons=ranked
+    ).name
+
+    import ast
+
+    import negotiation
+
+    with open(negotiation.__file__) as f:
+        tree = ast.parse(f.read())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(alias.name.split(".")[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+    assert "audit_log" not in imported, "the decision core must not read the database"
+    assert "sqlite3" not in imported
+
+
 def test_upsell_returns_none_when_no_headroom_left():
     # chicken_biryani + veg_thali + filter_coffee = 220+150+30 = 400,
     # already at the human-confirm threshold -- no room to suggest anything.

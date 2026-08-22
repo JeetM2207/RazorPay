@@ -105,6 +105,52 @@ def get_events_for_agent(agent_id: str, db_path: str = DEFAULT_DB_PATH) -> list[
         return [dict(row) for row in rows]
 
 
+def get_frequent_addons(
+    cart_items: list[str], db_path: str = DEFAULT_DB_PATH, limit: int = 5
+) -> list[str]:
+    """Item names most often bought ALONGSIDE the given items, in orders
+    that were actually paid for -- ranked most frequent first.
+
+    This is the evidence behind a predictive upsell. It only reads history
+    and returns names; it decides nothing. The caller (negotiation.py)
+    still applies the mandate's limits to whatever comes back, so a
+    popular item that would breach a threshold is never suggested.
+
+    "Successful" means payment_id IS NOT NULL -- money genuinely arrived.
+    An order that was approved but abandoned at checkout is not evidence
+    that anyone wanted the combination.
+    """
+    if not cart_items:
+        return []
+    init_db(db_path)
+
+    slots = ",".join("?" * len(cart_items))
+    sql = f"""
+        WITH paid AS (
+            SELECT id, cart_json FROM audit_events WHERE payment_id IS NOT NULL
+        ),
+        expanded AS (
+            SELECT paid.id AS order_id,
+                   json_extract(line.value, '$.item') AS item_name
+            FROM paid, json_each(paid.cart_json) AS line
+        ),
+        anchored AS (
+            SELECT DISTINCT order_id FROM expanded WHERE item_name IN ({slots})
+        )
+        SELECT expanded.item_name, COUNT(DISTINCT expanded.order_id) AS orders
+        FROM expanded
+        JOIN anchored ON anchored.order_id = expanded.order_id
+        WHERE expanded.item_name NOT IN ({slots})
+        GROUP BY expanded.item_name
+        -- item_name breaks ties so the ranking is stable, not arbitrary
+        ORDER BY orders DESC, expanded.item_name ASC
+        LIMIT ?
+    """
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(sql, (*cart_items, *cart_items, limit)).fetchall()
+    return [row[0] for row in rows]
+
+
 def get_all_events(db_path: str = DEFAULT_DB_PATH, limit: int = 200) -> list[dict]:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:

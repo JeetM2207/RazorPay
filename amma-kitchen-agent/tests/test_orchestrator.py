@@ -26,6 +26,34 @@ def test_negotiate_and_record_includes_upsell_only_on_approve(tmp_path, monkeypa
     assert "upsell_suggestion" not in escalated
 
 
+def test_upsell_becomes_predictive_once_history_exists(tmp_path, monkeypatch):
+    """End to end: the orchestrator reads co-purchase history and the
+    suggestion changes from best-value to what people actually buy."""
+    db_path = str(tmp_path / "audit.db")
+    monkeypatch.setattr(audit_log, "DEFAULT_DB_PATH", db_path)
+
+    cold = orchestrator.negotiate_and_record("pred-1", "acp", [("masala_dosa", 1)])
+    assert cold["upsell_suggestion"]["item"] == "chicken_biryani"
+    assert cold["upsell_suggestion"]["basis"] == "best value that fits"
+
+    # Three paid orders where masala_dosa went out with filter_coffee.
+    for _ in range(3):
+        event_id = audit_log.record_event(
+            agent_id="past-buyer",
+            protocol="acp",
+            cart=[{"item": "masala_dosa", "qty": 1}, {"item": "filter_coffee", "qty": 1}],
+            decision="APPROVE",
+            reason="within budget",
+            total_inr=110,
+            db_path=db_path,
+        )
+        audit_log.mark_paid(event_id, f"pay_{event_id}", db_path=db_path)
+
+    warm = orchestrator.negotiate_and_record("pred-2", "acp", [("masala_dosa", 1)])
+    assert warm["upsell_suggestion"]["item"] == "filter_coffee"
+    assert warm["upsell_suggestion"]["basis"] == "bought together before"
+
+
 def test_trust_tier_improves_after_a_completed_order(tmp_path, monkeypatch):
     db_path = str(tmp_path / "audit.db")
     monkeypatch.setattr(audit_log, "DEFAULT_DB_PATH", db_path)

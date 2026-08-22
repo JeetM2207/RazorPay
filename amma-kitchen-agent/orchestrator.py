@@ -46,9 +46,24 @@ def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int
     }
 
     if result.decision == negotiation.Decision.APPROVE:
-        upsell = negotiation.suggest_upsell(cart, mandate=adjusted_mandate, menu=MENU)
+        # The history lookup happens HERE, not inside negotiation.py, so
+        # the decision core stays free of I/O. The core receives the
+        # ranking as plain data and still applies every mandate limit to
+        # it -- popularity reorders candidates, it never admits one.
+        ranked_addons = audit_log.get_frequent_addons(
+            [name for name, _qty in cart], db_path=db_path
+        )
+        upsell = negotiation.suggest_upsell(
+            cart, mandate=adjusted_mandate, menu=MENU, ranked_addons=ranked_addons
+        )
         if upsell:
-            response["upsell_suggestion"] = {"item": upsell.name, "price_inr": upsell.price_inr}
+            response["upsell_suggestion"] = {
+                "item": upsell.name,
+                "price_inr": upsell.price_inr,
+                # Lets the merchant console say WHY this was suggested,
+                # rather than presenting it as an unexplained hunch.
+                "basis": "bought together before" if upsell.name in ranked_addons else "best value that fits",
+            }
 
     return response
 

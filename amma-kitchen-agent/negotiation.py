@@ -148,6 +148,7 @@ def suggest_upsell(
     cart: list[CartLine] | list[tuple[str, int]],
     mandate: Mandate = MANDATE,
     menu: dict[str, MenuItem] = MENU,
+    ranked_addons: list[str] | None = None,
 ) -> MenuItem | None:
     """Optional revenue hook for an already-APPROVED cart.
 
@@ -156,11 +157,24 @@ def suggest_upsell(
     evaluate() and never influences APPROVE/COUNTER_OFFER/ESCALATE -- it
     is a separate, non-blocking suggestion a caller may choose to offer
     the buyer agent after approval.
+
+    `ranked_addons` makes the suggestion predictive rather than static:
+    item names ordered by how often they were actually bought alongside
+    this cart's items (see audit_log.get_frequent_addons). It arrives as
+    plain data, deliberately -- this function does no I/O, so the same
+    inputs always give the same answer and the whole thing stays unit
+    testable without a database.
+
+    History only ever REORDERS the candidates. It cannot introduce one:
+    affordability, category and stock are filtered first, so a popular
+    item that would breach the threshold is still never suggested.
     """
     lines = tuple(
         line if isinstance(line, CartLine) else CartLine(*line) for line in cart
     )
     current_total = _cart_total(lines, menu)
+    # -1 keeps the resulting total STRICTLY below the threshold, so an
+    # upsell can never be the thing that forces a human confirmation.
     headroom = mandate.human_confirm_threshold_inr - 1 - current_total
     if headroom <= 0:
         return None
@@ -176,4 +190,13 @@ def suggest_upsell(
     ]
     if not candidates:
         return None
+
+    if ranked_addons:
+        by_name = {item.name: item for item in candidates}
+        for name in ranked_addons:
+            if name in by_name:
+                return by_name[name]
+
+    # No usable history yet (a cold-start merchant, or nothing popular
+    # fits the headroom): fall back to the best-value item that does.
     return max(candidates, key=lambda item: item.price_inr)
