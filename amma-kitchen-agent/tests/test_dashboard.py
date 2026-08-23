@@ -61,11 +61,11 @@ def test_trust_tier_is_shown_and_rises_with_completed_orders(client_and_db):
 
 
 def test_both_reasons_render_side_by_side(client_and_db):
-    """What the system decided, and why the agent says it asked."""
+    """What the system decided, and the human context behind it."""
     client, db_path = client_and_db
     detail = orchestrator.negotiate_and_record("mcp:claude", "mcp", [("masala_dosa", 1)])
     audit_log.attach_buyer_reasoning(
-        detail["event_id"], "User wanted something light under Rs.100.", db_path=db_path
+        detail["event_id"], "Working late, wants something light.", db_path=db_path
     )
     audit_log.attach_delivery(
         detail["event_id"], "Priya Sharma", "9876543210", "Flat 402, Indiranagar",
@@ -74,8 +74,8 @@ def test_both_reasons_render_side_by_side(client_and_db):
 
     body = client.get("/").text
     assert "within budget and below human confirm threshold" in body   # system's reason
-    assert "User wanted something light under Rs.100." in body         # buyer's reason
-    assert "agent said:" in body
+    assert "Working late, wants something light." in body            # the human context
+    assert "customer wanted:" in body
     assert "Priya Sharma" in body and "Indiranagar" in body
 
 

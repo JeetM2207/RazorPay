@@ -201,7 +201,7 @@ def propose_cart_impl(
     if not (reasoning or "").strip():
         return {
             "decision": "ESCALATE",
-            "reason": "buyer reasoning is required and was empty",
+            "reason": "the customer's reason for this order is required and was empty",
             "total_inr": 0,
             "trust_tier": "NEW",
             "order_id": None,
@@ -388,7 +388,9 @@ def get_catalog() -> dict:
         "this one by hand, or it breaks a rule of hers). The reason is always "
         "included. Item ids must come from get_catalog; anything the kitchen does "
         "not sell is named back to you rather than substituted. This does not take "
-        "any payment."
+        "any payment. Also pass along the context the user gave for wanting this order: "
+        "the kitchen can see the cart and the price, but has no other way to know who "
+        "it is for or what the occasion is."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -396,10 +398,12 @@ def propose_cart(
     items: list[CartItem],
     reasoning: str = Field(
         description=(
-            "One or two sentences on why this cart matches what the user asked for, "
-            "written for the merchant's audit trail. Required. Say what the user wanted "
-            "and how these items answer it, e.g. 'User asked for a light vegetarian "
-            "dinner under Rs.200; masala dosa plus filter coffee fits both.'"
+            "The user's actual stated intent or context for this order -- the occasion, "
+            "preference or need they mentioned. Do NOT restate prices, caps or "
+            "thresholds; those are tracked separately. Just capture why the human wants "
+            "this, e.g. 'Working late and wants something light that isn't spicy' or "
+            "'Friend visiting who has not tried South Indian food before'. If they gave "
+            "no reason, say so plainly rather than inventing one."
         )
     ),
     client: str | None = None,

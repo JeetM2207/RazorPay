@@ -170,7 +170,7 @@ amma-kitchen-agent/
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
   scripts/                # early plumbing probes, kept for reference
-  tests/                  # 282 tests; test_negotiation.py still matters most
+  tests/                  # 283 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -401,13 +401,18 @@ a required field makes the tool call *invalid* without it, which is what makes a
 client go and ask the user rather than inventing a value. Each is also re-checked
 server-side, because a schema constrains a cooperative caller and nothing else.
 
-- **`propose_cart.reasoning`** — the audit trail already recorded why the *system*
-  approved or refused. It never recorded why the *AI asked* for this cart, because that
-  only existed while the buyer was a script we wrote. Stored as `buyer_reasoning`, in its
-  own column beside `reason`, never merged: they answer different questions and a
-  merchant reviewing an agent order wants both. The audit view renders them side by side,
-  labelled "agent said:". Recorded on refusals too — why an agent asked for something
-  forbidden is exactly what a merchant wants to see.
+- **`propose_cart.reasoning`** — the customer's actual intent: the occasion, preference
+  or need behind the order. Stored as `buyer_reasoning`, in its own column beside
+  `reason`, never merged, and rendered beside it in the audit view as "customer wanted:".
+  Recorded on refusals too — why someone wanted something the rules forbid is exactly
+  what a merchant wants to see before deciding whether the rule is right.
+
+  The first version of this field asked the model to justify the cart against the
+  merchant's limits. That was the wrong question: `reason` already records the outcome of
+  those limits, so the field just restated it in worse prose while burning the one channel
+  that could carry something new. The description now explicitly says *do not restate
+  prices, caps or thresholds*, and a test asserts that wording is present — because the
+  value here is entirely in capturing what the system has no other way to see.
 - **`checkout.delivery_name` / `delivery_phone` / `delivery_address`** — an order with
   nobody to hand the food to is not an order. Requiring them in the schema was sufficient
   on its own to make the assistant collect them in conversation; no separate "ask for
@@ -680,7 +685,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**282 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**283 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

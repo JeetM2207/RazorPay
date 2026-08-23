@@ -39,7 +39,7 @@ def cart(*pairs):
     return [CartItem(item_id=i, qty=q) for i, q in pairs]
 
 
-WHY = "User asked for a light snack; this is the cheapest thing that fits."
+WHY = "Working late and wants something light that is not too spicy."
 DELIVERY = {
     "delivery_name": "Priya Sharma",
     "delivery_phone": "9876543210",
@@ -304,6 +304,21 @@ def test_reasoning_is_required_by_the_schema_not_merely_hoped_for():
     )
 
 
+def test_reasoning_asks_for_human_context_not_a_restatement_of_the_rules():
+    """This field exists to capture what the system CANNOT see. Asking
+    the model to justify the cart against caps and thresholds would just
+    duplicate `reason`, in worse prose, and waste the only channel for
+    the customer's actual intent."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    description = tools["propose_cart"].input_schema["properties"]["reasoning"]["description"].lower()
+
+    # It must ask for the human's side...
+    assert any(word in description for word in ("occasion", "intent", "context", "need"))
+    # ...and explicitly steer away from restating what is already tracked.
+    assert "do not restate" in description
+    assert "prices" in description and ("caps" in description or "thresholds" in description)
+
+
 def test_calling_propose_cart_without_reasoning_is_rejected():
     """The call must fail validation, not arrive with reasoning absent."""
     with pytest.raises(Exception) as raised:
@@ -320,13 +335,13 @@ def test_empty_reasoning_is_refused_server_side_too(db):
     for blank in ("", "   ", "\n"):
         result = propose(("masala_dosa", 1), reasoning=blank)
         assert result["decision"] == "ESCALATE"
-        assert "reasoning is required" in result["reason"]
+        assert "is required and was empty" in result["reason"]
 
 
 def test_both_reasons_are_recorded_and_kept_apart(db):
     """The system's reason and the buyer's reason answer different
     questions; merging them would lose one of the answers."""
-    why = "User wanted something light and cheap; the dosa is the cheapest hot dish."
+    why = "Friend visiting who has never tried South Indian food."
     propose(("masala_dosa", 1), reasoning=why)
 
     event = audit_log.get_all_events(db_path=db)[0]
@@ -338,11 +353,11 @@ def test_both_reasons_are_recorded_and_kept_apart(db):
 def test_reasoning_is_recorded_even_when_the_order_is_refused(db):
     """Why an agent asked for something forbidden is exactly what a
     merchant reviewing the trail wants to see."""
-    propose(("party_catering_tray", 1), reasoning="User specifically requested catering.")
+    propose(("party_catering_tray", 1), reasoning="Office farewell lunch for twelve people.")
 
     event = audit_log.get_all_events(db_path=db)[0]
     assert event["decision"] == "ESCALATE"
-    assert event["buyer_reasoning"] == "User specifically requested catering."
+    assert event["buyer_reasoning"] == "Office farewell lunch for twelve people."
 
 
 # ------------------------------------------- delivery details required

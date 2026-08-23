@@ -31,9 +31,13 @@ CREATE TABLE IF NOT EXISTS audit_events (
 # in _SCHEMA -- an existing audit.db must not have to be thrown away.
 #
 # `reason` is the SYSTEM's reason: why negotiation.py decided what it
-# decided. `buyer_reasoning` is the BUYER's: why the agent says it asked
-# for this in the first place. They answer different questions and are
-# deliberately kept apart rather than merged.
+# decided -- caps, categories, thresholds. `buyer_reasoning` is the
+# HUMAN's context: the occasion, preference or need behind the order.
+#
+# The split matters. Having the agent justify the cart against the
+# merchant's rules would just restate what `reason` already holds, in
+# worse prose. The customer's actual reason is the one thing this system
+# has no other way to see, so that is what the field is for.
 _ADDED_COLUMNS = {
     "buyer_reasoning": "TEXT",
     "delivery_name": "TEXT",
@@ -114,11 +118,12 @@ def attach_payment_link(
 def attach_buyer_reasoning(
     event_id: int, reasoning: str, db_path: str = DEFAULT_DB_PATH
 ) -> None:
-    """Record why the BUYER's agent says it proposed this cart.
+    """Record the human context behind an order -- occasion, preference,
+    need -- as reported by the buyer's agent.
 
     Kept separate from `reason`, which is why the system decided what it
-    decided. A merchant reading the trail should see both: what was
-    asked for and why, and what was allowed and why.
+    decided. A merchant reading the trail sees both: why the person
+    wanted it, and what the rules allowed.
     """
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:

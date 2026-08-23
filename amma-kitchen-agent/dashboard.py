@@ -92,17 +92,18 @@ def _payment_cell(event: dict) -> str:
 def _reasons_cell(event: dict) -> str:
     """Two reasons, side by side and never merged.
 
-    The system's is why the order was allowed or refused. The buyer's is
-    why the agent says it asked in the first place -- only present for
-    protocols that require it, currently MCP. A merchant reviewing an
-    agent order wants both: what was wanted, and what was permitted.
+    The system's is why the order was allowed or refused -- caps,
+    categories, thresholds. The buyer's is the human context behind it:
+    the occasion or need the customer gave, which nothing else in this
+    system can see. Only present for protocols that ask for it, currently
+    MCP. A merchant reading an agent order wants both.
     """
     parts = [f"<div>{html.escape(event['reason'])}</div>"]
 
     buyer_reasoning = event.get("buyer_reasoning")
     if buyer_reasoning:
         parts.append(
-            "<div class='buyer-said'><span class='who'>agent said:</span> "
+            "<div class='buyer-said'><span class='who'>customer wanted:</span> "
             f"{html.escape(buyer_reasoning)}</div>"
         )
 
