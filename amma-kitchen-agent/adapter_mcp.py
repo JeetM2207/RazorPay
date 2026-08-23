@@ -181,7 +181,9 @@ def get_catalog_impl() -> dict:
     }
 
 
-def propose_cart_impl(items: list[CartItem], client: str | None = None) -> dict:
+def propose_cart_impl(
+    items: list[CartItem], reasoning: str, client: str | None = None
+) -> dict:
     agent_id = _agent_id(client)
     cart = _cart_of(items)
     if not cart:
@@ -194,15 +196,64 @@ def propose_cart_impl(items: list[CartItem], client: str | None = None) -> dict:
             "alternatives": [],
         }
 
+    # Required by the schema, but checked here too: a schema stops a
+    # well-behaved client, a server check stops everything else.
+    if not (reasoning or "").strip():
+        return {
+            "decision": "ESCALATE",
+            "reason": "buyer reasoning is required and was empty",
+            "total_inr": 0,
+            "trust_tier": "NEW",
+            "order_id": None,
+            "alternatives": [],
+        }
+
     detail = orchestrator.negotiate_and_record(agent_id, PROTOCOL, cart)
-    return _decision_response(detail, cart)
+    # Written after the orchestrator's row rather than through it, so the
+    # shared decision path stays identical for every protocol.
+    audit_log.attach_buyer_reasoning(
+        detail["event_id"], reasoning.strip(), db_path=audit_log.DEFAULT_DB_PATH
+    )
+    response = _decision_response(detail, cart)
+    response["buyer_reasoning"] = reasoning.strip()
+    return response
 
 
-def checkout_impl(items: list[CartItem], client: str | None = None) -> dict:
+def checkout_impl(
+    items: list[CartItem],
+    delivery_name: str,
+    delivery_phone: str,
+    delivery_address: str,
+    client: str | None = None,
+) -> dict:
     agent_id = _agent_id(client)
     cart = _cart_of(items)
     if not cart:
         return {"status": "refused", "reason": "empty cart: nothing to pay for"}
+
+    # The schema marks these required, which is what makes a real client
+    # go and ask the user for them. Re-checked here because a schema
+    # constrains a cooperative caller and nothing else -- and an order
+    # with nobody to deliver it to is not an order.
+    missing = [
+        field
+        for field, value in (
+            ("delivery_name", delivery_name),
+            ("delivery_phone", delivery_phone),
+            ("delivery_address", delivery_address),
+        )
+        if not (value or "").strip()
+    ]
+    if missing:
+        return {
+            "status": "refused",
+            "reason": (
+                "cannot place an order without "
+                + ", ".join(missing)
+                + " -- ask the customer for their delivery details and call again"
+            ),
+            "missing_fields": missing,
+        }
 
     # A retried tool call must return the original order, not make another.
     already = _settled_checkout(agent_id, cart)
@@ -260,6 +311,13 @@ def checkout_impl(items: list[CartItem], client: str | None = None) -> dict:
     link = orchestrator.create_payment_for_cart(
         agent_id, event_id, cart, skip_reevaluation=human_approved
     )
+    audit_log.attach_delivery(
+        event_id,
+        delivery_name.strip(),
+        delivery_phone.strip(),
+        delivery_address.strip(),
+        db_path=db_path,
+    )
     total = sum(
         merchant_config.current_menu()[name].price_inr * qty for name, qty in cart
     )
@@ -268,8 +326,21 @@ def checkout_impl(items: list[CartItem], client: str | None = None) -> dict:
         "order_id": event_id,
         "amount_inr": total,
         "payment_link_id": link["id"],
+        # A link the CUSTOMER opens. Everything that actually authorises
+        # money -- OTP, UPI PIN, CVV -- happens on Razorpay's page, typed
+        # by the human. This adapter cannot do that step and holds no
+        # credential with which to try.
         "payment_url": link["short_url"],
+        "delivery": {
+            "name": delivery_name.strip(),
+            "phone": delivery_phone.strip(),
+            "address": delivery_address.strip(),
+        },
         "duplicate": False,
+        "next_step": (
+            "Give the customer the payment_url. They complete payment on Razorpay's "
+            "own page; you cannot pay on their behalf."
+        ),
     }
 
 
@@ -321,8 +392,19 @@ def get_catalog() -> dict:
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
-def propose_cart(items: list[CartItem], client: str | None = None) -> dict:
-    return propose_cart_impl(items, client)
+def propose_cart(
+    items: list[CartItem],
+    reasoning: str = Field(
+        description=(
+            "One or two sentences on why this cart matches what the user asked for, "
+            "written for the merchant's audit trail. Required. Say what the user wanted "
+            "and how these items answer it, e.g. 'User asked for a light vegetarian "
+            "dinner under Rs.200; masala dosa plus filter coffee fits both.'"
+        )
+    ),
+    client: str | None = None,
+) -> dict:
+    return propose_cart_impl(items, reasoning, client)
 
 
 @mcp_server.tool(
@@ -333,14 +415,33 @@ def propose_cart(items: list[CartItem], client: str | None = None) -> dict:
         "payment for it. The kitchen re-checks the cart against its own rules before "
         "taking anything, so a cart that is no longer acceptable is refused here even "
         "if it was approved a moment ago. Calling this twice with the same cart is "
-        "safe: the original order is returned rather than a second one being placed."
+        "safe: the original order is returned rather than a second one being placed. "
+        "You must collect the customer's name, phone and delivery address from them "
+        "first — ask in conversation, never invent them. This returns a payment link "
+        "for the customer to open; you cannot pay on their behalf and hold no card or "
+        "UPI details to try."
     ),
     annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
     ),
 )
-def checkout(items: list[CartItem], client: str | None = None) -> dict:
-    return checkout_impl(items, client)
+def checkout(
+    items: list[CartItem],
+    delivery_name: str = Field(
+        description="Full name of the person receiving the order. Ask the user; never invent one."
+    ),
+    delivery_phone: str = Field(
+        description="Contact phone number for the delivery. Ask the user; never invent one."
+    ),
+    delivery_address: str = Field(
+        description=(
+            "Full delivery address including flat/house number, street, area and city. "
+            "Ask the user; never invent or guess one."
+        )
+    ),
+    client: str | None = None,
+) -> dict:
+    return checkout_impl(items, delivery_name, delivery_phone, delivery_address, client)
 
 
 # The SDK validates the Host header by default, to stop a browser on the

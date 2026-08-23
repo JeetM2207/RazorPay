@@ -27,10 +27,28 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 """
 
+# Added after the table shipped, so they arrive by migration rather than
+# in _SCHEMA -- an existing audit.db must not have to be thrown away.
+#
+# `reason` is the SYSTEM's reason: why negotiation.py decided what it
+# decided. `buyer_reasoning` is the BUYER's: why the agent says it asked
+# for this in the first place. They answer different questions and are
+# deliberately kept apart rather than merged.
+_ADDED_COLUMNS = {
+    "buyer_reasoning": "TEXT",
+    "delivery_name": "TEXT",
+    "delivery_phone": "TEXT",
+    "delivery_address": "TEXT",
+}
+
 
 def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute(_SCHEMA)
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(audit_events)")}
+        for column, coltype in _ADDED_COLUMNS.items():
+            if column not in existing:
+                conn.execute(f"ALTER TABLE audit_events ADD COLUMN {column} {coltype}")
 
 
 def record_event(
@@ -79,6 +97,40 @@ def attach_payment_link(
         conn.execute(
             "UPDATE audit_events SET payment_link_id = ? WHERE id = ?",
             (payment_link_id, event_id),
+        )
+
+
+def attach_buyer_reasoning(
+    event_id: int, reasoning: str, db_path: str = DEFAULT_DB_PATH
+) -> None:
+    """Record why the BUYER's agent says it proposed this cart.
+
+    Kept separate from `reason`, which is why the system decided what it
+    decided. A merchant reading the trail should see both: what was
+    asked for and why, and what was allowed and why.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE audit_events SET buyer_reasoning = ? WHERE id = ?", (reasoning, event_id)
+        )
+
+
+def attach_delivery(
+    event_id: int,
+    name: str,
+    phone: str,
+    address: str,
+    db_path: str = DEFAULT_DB_PATH,
+) -> None:
+    """Put a real recipient on the order. Without this an agent-placed
+    order is a price with nobody to hand the food to."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE audit_events SET delivery_name = ?, delivery_phone = ?, "
+            "delivery_address = ? WHERE id = ?",
+            (name, phone, address, event_id),
         )
 
 

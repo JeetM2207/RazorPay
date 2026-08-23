@@ -10,7 +10,7 @@ Razorpay's test-mode APIs.
 The core idea: **one negotiation brain, reachable through multiple protocol adapters.**
 The buyer-facing protocol shape never changes the underlying decision logic — only the
 translation layer at the edges differs. Four adapters (ACP, AP2, x402, MCP) now speak to
-one unchanged core, and a fourth (MCP) hands those same tools to a real external
+one unchanged core, and the last of them hands those same tools to a real external
 assistant.
 
 The second idea, which emerged while building: **both sides are bounded, and either can
@@ -84,8 +84,8 @@ decide an escalation. All three run through one inbound webhook.
 - **Adapters** (`adapter_acp.py`, `adapter_ap2.py`, `adapter_x402.py`, `adapter_mcp.py`):
   thin translation layers. Each takes an incoming request in its own shape, converts
   it into the negotiation core's internal request format, calls the core, and formats
-  the response back into that protocol's shape. None contains any business logic of its own. See "Four adapters,
-  one brain" and "The MCP adapter" below.
+  the response back into that protocol's shape. None contains any business logic of
+  its own. See "Four adapters, one brain" and "The MCP adapter" below.
 - **Merchant's live config** (`merchant_config.py`): what Amma has actually set up — shop
   identity, her limits, her menu. `mandate.py` holds the defaults; this holds what the
   running system decides against, so the setup page is not decorative.
@@ -170,7 +170,7 @@ amma-kitchen-agent/
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
   scripts/                # early plumbing probes, kept for reference
-  tests/                  # 264 tests; test_negotiation.py still matters most
+  tests/                  # 280 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -394,7 +394,64 @@ Whatever a client calls itself is namespaced under `mcp:`, so it can never prese
 agent from another protocol and inherit its trust. Trust otherwise accrues exactly as for
 any other agent.
 
-**What broke while building it.** Two things worth recording:
+### Three required fields, and why each exists
+
+All three are **required in the JSON schema**, not optional-and-hoped-for. That matters:
+a required field makes the tool call *invalid* without it, which is what makes a real
+client go and ask the user rather than inventing a value. Each is also re-checked
+server-side, because a schema constrains a cooperative caller and nothing else.
+
+- **`propose_cart.reasoning`** — the audit trail already recorded why the *system*
+  approved or refused. It never recorded why the *AI asked* for this cart, because that
+  only existed while the buyer was a script we wrote. Stored as `buyer_reasoning`, in its
+  own column beside `reason`, never merged: they answer different questions and a
+  merchant reviewing an agent order wants both. The audit view renders them side by side,
+  labelled "agent said:". Recorded on refusals too — why an agent asked for something
+  forbidden is exactly what a merchant wants to see.
+- **`checkout.delivery_name` / `delivery_phone` / `delivery_address`** — an order with
+  nobody to hand the food to is not an order. Requiring them in the schema was sufficient
+  on its own to make the assistant collect them in conversation; no separate "ask for
+  delivery details" flow was built, and none should be. Written onto the same audit row
+  as the order.
+
+## The payment boundary: three checkpoints, none of them optional
+
+Between an AI proposing a cart and money actually moving there are three independent
+gates. They are independent on purpose — each one holds even if the other two are wrong.
+
+1. **The client's own confirmation.** `checkout` is annotated `destructiveHint: true`, so
+   a real MCP client asks the human before the tool runs at all. `get_catalog` and
+   `propose_cart` are deliberately *not* marked destructive: if every call raised a
+   prompt, people would learn to click through them and the one that matters would stop
+   being read. A test asserts that split.
+2. **The merchant's own rules.** `negotiation.py` and `orchestrator.py` run the cap,
+   category and trust checks exactly as they always have. **This checkpoint is completely
+   unaffected by which protocol triggered it** — ACP, AP2, x402 and MCP all reach it
+   through the same `orchestrator.negotiate_and_record()`, and the identity test proves
+   that is one object rather than four copies. An external model cannot reason its way
+   past a rule it cannot reach.
+3. **Real payment authentication, by the human, on Razorpay's page.** `checkout` creates
+   a Razorpay order and hands back a link. It does not and structurally cannot complete
+   payment: OTP, UPI PIN and CVV are entered by the person on Razorpay's own page.
+
+That third point is enforced rather than promised. `adapter_mcp.py` does not import
+`autonomous_payment` — the no-browser settlement path belongs to AP2, and if MCP could
+reach it an assistant could complete a payment with no human involved at all. A test
+asserts the import is absent, and another asserts `checkout`'s response carries no
+`payment_id`, since one would mean money had already moved.
+
+**One thing the audit turned up.** `autonomous_payment.py` had a test card number and CVV
+hardcoded in source. MCP could never reach it, so the boundary above already held — but a
+payment credential checked into source is a payment credential regardless of whose test
+account it belongs to, and "it's only a test card" is exactly the habit that later commits
+a real one. It now comes from `RAZORPAY_S2S_TEST_CARD` and is absent by default, so that
+path simply does not run unless someone deliberately configures it. Since S2S is not
+enabled on this account anyway, nothing observable changed. A test now scans every source
+file for card-shaped literals; it is written to match card *structures* rather than any
+long digit run, because the first version cried wolf on an example phone number in a
+docstring and a test that cries wolf gets ignored.
+
+**What broke while building it.** Three things worth recording:
 
 - `audit_log.get_events_for_agent`'s `db_path` default is bound when the module is
   imported, so the adapter's "have I already checked this cart out?" lookups were reading
@@ -406,6 +463,13 @@ any other agent.
   initialized". `app.py` now chains the MCP lifespan explicitly. Nothing in the unit tests
   would have caught this — it only appears over a real HTTP request, which is why the
   handshake was exercised end to end rather than trusted.
+- Connecting it to a real Claude account then failed with `421 Invalid Host header`.
+  The SDK validates `Host` to stop a browser being tricked into driving a localhost
+  MCP server (DNS rebinding), and that same check rejects any public hostname it was
+  not told about. Claude connects over exactly such a hostname, so the connector could
+  never have worked without `MCP_ALLOWED_HOSTS`. Two of the three failures in this
+  adapter were only visible over a real request from a real client -- worth
+  remembering when the unit suite is green and something still does not work.
 
 **Connecting it to a real Claude account.** The server must be reachable by Anthropic's
 cloud — Claude connects from Anthropic's infrastructure, not from the user's machine, so
@@ -608,7 +672,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**264 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**280 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

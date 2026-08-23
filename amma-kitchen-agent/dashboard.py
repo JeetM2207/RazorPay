@@ -89,6 +89,37 @@ def _payment_cell(event: dict) -> str:
     return "<span class='muted'>&mdash;</span>"
 
 
+def _reasons_cell(event: dict) -> str:
+    """Two reasons, side by side and never merged.
+
+    The system's is why the order was allowed or refused. The buyer's is
+    why the agent says it asked in the first place -- only present for
+    protocols that require it, currently MCP. A merchant reviewing an
+    agent order wants both: what was wanted, and what was permitted.
+    """
+    parts = [f"<div>{html.escape(event['reason'])}</div>"]
+
+    buyer_reasoning = event.get("buyer_reasoning")
+    if buyer_reasoning:
+        parts.append(
+            "<div class='buyer-said'><span class='who'>agent said:</span> "
+            f"{html.escape(buyer_reasoning)}</div>"
+        )
+
+    if event.get("delivery_name"):
+        recipient = " &middot; ".join(
+            html.escape(v)
+            for v in (event.get("delivery_name"), event.get("delivery_phone"))
+            if v
+        )
+        parts.append(
+            f"<div class='deliver-to'><span class='who'>deliver to:</span> {recipient}"
+            f"<br>{html.escape(event.get('delivery_address') or '')}</div>"
+        )
+
+    return "".join(parts)
+
+
 def _summary(events: list[dict]) -> dict:
     # Revenue counts only genuine Razorpay captures. A simulated
     # settlement is shown in the log but never inflates the total.
@@ -153,7 +184,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
         f"<td>{_format_cart(event['cart_json'])}</td>"
         f"<td class='num-cell'>&#8377;{event['total_inr']}</td>"
         f"<td>{_decision_badge(event['decision'])}</td>"
-        f"<td class='reason'>{html.escape(event['reason'])}</td>"
+        f"<td class='reason'>{_reasons_cell(event)}</td>"
         f"<td>{_payment_cell(event)}</td>"
         f"</tr>"
         for event in events
@@ -206,7 +237,17 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   .muted {{ color: #8a8a96; }}
   .nowrap {{ white-space: nowrap; }}
   .num-cell {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
-  .reason {{ max-width: 360px; color: #3a3a44; }}
+  .reason {{ max-width: 400px; color: #3a3a44; }}
+  .buyer-said, .deliver-to {{
+    margin-top: 6px; padding-left: 9px; font-size: 12.5px; line-height: 1.45;
+    border-left: 2px solid #d8d5cd; color: #55524c;
+  }}
+  .buyer-said {{ border-left-color: #b9a6e0; }}
+  .deliver-to {{ border-left-color: #a8c6dd; }}
+  .who {{
+    font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: #8a857c; margin-right: 4px;
+  }}
   .badge {{
     display: inline-block; padding: 3px 9px; border-radius: 20px;
     font-size: 11.5px; font-weight: 600; white-space: nowrap;

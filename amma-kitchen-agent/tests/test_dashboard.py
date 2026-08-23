@@ -60,6 +60,38 @@ def test_trust_tier_is_shown_and_rises_with_completed_orders(client_and_db):
     assert "STANDARD" in client.get("/").text
 
 
+def test_both_reasons_render_side_by_side(client_and_db):
+    """What the system decided, and why the agent says it asked."""
+    client, db_path = client_and_db
+    detail = orchestrator.negotiate_and_record("mcp:claude", "mcp", [("masala_dosa", 1)])
+    audit_log.attach_buyer_reasoning(
+        detail["event_id"], "User wanted something light under Rs.100.", db_path=db_path
+    )
+    audit_log.attach_delivery(
+        detail["event_id"], "Priya Sharma", "9876543210", "Flat 402, Indiranagar",
+        db_path=db_path,
+    )
+
+    body = client.get("/").text
+    assert "within budget and below human confirm threshold" in body   # system's reason
+    assert "User wanted something light under Rs.100." in body         # buyer's reason
+    assert "agent said:" in body
+    assert "Priya Sharma" in body and "Indiranagar" in body
+
+
+def test_buyer_reasoning_is_html_escaped(client_and_db):
+    """It is free text written by someone else's model."""
+    client, db_path = client_and_db
+    detail = orchestrator.negotiate_and_record("mcp:claude", "mcp", [("masala_dosa", 1)])
+    audit_log.attach_buyer_reasoning(
+        detail["event_id"], "<script>alert('x')</script>", db_path=db_path
+    )
+
+    body = client.get("/").text
+    assert "<script>alert" not in body
+    assert "&lt;script&gt;" in body
+
+
 def test_refresh_can_be_disabled(client_and_db):
     client, _ = client_and_db
     assert "http-equiv='refresh'" in client.get("/").text

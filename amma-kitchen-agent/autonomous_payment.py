@@ -51,17 +51,34 @@ load_dotenv()
 _KEY = os.environ.get("RAZORPAY_KEY_ID", "")
 _SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
 
-# The card the buyer portal shows as "on file". In a real deployment this
-# would be a Razorpay token (token_...), never raw PAN -- storing card
-# numbers puts you in PCI scope. It is here only because test mode gives
-# us no token to work with.
-_PREAUTH_CARD = {
-    "number": "4100280000001007",
-    "name": "Amma's Kitchen Buyer Agent",
-    "expiry_month": 12,
-    "expiry_year": 28,
-    "cvv": "123",
-}
+# No card lives in this repository.
+#
+# The card S2S path needs one, so it is read from the environment and is
+# absent by default -- with none configured, _try_s2s does not run at
+# all. A payment credential checked into source is a payment credential
+# regardless of whose test account it belongs to, and "it's only a test
+# card" is exactly the habit that later commits a real one.
+#
+# In a real deployment this would be a Razorpay token (token_...) rather
+# than a PAN in any case; raw card data puts you in PCI scope.
+# RAZORPAY_S2S_TEST_CARD=number:MM:YYYY:cvv
+_S2S_CARD_SPEC = os.environ.get("RAZORPAY_S2S_TEST_CARD", "").strip()
+
+
+def _preauth_card() -> dict | None:
+    if not _S2S_CARD_SPEC:
+        return None
+    try:
+        number, month, year, cvv = _S2S_CARD_SPEC.split(":")
+        return {
+            "number": number.strip(),
+            "name": "Amma's Kitchen Buyer Agent",
+            "expiry_month": int(month),
+            "expiry_year": int(year),
+            "cvv": cvv.strip(),
+        }
+    except (ValueError, TypeError):
+        return None
 
 _S2S_CARD_URL = "https://api.razorpay.com/v1/payments/create/json"
 _S2S_UPI_URL = "https://api.razorpay.com/v1/payments/create/upi"
@@ -123,9 +140,12 @@ def _try_upi_collect(order_id: str, amount_inr: int) -> str | None:
 
 
 def _try_s2s(order_id: str, amount_inr: int) -> str | None:
-    """Fallback: a genuine server-side card charge. Also requires S2S to
-    be enabled, and puts raw card data in scope, which is why UPI is
-    tried first."""
+    """Fallback: a genuine server-side card charge. Requires S2S to be
+    enabled AND a card supplied via RAZORPAY_S2S_TEST_CARD -- with none
+    configured this path does not run, which is the default."""
+    card = _preauth_card()
+    if card is None:
+        return None
     try:
         response = requests.post(
             _S2S_CARD_URL,
@@ -138,7 +158,7 @@ def _try_s2s(order_id: str, amount_inr: int) -> str | None:
                 "email": "buyer-agent@example.com",
                 "contact": "9876543210",
                 "method": "card",
-                "card": _PREAUTH_CARD,
+                "card": card,
             },
         )
         return _extract_payment_id(response)

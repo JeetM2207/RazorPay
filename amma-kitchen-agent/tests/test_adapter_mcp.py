@@ -39,6 +39,23 @@ def cart(*pairs):
     return [CartItem(item_id=i, qty=q) for i, q in pairs]
 
 
+WHY = "User asked for a light snack; this is the cheapest thing that fits."
+DELIVERY = {
+    "delivery_name": "Priya Sharma",
+    "delivery_phone": "9876543210",
+    "delivery_address": "Flat 402, Sunrise Apartments, Indiranagar, Bengaluru",
+}
+
+
+def propose(*pairs, reasoning=WHY, client=None):
+    return adapter_mcp.propose_cart_impl(cart(*pairs), reasoning, client)
+
+
+def buy(*pairs, client=None, **overrides):
+    fields = {**DELIVERY, **overrides}
+    return adapter_mcp.checkout_impl(cart(*pairs), client=client, **fields)
+
+
 # ------------------------------------------------------------ the shell
 
 def test_tools_are_registered_with_the_right_hints():
@@ -78,7 +95,7 @@ def test_the_decision_core_is_untouched_by_this_adapter():
 
 def test_a_client_cannot_present_as_another_protocols_agent(db):
     """Whatever it calls itself, it is namespaced under mcp:."""
-    adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)), client="buyer-agent-a-demo")
+    propose(("masala_dosa", 1), client="buyer-agent-a-demo")
     events = audit_log.get_all_events(db_path=db)
     assert events[0]["agent_id"] == "mcp:buyer-agent-a-demo"
     assert events[0]["protocol"] == "mcp"
@@ -92,12 +109,12 @@ def test_catalog_then_propose_then_checkout(db, link):
     dosa = next(i for i in feed["items"] if i["id"] == "masala_dosa")
     assert dosa["price_inr"] == 80 and dosa["agent_orderable"] is True
 
-    proposed = adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)))
+    proposed = propose(("masala_dosa", 1))
     assert proposed["decision"] == "APPROVE"
     assert proposed["total_inr"] == 80
     assert proposed["trust_tier"] == "NEW"
 
-    placed = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    placed = buy(("masala_dosa", 1))
     assert placed["status"] == "placed"
     assert placed["amount_inr"] == 80
     assert placed["payment_link_id"] == "plink_mcp1"
@@ -121,7 +138,7 @@ def test_the_catalog_stays_compact(db):
 
 def test_checkout_without_ever_proposing_still_goes_through_the_core(db, link):
     """A client may just call checkout. It still gets decided, not obeyed."""
-    placed = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    placed = buy(("masala_dosa", 1))
     assert placed["status"] == "placed"
 
     events = audit_log.get_events_for_agent("mcp:claude", db_path=db)
@@ -130,14 +147,14 @@ def test_checkout_without_ever_proposing_still_goes_through_the_core(db, link):
 
 
 def test_checkout_without_proposing_is_refused_when_the_core_says_no(db, link):
-    placed = adapter_mcp.checkout_impl(cart(("chicken_biryani", 2)))   # Rs.440
+    placed = buy(("chicken_biryani", 2))   # Rs.440
     assert placed["status"] == "refused"
     assert placed["decision"] == "ESCALATE"
     assert link == [], "a refused cart must not create a payment"
 
 
 def test_an_item_that_does_not_exist_is_named_not_guessed(db):
-    result = adapter_mcp.propose_cart_impl(cart(("pizza", 2), ("masala_dosa", 1)))
+    result = propose(("pizza", 2), ("masala_dosa", 1))
 
     assert result["unmatched_items"] == ["pizza"]
     assert result["decision"] == "ESCALATE"
@@ -146,15 +163,15 @@ def test_an_item_that_does_not_exist_is_named_not_guessed(db):
 
 
 def test_an_empty_cart_is_handled_rather_than_crashing(db):
-    assert adapter_mcp.propose_cart_impl([])["decision"] == "ESCALATE"
-    assert adapter_mcp.checkout_impl([])["status"] == "refused"
+    assert adapter_mcp.propose_cart_impl([], WHY)["decision"] == "ESCALATE"
+    assert adapter_mcp.checkout_impl([], **DELIVERY)["status"] == "refused"
 
 
 # ------------------------------------------------------ retried tool call
 
 def test_two_identical_checkouts_place_exactly_one_order(db, link):
-    first = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
-    second = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    first = buy(("masala_dosa", 1))
+    second = buy(("masala_dosa", 1))
 
     assert first["status"] == "placed"
     assert second["status"] == "already_placed"
@@ -166,16 +183,16 @@ def test_two_identical_checkouts_place_exactly_one_order(db, link):
 
 
 def test_a_different_cart_is_not_treated_as_a_duplicate(db, link):
-    adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
-    other = adapter_mcp.checkout_impl(cart(("veg_thali", 1)))
+    buy(("masala_dosa", 1))
+    other = buy(("veg_thali", 1))
 
     assert other["status"] == "placed"
     assert len(link) == 2
 
 
 def test_the_same_cart_from_a_different_client_is_its_own_order(db, link):
-    adapter_mcp.checkout_impl(cart(("masala_dosa", 1)), client="alice")
-    bob = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)), client="bob")
+    buy(("masala_dosa", 1), client="alice")
+    bob = buy(("masala_dosa", 1), client="bob")
 
     assert bob["status"] == "placed"
     assert len(link) == 2
@@ -186,7 +203,7 @@ def test_checkout_uses_the_shared_ledger_not_a_second_one(db, link):
     reconciler use, so there is one source of truth about what happened."""
     import sqlite3
 
-    adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    buy(("masala_dosa", 1))
     with sqlite3.connect(db) as conn:
         rows = conn.execute(
             "SELECT event_type FROM processed_webhook_events WHERE event_type = 'mcp.checkout'"
@@ -201,21 +218,17 @@ def test_rephrasing_a_blocked_category_does_not_get_it_through(db, link):
     and this needs no MCP-specific code, because the rule lives in
     negotiation.py, which has never heard of MCP."""
     for attempt in range(4):
-        result = adapter_mcp.propose_cart_impl(
-            cart(("party_catering_tray", 1)), client=f"persistent-{attempt}"
-        )
+        result = propose(("party_catering_tray", 1), client=f"persistent-{attempt}")
         assert result["decision"] == "ESCALATE"
         assert "category not allowed: bulk_catering" in result["reason"]
 
-    forced = adapter_mcp.checkout_impl(cart(("party_catering_tray", 1)))
+    forced = buy(("party_catering_tray", 1))
     assert forced["status"] == "refused"
     assert link == [], "a forbidden category reached Razorpay"
 
 
 def test_padding_a_forbidden_item_with_allowed_ones_does_not_launder_it(db, link):
-    result = adapter_mcp.propose_cart_impl(
-        cart(("masala_dosa", 1), ("filter_coffee", 1), ("party_catering_tray", 1))
-    )
+    result = propose(("masala_dosa", 1), ("filter_coffee", 1), ("party_catering_tray", 1))
     assert result["decision"] == "ESCALATE"
     assert "category not allowed" in result["reason"]
     assert link == []
@@ -248,13 +261,13 @@ def test_menu_text_cannot_influence_the_decision(db, link):
     injected_id = next(
         i["id"] for i in adapter_mcp.get_catalog_impl()["items"] if i["price_inr"] == 480
     )
-    result = adapter_mcp.propose_cart_impl(cart((injected_id, 1)))
+    result = propose((injected_id, 1))
 
     assert result["decision"] == "ESCALATE", "menu prose changed the outcome"
     assert "human confirmation threshold" in result["reason"]
     assert result["total_inr"] == 480
 
-    assert adapter_mcp.checkout_impl(cart((injected_id, 1)))["status"] == "refused"
+    assert buy((injected_id, 1))["status"] == "refused"
     assert link == []
 
 
@@ -274,7 +287,168 @@ def test_the_same_item_priced_low_is_approved_showing_price_is_what_decides(db, 
         ],
     )
     only_id = adapter_mcp.get_catalog_impl()["items"][0]["id"]
-    assert adapter_mcp.propose_cart_impl(cart((only_id, 1)))["decision"] == "APPROVE"
+    assert propose((only_id, 1))["decision"] == "APPROVE"
+
+
+# ------------------------------- buyer reasoning: why the AI asked
+
+def test_reasoning_is_required_by_the_schema_not_merely_hoped_for():
+    """A model that omits it should get an invalid call, not a silent
+    empty string in the merchant's audit trail."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    schema = tools["propose_cart"].input_schema
+
+    assert "reasoning" in schema["required"]
+    assert len(schema["properties"]["reasoning"].get("description", "")) > 60, (
+        "the description is what makes a model fill this in usefully"
+    )
+
+
+def test_calling_propose_cart_without_reasoning_is_rejected():
+    """The call must fail validation, not arrive with reasoning absent."""
+    with pytest.raises(Exception) as raised:
+        asyncio.run(
+            adapter_mcp.mcp_server.call_tool(
+                "propose_cart", {"items": [{"item_id": "masala_dosa", "qty": 1}]}
+            )
+        )
+    assert "reasoning" in str(raised.value).lower()
+
+
+def test_empty_reasoning_is_refused_server_side_too(db):
+    """A schema constrains a cooperative caller and nothing else."""
+    for blank in ("", "   ", "\n"):
+        result = propose(("masala_dosa", 1), reasoning=blank)
+        assert result["decision"] == "ESCALATE"
+        assert "reasoning is required" in result["reason"]
+
+
+def test_both_reasons_are_recorded_and_kept_apart(db):
+    """The system's reason and the buyer's reason answer different
+    questions; merging them would lose one of the answers."""
+    why = "User wanted something light and cheap; the dosa is the cheapest hot dish."
+    propose(("masala_dosa", 1), reasoning=why)
+
+    event = audit_log.get_all_events(db_path=db)[0]
+    assert event["buyer_reasoning"] == why
+    assert event["reason"] == "within budget and below human confirm threshold"
+    assert event["buyer_reasoning"] != event["reason"]
+
+
+def test_reasoning_is_recorded_even_when_the_order_is_refused(db):
+    """Why an agent asked for something forbidden is exactly what a
+    merchant reviewing the trail wants to see."""
+    propose(("party_catering_tray", 1), reasoning="User specifically requested catering.")
+
+    event = audit_log.get_all_events(db_path=db)[0]
+    assert event["decision"] == "ESCALATE"
+    assert event["buyer_reasoning"] == "User specifically requested catering."
+
+
+# ------------------------------------------- delivery details required
+
+def test_delivery_fields_are_required_by_the_schema():
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    required = tools["checkout"].input_schema["required"]
+
+    for field in ("delivery_name", "delivery_phone", "delivery_address"):
+        assert field in required, f"{field} must be required, or a client can skip it"
+
+
+@pytest.mark.parametrize(
+    "missing", ["delivery_name", "delivery_phone", "delivery_address"]
+)
+def test_checkout_without_a_delivery_field_places_no_order(db, link, missing):
+    result = buy(("masala_dosa", 1), **{missing: "   "})
+
+    assert result["status"] == "refused"
+    assert missing in result["missing_fields"]
+    assert link == [], "an order was created without somewhere to deliver it"
+    assert audit_log.get_all_events(db_path=db) == [], "a refused checkout wrote a decision row"
+
+
+def test_a_completed_order_has_a_real_recipient_on_record(db, link):
+    propose(("masala_dosa", 1))
+    placed = buy(("masala_dosa", 1))
+    assert placed["status"] == "placed"
+
+    event = audit_log.get_all_events(db_path=db)[0]
+    assert event["delivery_name"] == "Priya Sharma"
+    assert event["delivery_phone"] == "9876543210"
+    assert "Indiranagar" in event["delivery_address"]
+    # Both reasons and the recipient, on one row.
+    assert event["buyer_reasoning"] == WHY
+    assert event["reason"] == "within budget and below human confirm threshold"
+
+
+# --------------------------------------------- the payment boundary
+
+def test_checkout_only_creates_a_link_and_cannot_move_money(db, link):
+    """checkout must be structurally incapable of completing payment: it
+    hands back a link the human opens, and holds nothing to pay with."""
+    placed = buy(("masala_dosa", 1))
+
+    assert placed["payment_url"].startswith("https://")
+    assert "payment_id" not in placed, "a payment id here would mean money already moved"
+    # It created a payment link and nothing else.
+    assert len(link) == 1
+
+
+def test_checkout_cannot_reach_the_autonomous_settlement_path(db, link):
+    """The no-browser settlement path belongs to AP2. If MCP could reach
+    it, an assistant could complete payment with no human at all."""
+    import ast
+
+    with open(adapter_mcp.__file__) as f:
+        tree = ast.parse(f.read())
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+
+    assert "autonomous_payment" not in imported
+
+
+def test_no_payment_credential_is_stored_in_the_source(db):
+    """A card checked into source is a card checked into source, whoever's
+    test account it belongs to."""
+    import pathlib
+    import re
+
+    # Targets card-shaped data specifically. A bare long digit run would
+    # also match the example phone numbers in docstrings, which are not
+    # credentials and would make this test cry wolf until it was ignored.
+    patterns = {
+        "card number literal": re.compile(r'["\']number["\']\s*:\s*["\']\d{12,19}'),
+        "cvv literal": re.compile(r'["\']cvv["\']\s*:\s*["\']\d'),
+        "expiry literal": re.compile(r'["\']expiry_month["\']\s*:\s*\d'),
+    }
+
+    root = pathlib.Path(adapter_mcp.__file__).parent
+    offenders = []
+    for path in root.glob("*.py"):
+        text = path.read_text(encoding="utf-8")
+        for label, pattern in patterns.items():
+            if pattern.search(text):
+                offenders.append(f"{path.name}: {label}")
+
+    assert offenders == [], f"payment credentials in source: {offenders}"
+
+
+def test_checkout_is_marked_destructive_so_clients_confirm_first():
+    """The first of the three checkpoints between proposing and paying:
+    the client's own UI asks the human before this runs at all."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    annotations = tools["checkout"].annotations
+
+    assert annotations.destructive_hint is True
+    assert annotations.read_only_hint is False
+    # The other two must NOT be destructive, or a client learns to click
+    # through every prompt and the one that matters stops being read.
+    assert tools["get_catalog"].annotations.destructive_hint is not True
+    assert tools["propose_cart"].annotations.destructive_hint is not True
 
 
 # --------------------------------------------------- statelessness
@@ -282,12 +456,12 @@ def test_the_same_item_priced_low_is_approved_showing_price_is_what_decides(db, 
 def test_no_session_survives_between_calls(db, link):
     """Nothing to lose on a reconnect: work is found by agent+cart, not by
     a session object held in memory."""
-    adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)))
+    propose(("masala_dosa", 1))
 
     # Simulate a client reconnecting: nothing is carried over.
     assert not hasattr(adapter_mcp, "_SESSIONS")
 
-    placed = adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    placed = buy(("masala_dosa", 1))
     assert placed["status"] == "placed"
     assert len(audit_log.get_events_for_agent("mcp:claude", db_path=db)) == 1
 
@@ -295,7 +469,7 @@ def test_no_session_survives_between_calls(db, link):
 def test_a_human_approved_escalation_can_still_check_out(db, link):
     """An order the cook waved through must be payable, even though
     re-running the check would escalate it again forever."""
-    escalated = adapter_mcp.propose_cart_impl(cart(("chicken_biryani", 2)))
+    escalated = propose(("chicken_biryani", 2))
     assert escalated["decision"] == "ESCALATE"
 
     adapter_mcp.orchestrator.record_human_override(
@@ -303,19 +477,19 @@ def test_a_human_approved_escalation_can_still_check_out(db, link):
         {"reason": escalated["reason"], "total_inr": escalated["total_inr"]},
     )
 
-    placed = adapter_mcp.checkout_impl(cart(("chicken_biryani", 2)))
+    placed = buy(("chicken_biryani", 2))
     assert placed["status"] == "placed"
     assert placed["amount_inr"] == 440
 
 
 def test_trust_accrues_to_an_mcp_agent_like_any_other(db, link):
     """An MCP-sourced agent builds history through the same trust engine."""
-    first = adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)))
+    first = propose(("masala_dosa", 1))
     assert first["trust_tier"] == "NEW"
 
-    adapter_mcp.checkout_impl(cart(("masala_dosa", 1)))
+    buy(("masala_dosa", 1))
     events = audit_log.get_events_for_agent("mcp:claude", db_path=db)
     audit_log.mark_paid(events[0]["id"], "pay_mcp_real", db_path=db)
 
-    later = adapter_mcp.propose_cart_impl(cart(("veg_thali", 1)))
+    later = propose(("veg_thali", 1))
     assert later["trust_tier"] == "STANDARD"
