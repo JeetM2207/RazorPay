@@ -17,8 +17,10 @@ def client(tmp_path, monkeypatch):
         "create_order",
         lambda **kwargs: {"id": "order_TESTORDER123"},
     )
-    # Default: S2S unavailable, which is the real situation on a standard
-    # test account. Individual tests override it.
+    # Default: neither real settlement path is available, which is the
+    # actual situation on a standard test account -- both /payments/create
+    # endpoints answer "URL was not found". Individual tests override.
+    monkeypatch.setattr(autonomous_payment, "_try_upi_collect", lambda *a, **k: None)
     monkeypatch.setattr(autonomous_payment, "_try_s2s", lambda *a, **k: None)
     return TestClient(adapter_ap2.app)
 
@@ -49,7 +51,89 @@ def test_a_simulated_capture_is_never_disguised_as_a_real_one(client):
     assert pm["simulated"] is True
     assert pm["payment_id"].startswith("sim_")
     assert not pm["payment_id"].startswith("pay_")
-    assert "not enabled" in pm["method"]
+    assert "enable S2S" in pm["method"]
+
+
+def test_upi_collect_is_tried_first_and_reported_as_real(client, monkeypatch):
+    """UPI to the auto-approving test VPA is the preferred path: no
+    browser, no card data, and a genuine payment id."""
+    calls = []
+    monkeypatch.setattr(
+        autonomous_payment, "_try_upi_collect",
+        lambda oid, amt: calls.append("upi") or "pay_upi123",
+    )
+    monkeypatch.setattr(
+        autonomous_payment, "_try_s2s",
+        lambda oid, amt: calls.append("card") or "pay_card999",
+    )
+
+    cart = _locked_cart(client)
+    pm = client.post(f"/ap2/cart-mandates/{cart['id']}/execute-payment").json()["payment_mandate"]
+
+    assert calls == ["upi"], "card S2S should not be reached when UPI settles"
+    assert pm["simulated"] is False
+    assert pm["payment_id"] == "pay_upi123"
+    assert "success@razorpay" in pm["method"]
+
+
+def test_card_s2s_is_the_fallback_when_upi_is_unavailable(client, monkeypatch):
+    monkeypatch.setattr(autonomous_payment, "_try_upi_collect", lambda *a, **k: None)
+    monkeypatch.setattr(autonomous_payment, "_try_s2s", lambda *a, **k: "pay_card999")
+
+    cart = _locked_cart(client)
+    pm = client.post(f"/ap2/cart-mandates/{cart['id']}/execute-payment").json()["payment_mandate"]
+
+    assert pm["simulated"] is False
+    assert pm["payment_id"] == "pay_card999"
+    assert pm["method"] == "Razorpay S2S card charge"
+
+
+def test_simulation_only_happens_when_both_real_paths_refuse(client, monkeypatch):
+    monkeypatch.setattr(autonomous_payment, "_try_upi_collect", lambda *a, **k: None)
+    monkeypatch.setattr(autonomous_payment, "_try_s2s", lambda *a, **k: None)
+
+    cart = _locked_cart(client)
+    pm = client.post(f"/ap2/cart-mandates/{cart['id']}/execute-payment").json()["payment_mandate"]
+
+    assert pm["simulated"] is True
+    assert pm["payment_id"].startswith("sim_")
+    assert "enable S2S" in pm["method"]
+
+
+def test_a_response_without_a_real_payment_id_is_not_treated_as_settled(monkeypatch):
+    """Razorpay answering 200 with something that isn't a pay_ id must not
+    be mistaken for a capture."""
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"razorpay_payment_id": "order_notapayment"}
+
+    monkeypatch.setattr(autonomous_payment.requests, "post", lambda *a, **k: FakeResponse())
+    assert autonomous_payment._try_upi_collect("order_x", 80) is None
+
+
+def test_the_upi_request_targets_the_official_test_vpa(monkeypatch):
+    sent = {}
+
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {"razorpay_payment_id": "pay_ok"}
+
+    def capture(url, **kwargs):
+        sent["url"] = url
+        sent["json"] = kwargs.get("json")
+        return FakeResponse()
+
+    monkeypatch.setattr(autonomous_payment.requests, "post", capture)
+    autonomous_payment._try_upi_collect("order_abc", 380)
+
+    assert sent["url"].endswith("/payments/create/upi")
+    assert sent["json"]["method"] == "upi"
+    assert sent["json"]["upi"]["flow"] == "collect"
+    assert sent["json"]["upi"]["vpa"] == "success@razorpay"
+    assert sent["json"]["amount"] == 38000, "amount must be sent in paise"
+    assert sent["json"]["order_id"] == "order_abc"
 
 
 def test_a_real_s2s_charge_is_reported_as_real(client, monkeypatch):

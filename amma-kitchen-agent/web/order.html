@@ -734,20 +734,27 @@ async function settle(mandate, hardCap) {
   await step(`Payment Mandate locked. Total: <b>${rupee(total)}</b>.`, "step", 540);
   const cart = (await api(`/ap2/intent-mandates/${mandate.id}/cart-mandate`, { method: "POST" })).cart_mandate;
 
-  await step(`Utilising pre-authorised card ••••${PROFILE.card_last4} (within your ${rupee(hardCap)} cap).`, "step", 540);
+  await step(`Authorised by you up to ${rupee(hardCap)}; this is ${rupee(total)}.`, "step", 500);
   setState("SETTLING", "#e3b341");
-  await step("Executing server-to-server payment…", "step", 320);
+  await step("Executing Razorpay UPI Collect request…", "step", 380);
+  await step(`Pinging VPA: <b>success@razorpay</b> (test mode auto-approve).`, "step", 380);
 
   const working = cursor();
   const pm = (await api(`/ap2/cart-mandates/${cart.id}/execute-payment`, { method: "POST" })).payment_mandate;
   working.remove();
 
   log(`&gt; Razorpay order <b>${pm.order_id}</b> created.`, "quiet");
-  log(`&gt; Success: payment <b>${pm.payment_id}</b> confirmed.`, "ok");
 
   if (pm.simulated) {
-    log(`&gt; Note: ${pm.method}. The order above is real; the capture is`, "warn");
-    log(`&gt; simulated and marked <b>sim_</b> in the audit trail, not <b>pay_</b>.`, "warn");
+    // Say plainly what did and didn't happen. Claiming a UPI capture
+    // that Razorpay never made would put a false record in the very
+    // audit trail this system asks people to trust.
+    log(`&gt; UPI collect declined: ${pm.method}.`, "warn");
+    log(`&gt; Falling back to a simulated capture: <b>${pm.payment_id}</b>.`, "warn");
+    log(`&gt; Marked <b>sim_</b> in the audit trail, never <b>pay_</b>, so it can't be`, "warn");
+    log(`&gt; mistaken for money that moved.`, "warn");
+  } else {
+    log(`&gt; Success: real payment ID <b>${pm.payment_id}</b> confirmed via UPI.`, "ok");
   }
 
   log("&gt; Transaction complete. Amma's Kitchen has been notified.", "ok");
