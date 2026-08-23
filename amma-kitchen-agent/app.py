@@ -17,6 +17,7 @@ Then:
 """
 
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -29,6 +30,7 @@ load_dotenv()
 
 import adapter_acp
 import adapter_ap2
+import adapter_mcp
 import adapter_x402
 import audit_log
 import buyer_mandate
@@ -43,7 +45,19 @@ import merchant_config
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
-app = FastAPI(title="Amma's Kitchen -- Agentic Commerce")
+@asynccontextmanager
+async def _lifespan(fastapi_app: FastAPI):
+    """Run the MCP session manager alongside this app.
+
+    A mounted sub-app's lifespan is NOT run by the parent, so without
+    this the MCP endpoint 500s on the first request with "Task group is
+    not initialized" -- the session manager never got started.
+    """
+    async with adapter_mcp.app.router.lifespan_context(fastapi_app):
+        yield
+
+
+app = FastAPI(title="Amma's Kitchen -- Agentic Commerce", lifespan=_lifespan)
 
 app.include_router(adapter_acp.router)
 app.include_router(adapter_ap2.router)
@@ -54,6 +68,11 @@ app.include_router(catalog.router)
 app.include_router(dashboard.router)
 
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+
+# The MCP endpoint an external assistant connects to. Mounted rather than
+# routed because it is a Starlette app of its own, speaking Streamable
+# HTTP instead of plain REST.
+app.mount("/mcp", adapter_mcp.app)
 
 
 class CatalogItemIn(BaseModel):

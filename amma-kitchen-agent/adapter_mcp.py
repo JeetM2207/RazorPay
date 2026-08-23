@@ -1,0 +1,344 @@
+"""MCP adapter: Amma's Kitchen as tools a real AI assistant can call.
+
+The other three adapters are spoken to by buyer agents we wrote. This one
+is spoken to by somebody else's model -- a user adds this server as a
+custom connector in their own Claude account, says "order me dinner from
+Amma's Kitchen", and Claude negotiates and checks out through the same
+`orchestrator.negotiate_and_record()` that ACP, AP2 and x402 go through.
+
+That makes it the sharpest test of the project's central rule. An
+external model chooses when to call these tools and what to put in them,
+and it still cannot decide anything: APPROVE / COUNTER_OFFER / ESCALATE
+comes back from plain Python in negotiation.py, which has no idea MCP
+exists. The model proposes; the core disposes.
+
+Shape notes
+-----------
+Stateless between calls, like adapter_x402.py and unlike ACP's sessions.
+An MCP client may reconnect, retry after a timeout, or call `checkout`
+having never called `get_catalog` -- there is no session object to lose,
+and work is resumed by agent+cart fingerprint instead.
+
+Everything here is translation. The catalog tool wraps catalog.py, trust
+runs through trust.py via the orchestrator, checkout claims through the
+same idempotency ledger the webhook handler and reconciler use, and audit
+rows are written by the orchestrator exactly as for every other protocol
+-- tagged `mcp:` so the source is visible in the trail.
+"""
+
+import hashlib
+import json
+
+from mcp.server.mcpserver import MCPServer
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, Field
+
+import audit_log
+import catalog
+import idempotency
+import merchant_config
+import orchestrator
+
+PROTOCOL = "mcp"
+
+# Whatever a client calls itself, it is namespaced under `mcp:` so it can
+# never present as an agent from another protocol and inherit its trust.
+AGENT_PREFIX = "mcp:"
+DEFAULT_CLIENT = "claude"
+
+
+class CartItem(BaseModel):
+    item_id: str = Field(description="Catalog item id exactly as returned by get_catalog.")
+    qty: int = Field(ge=1, description="How many of this item.")
+
+
+# ------------------------------------------------------------- internals
+
+def _agent_id(client: str | None) -> str:
+    name = (client or DEFAULT_CLIENT).strip() or DEFAULT_CLIENT
+    return AGENT_PREFIX + name.removeprefix(AGENT_PREFIX)
+
+
+def _cart_of(items: list[CartItem]) -> list[tuple[str, int]]:
+    return [(item.item_id, item.qty) for item in items]
+
+
+def _fingerprint(agent_id: str, cart: list[tuple[str, int]]) -> str:
+    """Same shape as adapter_x402's, and for the same reason: a retry of
+    the same request from the same agent must resolve to the same work
+    rather than starting a second one."""
+    payload = json.dumps([agent_id, sorted(cart)], separators=(",", ":"))
+    return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _unmatched(cart: list[tuple[str, int]]) -> list[str]:
+    """Item ids the merchant does not sell, reported by name.
+
+    The cart is still handed to the negotiation core unchanged -- it
+    returns ESCALATE for an unknown item, and that is the real answer.
+    This only names them so the assistant can tell its user what was
+    wrong, instead of substituting something nobody asked for.
+    """
+    menu = merchant_config.current_menu()
+    return [item for item, _qty in cart if item not in menu]
+
+
+def _same_cart(event: dict, cart: list[tuple[str, int]]) -> bool:
+    try:
+        lines = json.loads(event["cart_json"])
+    except (json.JSONDecodeError, TypeError):
+        return False
+    return sorted((line["item"], line["qty"]) for line in lines) == sorted(cart)
+
+
+def _events_for(agent_id: str) -> list[dict]:
+    """Newest first.
+
+    The db path is read HERE rather than relying on the default argument
+    of get_events_for_agent: that default is bound when audit_log is
+    imported, so it would keep pointing at whatever the path was then.
+    Every other module resolves it at call time for the same reason.
+    """
+    return list(reversed(audit_log.get_events_for_agent(agent_id, db_path=audit_log.DEFAULT_DB_PATH)))
+
+
+def _settled_checkout(agent_id: str, cart: list[tuple[str, int]]) -> dict | None:
+    """A checkout already done for this exact cart, if any.
+
+    This is what makes a retried tool call safe: the client gets the
+    original order back rather than a second one.
+    """
+    for event in _events_for(agent_id):
+        if event["payment_link_id"] and _same_cart(event, cart):
+            return event
+    return None
+
+
+def _approved_unpaid_event(agent_id: str, cart: list[tuple[str, int]]) -> dict | None:
+    """An APPROVE already recorded for this cart and not yet paid for, so
+    proposing then checking out doesn't record the same decision twice."""
+    for event in _events_for(agent_id):
+        if (
+            event["decision"] == "APPROVE"
+            and not event["payment_link_id"]
+            and _same_cart(event, cart)
+        ):
+            return event
+    return None
+
+
+def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
+    """The same object every other adapter returns, differently wrapped."""
+    response = {
+        "decision": detail["decision"],
+        "reason": detail["reason"],
+        "total_inr": detail["total_inr"],
+        "trust_tier": detail["trust_tier"],
+        "order_id": detail["event_id"],
+        "alternatives": detail["alternatives"],
+    }
+    if detail.get("upsell_suggestion"):
+        response["upsell_suggestion"] = detail["upsell_suggestion"]
+    unmatched = _unmatched(cart)
+    if unmatched:
+        response["unmatched_items"] = unmatched
+    return response
+
+
+# ---------------------------------------------------------- tool bodies
+# Kept as plain functions so they are directly testable without standing
+# up a transport. The MCP registrations below are thin wrappers.
+
+def get_catalog_impl() -> dict:
+    """Wraps catalog.py rather than re-deriving the feed, and trims the
+    per-item currency repetition -- custom connector responses have a
+    token ceiling and none of it should go on saying "INR" 20 times."""
+    feed = catalog.get_catalog()
+    return {
+        "merchant": feed["merchant"],
+        "items": [
+            {
+                "id": item["id"],
+                "title": item["title"],
+                "category": item["category"],
+                "price_inr": item["price"],
+                "in_stock": item["availability"] == "in_stock",
+                "agent_orderable": item["agent_orderable"],
+            }
+            for item in feed["items"]
+        ],
+        "order_limits": feed["order_limits"],
+        "note": (
+            "Items with agent_orderable=false are sold in person only and will be "
+            "refused if ordered. Orders at or above human_confirm_at_inr wait for "
+            "the merchant to approve them."
+        ),
+    }
+
+
+def propose_cart_impl(items: list[CartItem], client: str | None = None) -> dict:
+    agent_id = _agent_id(client)
+    cart = _cart_of(items)
+    if not cart:
+        return {
+            "decision": "ESCALATE",
+            "reason": "empty cart: nothing to price",
+            "total_inr": 0,
+            "trust_tier": "NEW",
+            "order_id": None,
+            "alternatives": [],
+        }
+
+    detail = orchestrator.negotiate_and_record(agent_id, PROTOCOL, cart)
+    return _decision_response(detail, cart)
+
+
+def checkout_impl(items: list[CartItem], client: str | None = None) -> dict:
+    agent_id = _agent_id(client)
+    cart = _cart_of(items)
+    if not cart:
+        return {"status": "refused", "reason": "empty cart: nothing to pay for"}
+
+    # A retried tool call must return the original order, not make another.
+    already = _settled_checkout(agent_id, cart)
+    if already:
+        return {
+            "status": "already_placed",
+            "order_id": already["id"],
+            "amount_inr": already["total_inr"],
+            "payment_link_id": already["payment_link_id"],
+            "duplicate": True,
+            "reason": "this exact cart was already checked out; returning the original order",
+        }
+
+    # Reuse an APPROVE already on record for this cart -- including one a
+    # human granted for an escalated order -- rather than re-deciding and
+    # writing a second audit row for the same decision.
+    approved = _approved_unpaid_event(agent_id, cart)
+    if approved is None:
+        detail = orchestrator.negotiate_and_record(agent_id, PROTOCOL, cart)
+        if detail["decision"] != "APPROVE":
+            # No claim was made, so a legitimate retry after the merchant
+            # approves is still able to check out.
+            refusal = _decision_response(detail, cart)
+            refusal["status"] = "refused"
+            return refusal
+        event_id = detail["event_id"]
+        human_approved = False
+    else:
+        event_id = approved["id"]
+        human_approved = "human override" in (approved["reason"] or "")
+
+    # Claim through the SAME ledger the webhook handler and reconciler
+    # use. Claimed only once the order is genuinely going to be created.
+    db_path = audit_log.DEFAULT_DB_PATH
+    if not idempotency.claim_event("mcp.checkout", _fingerprint(agent_id, cart), db_path):
+        replay = _settled_checkout(agent_id, cart)
+        if replay:
+            return {
+                "status": "already_placed",
+                "order_id": replay["id"],
+                "amount_inr": replay["total_inr"],
+                "payment_link_id": replay["payment_link_id"],
+                "duplicate": True,
+                "reason": "this exact cart was already checked out; returning the original order",
+            }
+        return {
+            "status": "in_progress",
+            "reason": "a checkout for this cart is already underway; do not retry immediately",
+        }
+
+    # orchestrator re-runs the whole check here as defense in depth, so a
+    # client claiming "this was approved" is never taken at its word.
+    # skip_reevaluation only for a cart a human explicitly waved through,
+    # which would otherwise re-escalate forever.
+    link = orchestrator.create_payment_for_cart(
+        agent_id, event_id, cart, skip_reevaluation=human_approved
+    )
+    total = sum(
+        merchant_config.current_menu()[name].price_inr * qty for name, qty in cart
+    )
+    return {
+        "status": "placed",
+        "order_id": event_id,
+        "amount_inr": total,
+        "payment_link_id": link["id"],
+        "payment_url": link["short_url"],
+        "duplicate": False,
+    }
+
+
+# ------------------------------------------------------------ MCP server
+
+mcp_server = MCPServer(
+    name="ammas-kitchen",
+    title="Amma's Kitchen",
+    version="1.0.0",
+    instructions=(
+        "Amma's Kitchen is a home kitchen that accepts orders from AI assistants. "
+        "Always call get_catalog first so you order real items at real prices. "
+        "Then call propose_cart to have the kitchen price and check the order — it "
+        "may approve it, counter with alternatives, or hold it for the cook to "
+        "confirm. Only call checkout once propose_cart has returned APPROVE. "
+        "You cannot approve an order yourself; the kitchen decides."
+    ),
+)
+
+
+@mcp_server.tool(
+    name="get_catalog",
+    title="Get Amma's Kitchen menu",
+    description=(
+        "Fetch the current menu for Amma's Kitchen: every dish with its id, price in "
+        "rupees, whether it is in stock, and whether an AI assistant is allowed to "
+        "order it at all. Also returns the kitchen's own limits — the largest order "
+        "it will accept, and the amount above which the cook must confirm by hand. "
+        "Call this before proposing a cart so you use real item ids and real prices."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def get_catalog() -> dict:
+    return get_catalog_impl()
+
+
+@mcp_server.tool(
+    name="propose_cart",
+    title="Price and check an order",
+    description=(
+        "Send a cart of items and quantities to Amma's Kitchen for pricing and "
+        "checking. Returns one of three answers: APPROVE (the kitchen will make it, "
+        "and you may then call checkout), COUNTER_OFFER (it cannot do exactly that, "
+        "with alternatives that would work), or ESCALATE (the cook has to confirm "
+        "this one by hand, or it breaks a rule of hers). The reason is always "
+        "included. Item ids must come from get_catalog; anything the kitchen does "
+        "not sell is named back to you rather than substituted. This does not take "
+        "any payment."
+    ),
+    annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
+)
+def propose_cart(items: list[CartItem], client: str | None = None) -> dict:
+    return propose_cart_impl(items, client)
+
+
+@mcp_server.tool(
+    name="checkout",
+    title="Place and pay for the order",
+    description=(
+        "Place an order that propose_cart has already APPROVED, creating a real "
+        "payment for it. The kitchen re-checks the cart against its own rules before "
+        "taking anything, so a cart that is no longer acceptable is refused here even "
+        "if it was approved a moment ago. Calling this twice with the same cart is "
+        "safe: the original order is returned rather than a second one being placed."
+    ),
+    annotations=ToolAnnotations(
+        read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
+    ),
+)
+def checkout(items: list[CartItem], client: str | None = None) -> dict:
+    return checkout_impl(items, client)
+
+
+# Stateless HTTP: no per-connection session to lose when a client
+# reconnects, which is also what lets this sit behind a tunnel or a
+# multi-instance deploy without sticky routing.
+app = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True)

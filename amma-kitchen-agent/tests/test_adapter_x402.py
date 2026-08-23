@@ -45,9 +45,18 @@ def _order(client, agent_id="x-buyer", item="masala_dosa", qty=1, proof=None):
     )
 
 
-def test_adapter_x402_shares_the_same_orchestrator_as_the_other_adapters():
-    """Third protocol, same brain -- not a copy of it."""
+def test_every_adapter_shares_the_same_orchestrator():
+    """Four protocols, one brain -- not four copies of it.
+
+    Extended as each adapter landed; the assertion is identity, not
+    equality, so a re-implementation would fail it.
+    """
+    import adapter_ap2
+    import adapter_mcp
+
     assert adapter_x402.orchestrator is adapter_acp.orchestrator
+    assert adapter_ap2.orchestrator is adapter_acp.orchestrator
+    assert adapter_mcp.orchestrator is adapter_acp.orchestrator
 
 
 def test_first_request_answers_402_with_a_real_payment_link(client, monkeypatch):
