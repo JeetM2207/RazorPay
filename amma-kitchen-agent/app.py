@@ -62,6 +62,7 @@ app = FastAPI(title="Amma's Kitchen -- Agentic Commerce", lifespan=_lifespan)
 app.include_router(adapter_acp.router)
 app.include_router(adapter_ap2.router)
 app.include_router(adapter_x402.router)
+app.include_router(adapter_mcp.router)
 app.include_router(webhook_handler.router)
 app.include_router(escalations.router)
 app.include_router(catalog.router)
@@ -356,14 +357,19 @@ def consume_buyer_reply(agent_id: str) -> dict:
 
 @app.get("/api/pending")
 def pending() -> dict:
-    """Everything awaiting a human decision, across BOTH protocols, in one
+    """Everything awaiting a human decision, across ALL protocols, in one
     merged queue. The merchant shouldn't have to care which protocol an
     order arrived on -- that's the whole architectural claim, made
-    operational."""
+    operational.
+
+    MCP's entries are rebuilt from the audit trail rather than held in
+    memory, because that adapter is deliberately stateless.
+    """
     acp = adapter_acp.list_sessions(status="requires_human")["sessions"]
     ap2 = adapter_ap2.list_intent_mandates(status="requires_human")["sessions"]
     x402 = adapter_x402.list_orders(status="requires_human")["sessions"]
-    return {"pending": acp + ap2 + x402}
+    mcp = adapter_mcp.list_pending()["sessions"]
+    return {"pending": acp + ap2 + x402 + mcp}
 
 
 @app.get("/api/sms")

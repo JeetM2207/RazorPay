@@ -31,6 +31,7 @@ import json
 import os
 
 from dotenv import load_dotenv
+from fastapi import APIRouter, HTTPException
 from mcp.server.mcpserver import MCPServer
 from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
@@ -50,6 +51,12 @@ PROTOCOL = "mcp"
 # never present as an agent from another protocol and inherit its trust.
 AGENT_PREFIX = "mcp:"
 DEFAULT_CLIENT = "claude"
+
+# Only an ESCALATE caused by the human-confirm threshold is something a
+# human may wave through. A disallowed category or an unknown item is a
+# hard merchant rule, not a second opinion. Same wording, and the same
+# restriction, as the other three adapters.
+_HUMAN_OVERRIDABLE_MARKER = "human confirmation threshold"
 
 
 class CartItem(BaseModel):
@@ -130,6 +137,161 @@ def _approved_unpaid_event(agent_id: str, cart: list[tuple[str, int]]) -> dict |
         ):
             return event
     return None
+
+
+def _notify_merchant(detail: dict, cart: list[tuple[str, int]]) -> None:
+    """Text Amma about an escalation, exactly as the other adapters do.
+
+    The handle passed through is the audit event id rather than a session
+    id: this adapter keeps no session, so the audit row IS the order.
+    Isolated and swallowed for the same reason as everywhere else -- a
+    notification problem must never stop an order being recorded.
+    """
+    try:
+        import escalations
+
+        escalations.notify(PROTOCOL, str(detail["event_id"]), detail, cart)
+    except Exception:
+        pass
+
+
+def _is_resolved(agent_id: str, cart: list[tuple[str, int]], after_id: int) -> bool:
+    """Has a human already decided this escalated cart?
+
+    Resolution is a later APPROVE (a human override) or REJECTED for the
+    same agent and cart. With no session to hold status on, the trail is
+    the state.
+    """
+    for event in audit_log.get_events_for_agent(agent_id, db_path=audit_log.DEFAULT_DB_PATH):
+        if event["id"] <= after_id:
+            continue
+        if event["decision"] in ("APPROVE", "REJECTED") and _same_cart(event, cart):
+            return True
+    return False
+
+
+def _cart_from(event: dict) -> list[tuple[str, int]]:
+    try:
+        return [(line["item"], line["qty"]) for line in json.loads(event["cart_json"])]
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return []
+
+
+def list_pending() -> dict:
+    """MCP escalations awaiting a human, in the shape the merchant console
+    already understands.
+
+    Rebuilt from the audit trail on each call rather than held in memory,
+    so it survives a restart and a reconnecting client -- which is the
+    whole point of this adapter being stateless.
+    """
+    import trust
+
+    db_path = audit_log.DEFAULT_DB_PATH
+    sessions = []
+    for event in audit_log.get_all_events(db_path=db_path, limit=500):
+        if not event["agent_id"].startswith(AGENT_PREFIX):
+            continue
+        if event["decision"] != "ESCALATE":
+            continue
+        cart = _cart_from(event)
+        if not cart or _is_resolved(event["agent_id"], cart, event["id"]):
+            continue
+
+        sessions.append(
+            {
+                "session_id": str(event["id"]),
+                "agent_id": event["agent_id"],
+                "status": "requires_human",
+                "protocol": PROTOCOL,
+                "cart": [{"item": name, "qty": qty} for name, qty in cart],
+                "decision_detail": {
+                    "event_id": event["id"],
+                    "agent_id": event["agent_id"],
+                    "decision": "ESCALATE",
+                    "reason": event["reason"],
+                    "total_inr": event["total_inr"],
+                    "trust_tier": trust.compute_trust_tier(
+                        event["agent_id"], db_path=db_path
+                    ).value,
+                    "alternatives": [],
+                    "buyer_reasoning": event.get("buyer_reasoning"),
+                },
+            }
+        )
+    return {"sessions": sessions}
+
+
+def _escalated_event(order_id) -> dict:
+    event_id = int(order_id)
+    for session in list_pending()["sessions"]:
+        if session["decision_detail"]["event_id"] == event_id:
+            return session
+    raise HTTPException(409, f"order #{event_id} is not awaiting a decision")
+
+
+def human_confirm(order_id, items: list[CartItem] | None = None) -> dict:
+    """A human approves an escalated MCP order.
+
+    Same restriction as every other adapter: only a threshold escalation
+    can be waved through. A disallowed category is a hard merchant rule
+    and no human overrides it here.
+    """
+    session = _escalated_event(order_id)
+    detail = session["decision_detail"]
+    cart = [(line["item"], line["qty"]) for line in session["cart"]]
+
+    if _HUMAN_OVERRIDABLE_MARKER not in detail["reason"]:
+        raise HTTPException(
+            403,
+            "this escalation is a hard merchant rule (disallowed category, "
+            "unknown item, or over the flexible margin) and cannot be "
+            "human-overridden here",
+        )
+
+    new_event_id = orchestrator.record_human_override(
+        session["agent_id"], PROTOCOL, cart, detail
+    )
+    return {
+        "order_id": new_event_id,
+        "status": "approved",
+        "reason": f"human override: {detail['reason']}",
+    }
+
+
+def human_reject(order_id) -> dict:
+    session = _escalated_event(order_id)
+    detail = session["decision_detail"]
+    cart = [(line["item"], line["qty"]) for line in session["cart"]]
+
+    new_event_id = orchestrator.record_human_rejection(
+        session["agent_id"], PROTOCOL, cart, detail
+    )
+    return {
+        "order_id": new_event_id,
+        "status": "rejected",
+        "reason": f"human rejected: {detail['reason']}",
+    }
+
+
+# Merchant-side REST, separate from the MCP protocol surface: these are
+# for Amma's console and the SMS resolver, not for the assistant.
+router = APIRouter()
+
+
+@router.get("/mcp-orders")
+def list_mcp_orders() -> dict:
+    return list_pending()
+
+
+@router.post("/mcp-orders/{order_id}/human_confirm")
+def confirm_mcp_order(order_id: str) -> dict:
+    return human_confirm(order_id)
+
+
+@router.post("/mcp-orders/{order_id}/human_reject")
+def reject_mcp_order(order_id: str) -> dict:
+    return human_reject(order_id)
 
 
 def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
@@ -214,6 +376,8 @@ def propose_cart_impl(
     audit_log.attach_buyer_reasoning(
         detail["event_id"], reasoning.strip(), db_path=audit_log.DEFAULT_DB_PATH
     )
+    if detail["decision"] == "ESCALATE":
+        _notify_merchant(detail, cart)
     response = _decision_response(detail, cart)
     response["buyer_reasoning"] = reasoning.strip()
     return response
@@ -273,6 +437,8 @@ def checkout_impl(
     approved = _approved_unpaid_event(agent_id, cart)
     if approved is None:
         detail = orchestrator.negotiate_and_record(agent_id, PROTOCOL, cart)
+        if detail["decision"] == "ESCALATE":
+            _notify_merchant(detail, cart)
         if detail["decision"] != "APPROVE":
             # No claim was made, so a legitimate retry after the merchant
             # approves is still able to check out.

@@ -166,6 +166,10 @@ def _adapter_for(protocol: str):
         import adapter_x402
 
         return adapter_x402
+    if protocol == "mcp":
+        import adapter_mcp
+
+        return adapter_mcp
     raise ValueError(f"unknown protocol: {protocol}")
 
 

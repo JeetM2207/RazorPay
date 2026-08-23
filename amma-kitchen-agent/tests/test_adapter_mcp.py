@@ -466,6 +466,123 @@ def test_checkout_is_marked_destructive_so_clients_confirm_first():
     assert tools["propose_cart"].annotations.destructive_hint is not True
 
 
+# ------------------------------ an escalation must reach the merchant
+
+def test_an_escalation_texts_the_merchant(db, monkeypatch):
+    """The bug that started this: an MCP order over the threshold was
+    recorded and then went nowhere -- no message, no queue entry."""
+    import escalations
+    import notification_service
+
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+
+    propose(("chicken_biryani", 2))          # Rs.440, over the Rs.400 threshold
+
+    outbox = notification_service.outbox()
+    assert len(outbox) == 1, "an escalated MCP order did not reach Amma"
+    assert "2x Chicken Biryani" in outbox[0]["body"]
+    assert "Reply '1' to APPROVE" in outbox[0]["body"]
+
+
+def test_an_approved_order_texts_nobody(db, monkeypatch):
+    import escalations
+    import notification_service
+
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+
+    propose(("masala_dosa", 1))
+    assert notification_service.outbox() == []
+
+
+def test_an_escalation_appears_in_the_merchant_queue(db):
+    """Rebuilt from the audit trail, since this adapter holds no session."""
+    result = propose(("chicken_biryani", 2))
+
+    pending = adapter_mcp.list_pending()["sessions"]
+    assert len(pending) == 1
+    entry = pending[0]
+    assert entry["protocol"] == "mcp"
+    assert entry["status"] == "requires_human"
+    assert entry["decision_detail"]["event_id"] == result["order_id"]
+    assert entry["cart"] == [{"item": "chicken_biryani", "qty": 2}]
+    assert entry["decision_detail"]["buyer_reasoning"] == WHY
+
+
+def test_the_queue_survives_a_restart(db):
+    """No in-memory state to lose -- which is the point of being
+    stateless, and is what the other adapters cannot claim."""
+    propose(("chicken_biryani", 2))
+
+    import importlib
+
+    importlib.reload(adapter_mcp)          # as if the process restarted
+    assert len(adapter_mcp.list_pending()["sessions"]) == 1
+
+
+def test_approving_it_clears_the_queue_and_lets_checkout_proceed(db, link):
+    escalated = propose(("chicken_biryani", 2))
+    assert escalated["decision"] == "ESCALATE"
+
+    adapter_mcp.human_confirm(escalated["order_id"])
+    assert adapter_mcp.list_pending()["sessions"] == [], "still queued after approval"
+
+    placed = buy(("chicken_biryani", 2))
+    assert placed["status"] == "placed"
+    assert placed["amount_inr"] == 440
+
+
+def test_rejecting_it_clears_the_queue_and_blocks_checkout(db, link):
+    escalated = propose(("chicken_biryani", 2))
+    adapter_mcp.human_reject(escalated["order_id"])
+
+    assert adapter_mcp.list_pending()["sessions"] == []
+    assert link == []
+
+
+def test_a_hard_rule_cannot_be_approved_from_the_queue_either(db, link):
+    """Same restriction as every other adapter: a disallowed category is
+    not a threshold, and no human waves it through here."""
+    from fastapi import HTTPException
+
+    escalated = propose(("party_catering_tray", 1))
+    with pytest.raises(HTTPException) as raised:
+        adapter_mcp.human_confirm(escalated["order_id"])
+
+    assert raised.value.status_code == 403
+    assert adapter_mcp.list_pending()["sessions"] != [], "it should still be waiting"
+    assert link == []
+
+
+def test_deciding_an_order_that_is_not_waiting_is_refused(db):
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as raised:
+        adapter_mcp.human_confirm(999999)
+    assert raised.value.status_code == 409
+
+
+def test_polling_does_not_re_text_the_merchant(db, monkeypatch):
+    """A client asking again must not fire a fresh alert each time."""
+    import escalations
+    import notification_service
+
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+
+    for _ in range(3):
+        propose(("chicken_biryani", 2))
+
+    # Each propose is a real decision and is logged, but Amma is told once
+    # per order rather than once per attempt.
+    bodies = {m["body"] for m in notification_service.outbox()}
+    assert len(bodies) == len(notification_service.outbox()), "duplicate alerts for one cart"
+
+
 # --------------------------------------------------- statelessness
 
 def test_no_session_survives_between_calls(db, link):

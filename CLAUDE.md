@@ -456,7 +456,7 @@ file for card-shaped literals; it is written to match card *structures* rather t
 long digit run, because the first version cried wolf on an example phone number in a
 docstring and a test that cries wolf gets ignored.
 
-**What broke while building it.** Four things worth recording:
+**What broke while building it.** Five things worth recording:
 
 - `audit_log.get_events_for_agent`'s `db_path` default is bound when the module is
   imported, so the adapter's "have I already checked this cart out?" lookups were reading
@@ -483,6 +483,17 @@ docstring and a test that cries wolf gets ignored.
   now only an optimisation and the ALTER tolerates its own duplicate, which is what
   makes it correct; anything else still raises. The regression test runs eight
   threads through a barrier and was confirmed to fail without the fix.
+- An MCP order over the threshold escalated correctly, was written to the audit trail
+  correctly -- and then went nowhere. It never texted Amma and never appeared in her
+  console queue, so the customer was told "the kitchen logged it as pending her
+  confirmation" about an order she had no way to see. The cause was structural: the
+  other three adapters hold in-memory session state and the queue reads that, and
+  when this adapter was deliberately made stateless nothing was built to replace it.
+  MCP's queue is now rebuilt from the audit trail on each call, which turns out to be
+  the better shape anyway -- it survives a restart, which the other three do not, and
+  it recovered the already-stranded order retroactively the moment it shipped. Worth
+  remembering as a class of bug: a component can be individually correct and still be
+  invisible to every surface that was supposed to show it.
 
 **Connecting it to a real Claude account.** The server must be reachable by Anthropic's
 cloud — Claude connects from Anthropic's infrastructure, not from the user's machine, so
