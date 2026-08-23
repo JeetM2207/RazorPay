@@ -34,6 +34,10 @@ CONVERSATION_TTL_SECONDS = 900
 _CONVERSATIONS: dict[str, "Conversation"] = {}
 
 
+SUBSTITUTE = "substitute"   # "we don't sell that -- what instead?"
+APPROVAL = "approval"       # "this is over your soft cap -- proceed?"
+
+
 @dataclass
 class Conversation:
     agent_id: str
@@ -41,19 +45,24 @@ class Conversation:
     original_request: str
     unmatched: list[str]
     asked_at: str
+    kind: str = SUBSTITUTE
     reply: str | None = None
     replied_at: str | None = None
     consumed: bool = False
     transport: str = "mock"
+    # Only meaningful for an APPROVAL question: True/False once answered.
+    decision: bool | None = None
 
     def as_dict(self) -> dict:
         return {
             "agent_id": self.agent_id,
             "phone": self.phone,
+            "kind": self.kind,
             "original_request": self.original_request,
             "unmatched": self.unmatched,
             "asked_at": self.asked_at,
             "reply": self.reply,
+            "decision": self.decision,
             "answered": self.reply is not None,
             "consumed": self.consumed,
             "transport": self.transport,
@@ -149,6 +158,60 @@ def ask(
     return conversation
 
 
+def ask_approval(
+    agent_id: str,
+    phone: str,
+    cart_label: str,
+    total_inr: int,
+    soft_cap_inr: int,
+    shop_name: str = "Amma's Kitchen",
+) -> Conversation:
+    """Ask the customer to approve an order above their own soft cap.
+
+    Deliberately worded YES/NO rather than 1/2. The merchant's escalation
+    messages use 1/2, and on a shared number distinct vocabularies make
+    an ambiguous reply far less likely -- see the routing note at the top.
+    """
+    normalised = normalise_phone(phone)
+    if not normalised:
+        raise ValueError("No usable phone number on file for this customer.")
+
+    body = (
+        f"{shop_name}: your agent wants to order {cart_label} for Rs.{total_inr}.\n\n"
+        f"That's above the Rs.{soft_cap_inr} you asked to be checked on.\n\n"
+        "Reply YES to go ahead, or NO to cancel."
+    )
+    sent = notification_service.send_sms(body, to=normalised)
+
+    conversation = Conversation(
+        agent_id=agent_id,
+        phone=normalised,
+        original_request=cart_label,
+        unmatched=[],
+        asked_at=datetime.now(timezone.utc).isoformat(),
+        kind=APPROVAL,
+        transport=sent.transport,
+    )
+    _CONVERSATIONS[agent_id] = conversation
+    return conversation
+
+
+_YES = re.compile(r"^\s*(y|yes|yeah|yep|ok|okay|approve[d]?|accept|go|go ahead|sure|1)\s*[.!]?\s*$", re.I)
+_NO = re.compile(r"^\s*(n|no|nope|cancel|stop|reject|decline[d]?|don'?t|2)\s*[.!]?\s*$", re.I)
+
+
+def parse_approval(text: str) -> bool | None:
+    """Strictly yes or no. Anything else is unparseable rather than
+    guessed at -- this answer authorises a charge."""
+    if not text:
+        return None
+    if _YES.match(text):
+        return True
+    if _NO.match(text):
+        return False
+    return None
+
+
 def status(agent_id: str) -> dict | None:
     conversation = _CONVERSATIONS.get(agent_id)
     return conversation.as_dict() if conversation else None
@@ -168,6 +231,34 @@ def consume(agent_id: str) -> str | None:
 
 def has_open_question(from_phone: str) -> bool:
     return _find_open(from_phone) is not None
+
+
+def open_question_asked_at(from_phone: str) -> str | None:
+    """When the still-unanswered question to this number was sent, so the
+    router can tell which of several open questions is the newest."""
+    conversation = _find_open(from_phone)
+    return conversation.asked_at if conversation else None
+
+
+_BARE_DIGIT = re.compile(r"^\s*[12]\s*[.!]?\s*$")
+
+
+def reply_suits_open_question(from_phone: str, text: str) -> bool:
+    """Whether this message plausibly answers the question we asked.
+
+    A bare "1" answers "approve this order?" perfectly well, but nobody
+    orders dinner by replying "1" to "what would you like instead?". When
+    it doesn't suit, the router lets the merchant path have it -- which
+    is also the safer way to be wrong, since misrouting a merchant's
+    approval merely leaves it pending, while misrouting the other way
+    would approve an order nobody confirmed.
+    """
+    conversation = _find_open(from_phone)
+    if conversation is None:
+        return False
+    if conversation.kind == APPROVAL:
+        return True
+    return not _BARE_DIGIT.match(text or "")
 
 
 def _find_open(from_phone: str) -> Conversation | None:
@@ -192,6 +283,28 @@ def record_reply(from_phone: str, text: str) -> dict | None:
         return None
 
     cleaned = (text or "").strip()
+
+    if conversation.kind == APPROVAL:
+        decision = parse_approval(cleaned)
+        if decision is None:
+            return {
+                "handled": True,
+                "agent_id": conversation.agent_id,
+                "message": "Sorry, I didn't understand. Reply YES to go ahead, or NO to cancel.",
+            }
+        conversation.reply = cleaned
+        conversation.decision = decision
+        conversation.replied_at = datetime.now(timezone.utc).isoformat()
+        return {
+            "handled": True,
+            "agent_id": conversation.agent_id,
+            "message": (
+                "Thanks — going ahead with your order now."
+                if decision
+                else "Cancelled. Nothing has been charged."
+            ),
+        }
+
     if not cleaned:
         return {
             "handled": True,

@@ -288,6 +288,34 @@ def ask_buyer_what_instead(req: AskBuyerRequest) -> dict:
     return conversation.as_dict()
 
 
+class ApproveBuyerRequest(BaseModel):
+    agent_id: str
+    phone: str
+    cart_label: str
+    total_inr: int
+    soft_cap_inr: int
+
+
+@app.post("/api/buyer-sms/approve")
+def ask_buyer_to_approve(req: ApproveBuyerRequest) -> dict:
+    """Ask the customer, on WhatsApp, to approve an order above their own
+    soft cap -- rather than only offering the choice on a screen they may
+    have walked away from."""
+    catalog = merchant_config.as_dict()
+    try:
+        conversation = buyer_sms.ask_approval(
+            agent_id=req.agent_id,
+            phone=req.phone,
+            cart_label=req.cart_label,
+            total_inr=req.total_inr,
+            soft_cap_inr=req.soft_cap_inr,
+            shop_name=catalog["profile"]["shop_name"],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return conversation.as_dict()
+
+
 @app.get("/api/buyer-sms/status/{agent_id}")
 def buyer_sms_status(agent_id: str) -> dict:
     """Polled by the waiting browser until the customer replies."""

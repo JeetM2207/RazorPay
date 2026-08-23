@@ -265,9 +265,30 @@ async def sms_reply(Body: str = Form(default=""), From: str = Form(default="")) 
     import buyer_sms
 
     parsed = parse_reply(Body)
-    merchant_decision_waiting = parsed.action is not None and _oldest_unanswered() is not None
+    waiting_escalation = _oldest_unanswered()
+    buyer_asked_at = buyer_sms.open_question_asked_at(From)
 
-    if not merchant_decision_waiting and buyer_sms.has_open_question(From):
+    # Both a customer and the merchant can have an open question on the
+    # same number, so pick using three things in order:
+    #
+    #   1. An explicit "#<order>" names a merchant order and wins outright.
+    #   2. The message has to plausibly answer what the customer was asked
+    #      -- nobody orders dinner by replying "1" to "what would you like
+    #      instead?", though "1" answers "approve this?" fine.
+    #   3. Otherwise the most recently asked question wins, because a
+    #      person replying to their phone is answering what just arrived.
+    # Plausibility and recency only matter when there is something to
+    # choose BETWEEN. If the merchant has nothing outstanding, the
+    # customer is the only one who could be replying.
+    prefer_buyer = buyer_asked_at is not None and parsed.order_id is None and (
+        waiting_escalation is None
+        or (
+            buyer_sms.reply_suits_open_question(From, Body)
+            and buyer_asked_at > waiting_escalation.created_at
+        )
+    )
+
+    if prefer_buyer:
         handled = buyer_sms.record_reply(From, Body)
         if handled:
             return PlainTextResponse(handled["message"], status_code=200)

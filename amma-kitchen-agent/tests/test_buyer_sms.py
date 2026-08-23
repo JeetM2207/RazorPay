@@ -177,6 +177,101 @@ def test_an_unrecognised_message_with_nothing_open_explains_itself(client):
     assert "didn't understand" in resp.text
 
 
+# -------------------------------------------- soft-cap approval by SMS
+
+def _ask_approval(client, agent_id="agent-1", phone=BUYER_PHONE, total=440):
+    return client.post(
+        "/api/buyer-sms/approve",
+        json={
+            "agent_id": agent_id,
+            "phone": phone,
+            "cart_label": "2x Chicken Biryani",
+            "total_inr": total,
+            "soft_cap_inr": 400,
+        },
+    )
+
+
+def test_a_soft_cap_order_asks_the_customer_on_whatsapp(client):
+    _ask_approval(client)
+    body = notification_service.outbox()[0]["body"]
+
+    assert "2x Chicken Biryani for Rs.440" in body
+    assert "above the Rs.400 you asked to be checked on" in body
+    assert "Reply YES to go ahead, or NO to cancel" in body
+
+
+@pytest.mark.parametrize("word", ["YES", "yes", "y", "ok", "approve", "sure", "1"])
+def test_approval_words_are_understood(client, word):
+    _ask_approval(client)
+    resp = _inbound(client, word)
+    assert "going ahead" in resp.text
+    assert buyer_sms.status("agent-1")["decision"] is True
+
+
+@pytest.mark.parametrize("word", ["NO", "no", "n", "cancel", "stop", "2"])
+def test_refusal_words_are_understood(client, word):
+    _ask_approval(client)
+    resp = _inbound(client, word)
+    assert "Cancelled" in resp.text
+    assert buyer_sms.status("agent-1")["decision"] is False
+
+
+@pytest.mark.parametrize("word", ["maybe", "what?", "yes no", "", "later"])
+def test_an_ambiguous_approval_reply_decides_nothing(client, word):
+    """This answer authorises a charge, so anything unclear must be asked
+    again rather than guessed at."""
+    _ask_approval(client)
+    resp = _inbound(client, word)
+    assert "didn't understand" in resp.text
+    assert buyer_sms.status("agent-1")["decision"] is None
+    assert buyer_sms.status("agent-1")["answered"] is False
+
+
+def test_approval_asks_are_refused_without_a_phone(client):
+    resp = _ask_approval(client, phone="")
+    assert resp.status_code == 400
+
+
+# ------------------------- two open questions on one number, by recency
+
+def test_the_newest_question_gets_the_answer(client):
+    """A person replying to their phone is answering the message they
+    just received, not one from earlier."""
+    session = _escalate(client)                     # merchant asked first
+    _ask_approval(client)                           # customer asked second
+
+    resp = _inbound(client, "1")
+
+    # "1" reads as approval of the customer's own order, the newer ask.
+    assert buyer_sms.status("agent-1")["decision"] is True
+    assert client.get(f"/acp/checkout_sessions/{session['session_id']}").json()["status"] == "requires_human"
+    assert "going ahead" in resp.text
+
+
+def test_an_explicit_order_number_still_reaches_the_merchant_queue(client):
+    """Naming an order overrides recency -- it says exactly what is meant."""
+    session = _escalate(client)
+    order_id = session["decision_detail"]["event_id"]
+    _ask_approval(client)
+
+    resp = _inbound(client, f"1 #{order_id}")
+
+    assert "approved" in resp.text.lower()
+    assert client.get(f"/acp/checkout_sessions/{session['session_id']}").json()["status"] == "ready_for_payment"
+    assert buyer_sms.status("agent-1")["answered"] is False
+
+
+def test_an_older_customer_question_yields_to_a_newer_escalation(client):
+    _ask_approval(client)                           # customer asked first
+    session = _escalate(client)                     # merchant asked second
+
+    _inbound(client, "1")
+
+    assert client.get(f"/acp/checkout_sessions/{session['session_id']}").json()["status"] == "ready_for_payment"
+    assert buyer_sms.status("agent-1")["answered"] is False
+
+
 # ---------------------------------------------------- end to end shape
 
 def test_the_whole_loop_leaves_an_orderable_request(client):

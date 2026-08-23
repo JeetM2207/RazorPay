@@ -437,11 +437,14 @@ async function deploy() {
 
     if (gate.decision === "ASK_USER") {
       log(`&gt; ${rupee(gate.total_inr)} is at or above your soft cap. Coming back to you.`, "warn");
-      const ok = await askHuman(
-        `This costs <b>${rupee(gate.total_inr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
-      );
+      const ok = await askApprovalOverWhatsApp(cartLabel(items), gate.total_inr, softCap);
+      if (ok === null) {
+        log("&gt; No answer. Stopping — nothing was sent to Amma's Kitchen.", "err");
+        setState("NO ANSWER", "#f85149");
+        return;
+      }
       if (!ok) {
-        log("&gt; You declined. Nothing was sent to Amma's Kitchen.", "err");
+        log("&gt; You said no. Nothing was sent to Amma's Kitchen.", "err");
         setState("CANCELLED", "#f85149");
         return;
       }
@@ -531,6 +534,91 @@ async function askOverWhatsApp(originalRequest, unmatched) {
 
   setState("RUNNING", "#56d364");
   return reply;
+}
+
+/** Ask the customer on WhatsApp to approve an order above their soft cap.
+ *  Resolves true (approved), false (declined), or null (no answer). */
+async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
+  if (!PROFILE.phone) {
+    // No number to reach them on, so fall back to the screen they're on.
+    return await askHuman(
+      `This costs <b>${rupee(totalInr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
+    );
+  }
+
+  let conversation;
+  try {
+    conversation = await api("/api/buyer-sms/approve", {
+      method: "POST",
+      body: JSON.stringify({
+        agent_id: PROFILE.agent_id,
+        phone: PROFILE.phone,
+        cart_label: cartText,
+        total_inr: totalInr,
+        soft_cap_inr: softCap,
+      }),
+    });
+  } catch (err) {
+    log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
+    return await askHuman(
+      `This costs <b>${rupee(totalInr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
+    );
+  }
+
+  const live = conversation.transport === "twilio";
+  log(`&gt; Asking you on WhatsApp at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
+  if (!live) log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
+  setState("ASKING YOU", "#e3b341");
+
+  return await waitForApproval(live, totalInr);
+}
+
+function waitForApproval(live, totalInr) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      $("termAsk").style.display = "none";
+      $("termAsk").innerHTML = ASK_TEMPLATE;
+      resolve(value);
+    };
+
+    $("termAsk").innerHTML = `
+      <p>${live ? `Waiting for your WhatsApp reply — YES or NO to ${rupee(totalInr)}…`
+                : `Approve ${rupee(totalInr)}? Reply YES or NO.`}</p>
+      <div class="btn-row">
+        <button class="btn btn-ok btn-sm" id="apYes">YES</button>
+        <button class="btn btn-ghost btn-sm" id="apNo">NO</button>
+      </div>`;
+    $("termAsk").style.display = "";
+
+    // These post through the real webhook, so this path exercises
+    // exactly what a genuine WhatsApp reply would.
+    const answerHere = async (word) => {
+      await fetch("/webhook/sms-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ Body: word, From: PROFILE.phone }),
+      });
+    };
+    $("apYes").addEventListener("click", () => answerHere("YES"));
+    $("apNo").addEventListener("click", () => answerHere("NO"));
+
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - started > 180000) return finish(null);
+      try {
+        const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+        if (state.answered && !state.consumed) {
+          await api("/api/buyer-sms/consume/" + PROFILE.agent_id, { method: "POST" });
+          log(`&gt; You replied: "<b>${state.reply}</b>"`, state.decision ? "ok" : "warn");
+          finish(state.decision === true);
+        }
+      } catch (_) { /* keep waiting */ }
+    }, 1500);
+  });
 }
 
 function waitForWhatsAppReply(live) {
