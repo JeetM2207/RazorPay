@@ -55,8 +55,22 @@ app.include_router(dashboard.router)
 app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
 
 
+class CatalogItemIn(BaseModel):
+    id: str
+    title: str | None = None
+    price_inr: int | None = None
+    category: str | None = None
+    agent_orderable: bool = True
+
+
 class ParseCartRequest(BaseModel):
     text: str
+    # What the buyer agent found when it read the merchant's catalog. It
+    # sends this back so the parse is constrained to dishes that actually
+    # exist -- the agent discovers the menu rather than the server
+    # quietly assuming it. Omitted by the scripted buyer agents, which
+    # fall back to the live menu.
+    available_items: list[CatalogItemIn] | None = None
 
 
 class BuyerCheckItem(BaseModel):
@@ -146,15 +160,41 @@ def parse_cart(req: ParseCartRequest) -> dict:
     """
     if not os.environ.get("OPENROUTER_API_KEY"):
         raise HTTPException(503, "OPENROUTER_API_KEY not configured; use the menu picker instead")
+
+    if req.available_items:
+        catalog_lines = [
+            f"- {i.id}: {i.title or i.id}"
+            + (f" (Rs.{i.price_inr})" if i.price_inr else "")
+            + ("" if i.agent_orderable else " [in-person orders only]")
+            for i in req.available_items
+        ]
+        item_ids = [i.id for i in req.available_items]
+    else:
+        menu = merchant_config.current_menu()
+        catalog_lines = [f"- {name}: {item.name} (Rs.{item.price_inr})" for name, item in menu.items()]
+        item_ids = list(menu.keys())
+
+    # The menu goes in the prompt as well as the enum. The enum stops the
+    # model inventing an id; the listing lets it tell the difference
+    # between "not on this menu" and "close enough to something here".
+    prompt = (
+        "This merchant sells exactly these dishes:\n"
+        + "\n".join(catalog_lines)
+        + "\n\nThe customer asked for:\n"
+        + req.text
+        + "\n\nPut anything they asked for that this merchant does not sell into "
+        "`unmatched`, using their own words. Do not substitute a different dish for it."
+    )
+
     try:
         from llm_client import call_with_forced_tool
 
         args = call_with_forced_tool(
-            req.text,
+            prompt,
             tool_name="propose_cart",
             description=(
-                "Convert the buyer's natural language food order into a structured "
-                "cart of catalog item ids and quantities."
+                "Convert the customer's request into a cart drawn only from this "
+                "merchant's menu, and list anything they asked for that isn't on it."
             ),
             parameters={
                 "type": "object",
@@ -164,17 +204,22 @@ def parse_cart(req: ParseCartRequest) -> dict:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "item_id": {"type": "string", "enum": list(merchant_config.current_menu().keys())},
+                                "item_id": {"type": "string", "enum": item_ids},
                                 "qty": {"type": "integer", "minimum": 1},
                             },
                             "required": ["item_id", "qty"],
                         },
-                    }
+                    },
+                    "unmatched": {
+                        "type": "array",
+                        "description": "Things the customer asked for that this merchant does not sell.",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["items"],
             },
         )
-        return {"items": args["items"]}
+        return {"items": args.get("items", []), "unmatched": args.get("unmatched", [])}
     except HTTPException:
         raise
     except Exception as exc:

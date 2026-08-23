@@ -179,6 +179,76 @@ def test_buyer_mandate_defaults_are_served_to_the_console(client):
     assert body["spend_cap_inr"] > body["confirm_above_inr"]
 
 
+def test_parse_is_constrained_to_the_catalog_the_agent_fetched(client, monkeypatch):
+    """The buyer agent discovers the menu and sends it back, so the parse
+    can only draw from dishes that actually exist."""
+    seen = {}
+
+    def fake_call(prompt, tool_name, description, parameters):
+        seen["prompt"] = prompt
+        seen["enum"] = parameters["properties"]["items"]["items"]["properties"]["item_id"]["enum"]
+        return {"items": [{"item_id": "dosa", "qty": 1}], "unmatched": []}
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    import llm_client
+
+    monkeypatch.setattr(llm_client, "call_with_forced_tool", fake_call)
+
+    resp = client.post(
+        "/api/parse-cart",
+        json={
+            "text": "one dosa please",
+            "available_items": [
+                {"id": "dosa", "title": "Dosa", "price_inr": 80, "agent_orderable": True},
+                {"id": "tray", "title": "Party Tray", "price_inr": 300, "agent_orderable": False},
+            ],
+        },
+    )
+
+    assert resp.status_code == 200
+    assert seen["enum"] == ["dosa", "tray"], "the fetched catalog should bound the choices"
+    assert "Dosa" in seen["prompt"]
+    assert "in-person orders only" in seen["prompt"], "the agent should be told what it may not buy"
+
+
+def test_items_the_merchant_does_not_sell_come_back_unmatched(client, monkeypatch):
+    """Asking for something off-menu must be reported, never silently
+    swapped for a different dish."""
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    import llm_client
+
+    monkeypatch.setattr(
+        llm_client,
+        "call_with_forced_tool",
+        lambda *a, **k: {"items": [], "unmatched": ["pizza"]},
+    )
+
+    body = client.post(
+        "/api/parse-cart",
+        json={"text": "a pizza", "available_items": [{"id": "dosa", "title": "Dosa"}]},
+    ).json()
+
+    assert body["items"] == []
+    assert body["unmatched"] == ["pizza"]
+
+
+def test_parse_falls_back_to_the_live_menu_without_a_catalog(client, monkeypatch):
+    """The scripted buyer agents don't send a catalog; they must still work."""
+    seen = {}
+
+    def fake_call(prompt, tool_name, description, parameters):
+        seen["enum"] = parameters["properties"]["items"]["items"]["properties"]["item_id"]["enum"]
+        return {"items": [{"item_id": "veg_thali", "qty": 1}]}
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    import llm_client
+
+    monkeypatch.setattr(llm_client, "call_with_forced_tool", fake_call)
+
+    client.post("/api/parse-cart", json={"text": "a thali"})
+    assert "veg_thali" in seen["enum"]
+
+
 def test_parse_cart_reports_clearly_when_no_model_key_is_set(client, monkeypatch):
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     resp = client.post("/api/parse-cart", json={"text": "two biryanis"})

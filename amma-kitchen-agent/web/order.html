@@ -204,7 +204,8 @@ const rupee = (n) => "₹" + n;
 const titleize = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-let MENU = [];
+let MENU = [];       // for the quick-pick chips, before the agent runs
+let CATALOG = [];    // what the agent itself fetched from /catalog
 let PROFILE = null;
 let running = false;
 
@@ -265,7 +266,13 @@ function askHuman(question) {
 
 /* ---------------------------------------------------------------- boot */
 
-const priceOf = (id) => (MENU.find((m) => m.id === id) || {}).price_inr || 0;
+/** Prefer the catalog the agent actually fetched; fall back to the menu
+ *  loaded for the quick-pick chips before it ran. */
+const priceOf = (id) => {
+  const fromCatalog = CATALOG.find((m) => m.id === id);
+  if (fromCatalog) return fromCatalog.price_inr ?? fromCatalog.price ?? 0;
+  return (MENU.find((m) => m.id === id) || {}).price_inr || 0;
+};
 const cartTotal = (items) => items.reduce((s, i) => s + priceOf(i.item_id) * i.qty, 0);
 const cartLabel = (items) => items.map((i) => `${i.qty}x ${titleize(i.item_id)}`).join(", ");
 
@@ -323,11 +330,38 @@ async function deploy() {
     await step(`Delivering to: ${PROFILE.address}`, "quiet", 420);
     await step(`Reading request: "${prompt}"`, "info", 600);
 
-    await step("Calling Claude to interpret this into a structured cart…", "step", 320);
+    // ---- read the merchant's published catalog BEFORE drafting -------
+    await step("Fetching Amma's Kitchen catalog…", "step", 380);
+    const catalog = await api("/catalog");
+    CATALOG = catalog.items;
+    const orderable = CATALOG.filter((i) => i.agent_orderable);
+    const inPersonOnly = CATALOG.filter((i) => !i.agent_orderable);
+
+    log(
+      `&gt; ${CATALOG.length} dishes published; <b>${orderable.length}</b> orderable by agents` +
+      (inPersonOnly.length ? `, ${inPersonOnly.length} in-person only.` : "."),
+      "quiet"
+    );
+    await step(
+      `Her limits: max <b>${rupee(catalog.order_limits.max_order_inr)}</b> per order, ` +
+      `human check from <b>${rupee(catalog.order_limits.human_confirm_at_inr)}</b>.`,
+      "quiet", 560
+    );
+
+    await step("Matching the request against her menu…", "step", 320);
     const thinking = cursor();
-    let items;
+    let parsed;
     try {
-      items = (await api("/api/parse-cart", { method: "POST", body: JSON.stringify({ text: prompt }) })).items;
+      parsed = await api("/api/parse-cart", {
+        method: "POST",
+        body: JSON.stringify({
+          text: prompt,
+          available_items: CATALOG.map((i) => ({
+            id: i.id, title: i.title, price_inr: i.price_inr ?? i.price,
+            category: i.category, agent_orderable: i.agent_orderable,
+          })),
+        }),
+      });
     } catch (err) {
       thinking.remove();
       log("&gt; Claude unavailable: " + err.message, "err");
@@ -336,6 +370,29 @@ async function deploy() {
       return;
     }
     thinking.remove();
+
+    const items = parsed.items || [];
+    const unmatched = parsed.unmatched || [];
+
+    for (const missing of unmatched) {
+      log(`&gt; <b>${missing}</b> isn't on her menu — not substituting something else for it.`, "warn");
+    }
+
+    if (!items.length) {
+      log("&gt; Nothing you asked for is on this menu. Stopping rather than guessing.", "err");
+      setState("NOTHING TO ORDER", "#f85149");
+      return;
+    }
+
+    // The catalog already told us if something can't be bought by an
+    // agent. Say so, then ask anyway -- her gate is the authority, and
+    // the refusal confirms what the catalog published.
+    for (const line of items) {
+      const entry = CATALOG.find((i) => i.id === line.item_id);
+      if (entry && !entry.agent_orderable) {
+        log(`&gt; Catalog flags ${titleize(line.item_id)} as in-person only. Asking anyway; her answer decides.`, "warn");
+      }
+    }
 
     const total = cartTotal(items);
     await step(`Draft cart: <b>${cartLabel(items)}</b>. Estimated <b>${rupee(total)}</b>.`, "info", 600);
