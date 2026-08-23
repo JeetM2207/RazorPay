@@ -412,9 +412,18 @@ cloud — Claude connects from Anthropic's infrastructure, not from the user's m
 `localhost` will not work. For a live demo:
 
 ```
+ngrok http 8000                    # public HTTPS; note the domain it prints
+# put that domain in .env:  MCP_ALLOWED_HOSTS=<domain>.ngrok-free.dev
 uvicorn app:app --port 8000        # MCP endpoint at /mcp
-ngrok http 8000                    # public HTTPS
 ```
+
+**`MCP_ALLOWED_HOSTS` is not optional.** The SDK validates the `Host` header by default
+to stop a browser being tricked into driving a localhost MCP server (DNS rebinding), and
+that same check rejects any public hostname it was not told about -- a tunnel returns
+`421 Invalid Host header` until its domain is listed. Unset means localhost only, which
+is the right default; this is configuration rather than a hardcoded domain so a deploy
+does not need a code change. Restart the server after editing it: the value is read at
+import.
 
 Then in Claude: **Settings → Customize → Connectors → "+" → Add custom connector**, paste
 `https://<your-ngrok-domain>/mcp`, save, and enable it in a conversation. For anything

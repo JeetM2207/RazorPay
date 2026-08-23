@@ -28,8 +28,11 @@ rows are written by the orchestrator exactly as for every other protocol
 
 import hashlib
 import json
+import os
 
+from dotenv import load_dotenv
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, Field
 
@@ -38,6 +41,8 @@ import catalog
 import idempotency
 import merchant_config
 import orchestrator
+
+load_dotenv()
 
 PROTOCOL = "mcp"
 
@@ -338,7 +343,32 @@ def checkout(items: list[CartItem], client: str | None = None) -> dict:
     return checkout_impl(items, client)
 
 
+# The SDK validates the Host header by default, to stop a browser on the
+# user's machine being tricked into driving a localhost MCP server (DNS
+# rebinding). That protection also rejects any public hostname it wasn't
+# told about, so a tunnel or a deploy returns 421 "Invalid Host header"
+# until its domain is listed here.
+#
+# MCP_ALLOWED_HOSTS is a comma-separated list, e.g.
+#   MCP_ALLOWED_HOSTS=abc123.ngrok-free.dev,ammas-kitchen.onrender.com
+# Left unset, only localhost works -- which is the safe default, and the
+# reason this is configuration rather than a hardcoded domain.
+_EXTRA_HOSTS = [h.strip() for h in os.environ.get("MCP_ALLOWED_HOSTS", "").split(",") if h.strip()]
+
+_ALLOWED_HOSTS = ["127.0.0.1", "localhost", "127.0.0.1:*", "localhost:*", *_EXTRA_HOSTS]
+_ALLOWED_ORIGINS = [
+    "http://127.0.0.1:*", "http://localhost:*",
+    *[f"https://{h}" for h in _EXTRA_HOSTS],
+]
+
 # Stateless HTTP: no per-connection session to lose when a client
 # reconnects, which is also what lets this sit behind a tunnel or a
 # multi-instance deploy without sticky routing.
-app = mcp_server.streamable_http_app(streamable_http_path="/", stateless_http=True)
+app = mcp_server.streamable_http_app(
+    streamable_http_path="/",
+    stateless_http=True,
+    transport_security=TransportSecuritySettings(
+        allowed_hosts=_ALLOWED_HOSTS,
+        allowed_origins=_ALLOWED_ORIGINS,
+    ),
+)
