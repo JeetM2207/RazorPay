@@ -244,12 +244,33 @@ def resolve(action: str, order_id: int | None = None) -> dict:
 
 @router.post("/webhook/sms-reply")
 async def sms_reply(Body: str = Form(default=""), From: str = Form(default="")) -> PlainTextResponse:
-    """Inbound SMS/WhatsApp reply, in Twilio's form-encoded shape.
+    """Inbound SMS/WhatsApp, in Twilio's form-encoded shape.
 
-    Replies in plain text so a real Twilio webhook can echo it straight
-    back to Amma as a confirmation message.
+    One number serves two different conversations -- Amma deciding an
+    escalation, and a customer saying what to order instead -- because
+    Twilio allows one webhook URL per number, and in a demo the same
+    person is often both. So messages are routed by what they ARE, not
+    only who sent them:
+
+      1. A bare '1'/'2' while an escalation is waiting is Amma deciding.
+         That reading wins, because those two characters mean nothing
+         else and getting it wrong would move money.
+      2. Anything else, from a number we have an open question with, is
+         a customer answering it.
+      3. Otherwise, fall through to the merchant path, which explains
+         itself if the message made no sense.
+
+    Replies in plain text so Twilio echoes it straight back to the sender.
     """
+    import buyer_sms
+
     parsed = parse_reply(Body)
+    merchant_decision_waiting = parsed.action is not None and _oldest_unanswered() is not None
+
+    if not merchant_decision_waiting and buyer_sms.has_open_question(From):
+        handled = buyer_sms.record_reply(From, Body)
+        if handled:
+            return PlainTextResponse(handled["message"], status_code=200)
 
     if parsed.action is None:
         return PlainTextResponse(

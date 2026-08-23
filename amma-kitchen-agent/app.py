@@ -32,6 +32,7 @@ import adapter_ap2
 import adapter_x402
 import audit_log
 import buyer_mandate
+import buyer_sms
 import catalog
 import dashboard
 import escalations
@@ -255,6 +256,55 @@ def buyer_check(req: BuyerCheckRequest) -> dict:
 def buyer_mandate_defaults() -> dict:
     d = buyer_mandate.DEFAULT_BUYER_MANDATE
     return {"spend_cap_inr": d.spend_cap_inr, "confirm_above_inr": d.confirm_above_inr}
+
+
+class AskBuyerRequest(BaseModel):
+    agent_id: str
+    phone: str
+    original_request: str
+    unmatched: list[str] = []
+
+
+@app.post("/api/buyer-sms/ask")
+def ask_buyer_what_instead(req: AskBuyerRequest) -> dict:
+    """Message the customer about something the merchant doesn't sell.
+
+    Goes to the number they gave at signup, and nowhere else -- the phone
+    travels with the request from their own saved profile rather than
+    being chosen here.
+    """
+    catalog = merchant_config.as_dict()
+    try:
+        conversation = buyer_sms.ask(
+            agent_id=req.agent_id,
+            phone=req.phone,
+            original_request=req.original_request,
+            unmatched=req.unmatched,
+            available=catalog["menu"],
+            shop_name=catalog["profile"]["shop_name"],
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    return conversation.as_dict()
+
+
+@app.get("/api/buyer-sms/status/{agent_id}")
+def buyer_sms_status(agent_id: str) -> dict:
+    """Polled by the waiting browser until the customer replies."""
+    state = buyer_sms.status(agent_id)
+    if state is None:
+        raise HTTPException(404, "no open conversation for this agent")
+    return state
+
+
+@app.post("/api/buyer-sms/consume/{agent_id}")
+def consume_buyer_reply(agent_id: str) -> dict:
+    """Take the reply once, so a stale answer can't be reused on a later
+    run of the same agent."""
+    reply = buyer_sms.consume(agent_id)
+    if reply is None:
+        raise HTTPException(409, "no unconsumed reply for this agent")
+    return {"reply": reply}
 
 
 @app.get("/api/pending")

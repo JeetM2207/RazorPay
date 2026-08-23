@@ -98,8 +98,12 @@
         </div>
 
         <div class="field">
-          <label for="phone">Phone</label>
+          <label for="phone">WhatsApp number</label>
           <input type="text" id="phone" placeholder="98765 43210" inputmode="numeric">
+          <div class="hint">
+            If something you ask for isn't on the menu, your agent messages you here
+            to ask what you'd like instead &mdash; rather than guessing or giving up.
+          </div>
         </div>
 
         <div class="section-head">Card on file</div>
@@ -218,6 +222,9 @@ function save() {
 
   if (!name) return toast("Add your name.", true);
   if (!address) return toast("Add a delivery address.", true);
+  if (digitsOf(phone).length < 10) {
+    return toast("Add a WhatsApp number — your agent needs it to check with you.", true);
+  }
   if (digits.length < 12) return toast("That card number looks incomplete.", true);
   if (!/^\d{2}\/\d{2}$/.test(expiry)) return toast("Expiry should look like 12/28.", true);
   if (hardCap <= 0) return toast("Set a hard cap above zero.", true);

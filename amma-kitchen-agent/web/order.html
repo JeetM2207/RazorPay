@@ -248,6 +248,11 @@ async function step(message, kind = "step", pause = 520) {
 const setState = (t, c) => { $("termState").textContent = t; $("termState").style.color = c; };
 const cursor = () => log('<span class="cursor"></span>', "quiet");
 
+// The terminal's ask panel is reused for two different questions -- the
+// soft-cap approval and the WhatsApp reply box -- so its original markup
+// is captured once and restored after the reply box borrows the space.
+const ASK_TEMPLATE = $("termAsk").innerHTML;
+
 function askHuman(question) {
   return new Promise((resolve) => {
     $("askText").innerHTML = question;
@@ -371,17 +376,37 @@ async function deploy() {
     }
     thinking.remove();
 
-    const items = parsed.items || [];
+    let items = parsed.items || [];
     const unmatched = parsed.unmatched || [];
 
     for (const missing of unmatched) {
       log(`&gt; <b>${missing}</b> isn't on her menu — not substituting something else for it.`, "warn");
     }
 
+    // Nothing on the menu matched. Rather than guess or give up, ask the
+    // customer on the number they gave at signup.
     if (!items.length) {
-      log("&gt; Nothing you asked for is on this menu. Stopping rather than guessing.", "err");
-      setState("NOTHING TO ORDER", "#f85149");
-      return;
+      const replacement = await askOverWhatsApp(prompt, unmatched);
+      if (!replacement) return;
+
+      await step(`New request from you: "${replacement}"`, "info", 480);
+      await step("Matching that against her menu…", "step", 320);
+      const retryThinking = cursor();
+      const retry = await api("/api/parse-cart", {
+        method: "POST",
+        body: JSON.stringify({ text: replacement, available_items: catalogPayload() }),
+      });
+      retryThinking.remove();
+
+      for (const missing of retry.unmatched || []) {
+        log(`&gt; <b>${missing}</b> isn't on her menu either.`, "warn");
+      }
+      items = retry.items || [];
+      if (!items.length) {
+        log("&gt; Still nothing on the menu. Stopping rather than guessing.", "err");
+        setState("NOTHING TO ORDER", "#f85149");
+        return;
+      }
     }
 
     // The catalog already told us if something can't be bought by an
@@ -449,6 +474,121 @@ async function deploy() {
     $("deployBtn").disabled = false;
     $("deployBtn").textContent = "Deploy Agent";
   }
+}
+
+const catalogPayload = () =>
+  CATALOG.map((i) => ({
+    id: i.id, title: i.title, price_inr: i.price_inr ?? i.price,
+    category: i.category, agent_orderable: i.agent_orderable,
+  }));
+
+/** Ask the customer on WhatsApp what to order instead, and wait.
+ *  Resolves with their reply, or null if they never answer. */
+async function askOverWhatsApp(originalRequest, unmatched) {
+  if (!PROFILE.phone) {
+    log("&gt; No phone number on your account, so I can't ask what you'd like instead.", "err");
+    log("&gt; Add one in Account settings and I'll be able to check next time.", "quiet");
+    setState("NOTHING TO ORDER", "#f85149");
+    return null;
+  }
+
+  let conversation;
+  try {
+    conversation = await api("/api/buyer-sms/ask", {
+      method: "POST",
+      body: JSON.stringify({
+        agent_id: PROFILE.agent_id,
+        phone: PROFILE.phone,
+        original_request: originalRequest,
+        unmatched,
+      }),
+    });
+  } catch (err) {
+    log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
+    setState("NOTHING TO ORDER", "#f85149");
+    return null;
+  }
+
+  const live = conversation.transport === "twilio";
+  log(
+    `&gt; Messaging you on WhatsApp at <b>${conversation.phone}</b> with what she does have.`,
+    "warn"
+  );
+  setState("ASKING YOU", "#e3b341");
+
+  if (!live) {
+    // No Twilio configured. Show the message that would have gone out and
+    // take the answer here, so the loop is demonstrable offline.
+    log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
+  }
+
+  const reply = await waitForWhatsAppReply(live);
+  if (!reply) {
+    log("&gt; No answer yet. Stopping — deploy me again when you've decided.", "err");
+    setState("NO ANSWER", "#f85149");
+    return null;
+  }
+
+  setState("RUNNING", "#56d364");
+  return reply;
+}
+
+function waitForWhatsAppReply(live) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(poll);
+      $("termAsk").style.display = "none";
+      // Put the approve/cancel markup back: askHuman() looks those ids
+      // up when it runs, and the soft-cap question comes later.
+      $("termAsk").innerHTML = ASK_TEMPLATE;
+      resolve(value);
+    };
+
+    // Inline reply box: the only way to answer when Twilio isn't
+    // configured, and a convenience when it is.
+    $("termAsk").innerHTML = `
+      <p>${live ? "Waiting for your WhatsApp reply…" : "What would you like instead?"}</p>
+      <div style="display:flex; gap:9px; flex-wrap:wrap">
+        <input type="text" id="waReply" placeholder="e.g. one masala dosa and a coffee"
+               style="flex:1 1 220px" autocomplete="off">
+        <button class="btn btn-sm" id="waSend">Send</button>
+        <button class="btn btn-ghost btn-sm" id="waCancel">Cancel</button>
+      </div>`;
+    $("termAsk").style.display = "";
+    $("waReply").focus();
+
+    const sendHere = async () => {
+      const text = $("waReply").value.trim();
+      if (!text) return;
+      // Goes through the real webhook, so this path exercises exactly
+      // what a genuine WhatsApp reply would.
+      await fetch("/webhook/sms-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({ Body: text, From: PROFILE.phone }),
+      });
+    };
+
+    $("waSend").addEventListener("click", sendHere);
+    $("waReply").addEventListener("keydown", (e) => { if (e.key === "Enter") sendHere(); });
+    $("waCancel").addEventListener("click", () => finish(null));
+
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - started > 180000) return finish(null);   // 3 minutes
+      try {
+        const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+        if (state.answered && !state.consumed) {
+          const { reply } = await api("/api/buyer-sms/consume/" + PROFILE.agent_id, { method: "POST" });
+          log(`&gt; You replied: "<b>${reply}</b>"`, "ok");
+          finish(reply);
+        }
+      } catch (_) { /* keep waiting */ }
+    }, 1500);
+  });
 }
 
 async function handleMerchantResponse(mandate, hardCap) {
