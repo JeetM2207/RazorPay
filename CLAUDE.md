@@ -7,9 +7,15 @@ that lets AI shopping assistants (buyer agents) discover the business, negotiate
 when the exact request can't be fulfilled, and complete a bounded, auditable payment via
 Razorpay's test-mode APIs.
 
-The core idea: **one negotiation brain, reachable through multiple protocol-style adapters.**
-The buyer-facing protocol shape (simple confirm/deny vs. structured mandate-style) should
-never change the underlying decision logic. Only the translation layer at the edges differs.
+The core idea: **one negotiation brain, reachable through multiple protocol adapters.**
+The buyer-facing protocol shape never changes the underlying decision logic — only the
+translation layer at the edges differs. Three real protocols (ACP, AP2, x402) now speak to
+one unchanged core.
+
+The second idea, which emerged while building: **both sides are bounded, and either can
+pull in its own human.** The customer's agent refuses what its owner didn't authorise; the
+merchant's rules refuse what she won't sell; and when a person is genuinely needed, they
+are reached on WhatsApp rather than assumed to be watching a screen.
 
 ## Track and bar we're being judged against
 
@@ -27,23 +33,33 @@ Nothing reaches Razorpay until both have said yes.
 
 ```
   human buyer                                              human merchant
-      |                                                          |
-      v                                                          v
+      |    ^                                                  ^    |
+      v    | WhatsApp                              WhatsApp    |    v
   BUYER SIDE                                              MERCHANT SIDE
-  buyer_mandate.py  --cleared-->  adapter_acp.py  \        trust.py
-  (customer's own                 adapter_ap2.py   >--> orchestrator.py
-   spending limits)               (protocol shape) /          |
-      |                                                       v
-      +-- refused here: the merchant is                 negotiation.py
-          never contacted, and has no                   (APPROVE / COUNTER /
-          record of it                                   ESCALATE)
-                                                              |
-                                                              v
-                                                   audit_log.py + Razorpay
-                                                              ^
-                                                              |
+  buyer_mandate.py  --cleared-->  adapter_acp.py  \        merchant_config.py
+  (customer's own                 adapter_ap2.py   >-->    (live shop + limits)
+   spending limits)               adapter_x402.py /              |
+      |                           (protocol shape)         trust.py
+      +-- refused here: the                                      |
+          merchant is never                                      v
+          contacted, and has                              orchestrator.py
+          no record of it                                        |
+                                                                 v
+                                                          negotiation.py
+                                                          (APPROVE / COUNTER /
+                                                           ESCALATE)
+                                                                 |
+                                                                 v
+                                              audit_log.py + Razorpay settlement
+                                                                 ^
+                                                                 |
                                             webhook_handler.py / reconcile_payments.py
 ```
+
+Both humans can be reached on WhatsApp, and both arrows point in and out: the
+customer is asked what to order instead when something isn't on the menu, and
+asked to approve an order above their own soft cap; the merchant is asked to
+decide an escalation. All three run through one inbound webhook.
 
 - **Buyer's gate** (`buyer_mandate.py`): the customer's instructions to their shopping
   agent. Pure, deterministic, and run *before* any merchant is contacted. See "Two
@@ -63,18 +79,26 @@ Nothing reaches Razorpay until both have said yes.
   lookup, call the core, write the audit event, and (only on approval) create the real
   Razorpay payment. It re-validates the cart at payment time as defense in depth. No
   business logic of its own; it never decides anything.
-- **Adapters** (`adapter_acp.py`, `adapter_ap2.py`): thin translation layers. Each takes an
-  incoming request in its own shape, converts it into the negotiation core's internal
-  request format, calls the core, and formats the response back into that protocol's shape.
-  Neither adapter contains any business logic of its own. ACP is modeled on the real
-  OpenAI + Stripe protocol (stateful checkout sessions, single-use expiring delegate
-  tokens); AP2 on Google's real Intent Mandate -> Cart Mandate -> Payment Mandate chain.
-- **Buyer agent simulators** (`buyer_agent_a.py`, `buyer_agent_b.py`): small scripts that
-  play the role of an external AI shopping assistant, each speaking through its respective
-  adapter. These let us demo agent-to-agent commerce end to end without needing real
-  ChatGPT/Gemini integration.
+- **Adapters** (`adapter_acp.py`, `adapter_ap2.py`, `adapter_x402.py`): thin translation
+  layers. Each takes an incoming request in its own shape, converts it into the negotiation
+  core's internal request format, calls the core, and formats the response back into that
+  protocol's shape. None contains any business logic of its own. See "Three protocols, one
+  brain" below.
+- **Merchant's live config** (`merchant_config.py`): what Amma has actually set up — shop
+  identity, her limits, her menu. `mandate.py` holds the defaults; this holds what the
+  running system decides against, so the setup page is not decorative.
+- **Buyer agent simulators** (`buyer_agent_a.py`, `buyer_agent_b.py`,
+  `buyer_agent_x402.py`): small scripts that play the role of an external AI shopping
+  assistant, each speaking through its respective adapter. These let us demo agent-to-agent
+  commerce end to end without needing real ChatGPT/Gemini integration.
 - **Human consoles** (`app.py` + `web/`): the same flows driven by real people instead of
-  scripts. `/buyer` and `/merchant` are separate URLs so two humans can each take a side.
+  scripts. Each side has a one-time setup page and a day-to-day page, so a returning user
+  never re-states what the system already knows.
+- **Reaching the humans** (`notification_service.py`, `escalations.py`, `buyer_sms.py`):
+  SMS/WhatsApp in both directions, with a mock transport by default so the whole loop is
+  demoable offline. See "Reaching a human who has walked away" below.
+- **Settlement** (`autonomous_payment.py`): settles a pre-authorised order with no browser
+  and no card form. See "Autonomous settlement, honestly labelled" below.
 - **Razorpay integration** (`razorpay_client.py`, `webhook_handler.py`): real test-mode
   API calls, not mocked. Webhook handling MUST be idempotent — Razorpay delivers webhooks
   with at-least-once semantics, so the same event may arrive more than once. Never
@@ -90,66 +114,91 @@ Nothing reaches Razorpay until both have said yes.
   **OpenRouter's** OpenAI-compatible endpoint (`llm_client.py`). This was a billing
   convenience during the buildathon, not an architectural choice — the model is still
   Claude, and it still only ever proposes a cart.
-- SQLite for the audit log and the webhook idempotency ledger
-- Razorpay test-mode API keys (Payment Links, Payments, Webhooks)
+- SQLite for the audit log and the shared idempotency ledger; a JSON file for the
+  merchant's shop config
+- Razorpay test-mode API keys (Orders, Payment Links, Payments, Webhooks). S2S / UPI
+  collect is **not** enabled on a default test account — see "Autonomous settlement".
+- Twilio optional, for real WhatsApp. Without it a mock outbox drives the identical loop,
+  so nothing in the demo depends on a carrier or a trial balance.
 
 ## Repo structure
 
 ```
 amma-kitchen-agent/
-  app.py                  # THE server: mounts everything, serves both consoles
-  web/                    # buyer + merchant consoles (vanilla HTML/CSS/JS)
-    index.html  buyer.html  merchant.html  shared.css
+  app.py                  # THE server: mounts everything, serves every console
+  web/                    # vanilla HTML/CSS/JS, no build step
+    index.html            #   landing page
+    profile.html          #   buyer: one-time account setup
+    order.html            #   buyer: order box + live agent terminal
+    shop.html             #   merchant: one-time shop setup
+    merchant.html         #   merchant: escalation queue, trust, SMS, log
+    shared.css
 
   buyer_mandate.py        # BUYER's limits — pure, runs before any merchant is contacted
-  mandate.py              # MERCHANT's rules + today's menu (plain data)
+  mandate.py              # MERCHANT's DEFAULT rules + starting menu (plain data)
+  merchant_config.py      # what Amma actually configured; what the core decides against
   negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
   trust.py                # per-agent trust tier from audit history; widens margin only
   orchestrator.py         # shared plumbing: trust -> core -> audit -> Razorpay
 
   adapter_acp.py          # ACP-shaped: checkout sessions + delegate tokens
   adapter_ap2.py          # AP2-shaped: Intent -> Cart -> Payment mandate chain
+  adapter_x402.py         # x402-shaped: HTTP 402 challenge, retry with proof
   buyer_agent_a.py        # scripted ACP buyer (Claude parses NL to a cart)
   buyer_agent_b.py        # scripted AP2 buyer
+  buyer_agent_x402.py     # scripted x402 buyer, incl. a replay attempt
   llm_client.py           # Claude via OpenRouter, forced tool use
 
-  razorpay_client.py      # test-mode payment links / payments
+  razorpay_client.py      # test-mode orders / payment links / payments
+  autonomous_payment.py   # no-browser settlement; UPI collect -> card S2S -> labelled sim
   webhook_handler.py      # idempotent payment_link.paid / expired / cancelled
-  idempotency.py          # the claim ledger both the webhook and reconciler share
+  idempotency.py          # the claim ledger the webhook, reconciler and x402 share
   reconcile_payments.py   # safety net for webhooks that never arrived
-  audit_log.py            # append-only log + queries
+  audit_log.py            # append-only log, queries, co-purchase history
   catalog.py              # agent-readable product feed (ACP-style)
   dashboard.py            # audit trail as HTML
+
+  notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
+  escalations.py          # merchant escalations + THE one inbound webhook + router
+  buyer_sms.py            # asking the customer: what instead? / approve this?
 
   demo.py                 # one-command scripted walkthrough (starts its own servers)
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
   scripts/                # early plumbing probes, kept for reference
-  tests/                  # 94 tests; test_negotiation.py matters most
+  tests/                  # 244 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
 
 ```
-uvicorn app:app --port 8000     # everything: adapters, webhooks, consoles, audit
+uvicorn app:app --port 8000 --reload    # everything, one process
 ```
 
 | Path | What it is |
 | --- | --- |
 | `/` | landing page + the two-person demo walkthrough |
-| `/buyer` | a human plays the customer's AI agent |
-| `/merchant` | a human plays Amma, deciding escalations from both protocols |
+| `/buyer` | customer: one-time account setup (name, address, phone, card, caps) |
+| `/buyer/order` | customer: say what you want, watch the agent work |
+| `/merchant` | merchant: one-time shop setup (identity, limits, menu) |
+| `/merchant/orders` | merchant: escalation queue, trust tiers, SMS loop, decision log |
 | `/audit` | the full audit trail |
-| `/catalog` | agent-readable product feed (JSON) |
-| `/docs` | both protocols' API reference |
+| `/catalog` | agent-readable product feed (JSON) — what the buyer agent fetches |
+| `/docs` | all three protocols' API reference |
 
 `python demo.py` runs the whole story scripted instead, starting and stopping its own
 servers on separate ports. `python -m pytest` runs the suite.
 
-Payment testing uses Razorpay's **domestic** test card `4100 2800 0000 1007` (any future
-expiry, any CVV, any 4-10 digit OTP). The commonly-quoted `4111 1111 1111 1111` is
-rejected as an international card on a default test account.
+Manual payment links use Razorpay's **domestic** test card `4100 2800 0000 1007` (any
+future expiry, any CVV, any 4-10 digit OTP). The commonly-quoted `4111 1111 1111 1111`
+is rejected as an international card on a default test account. The autonomous path
+needs no card at all.
+
+**Env** (`.env`, see `.env.example`): Razorpay test keys and webhook secret;
+`OPENROUTER_API_KEY` for NL parsing; optionally `TWILIO_*` + `MERCHANT_PHONE` for real
+WhatsApp, with `SMS_ENABLED=false` to force the mock even when configured. Everything
+except the Razorpay keys degrades to a working offline path.
 
 ## Two parties, two mandates (added after the consoles were built)
 
@@ -203,10 +252,25 @@ build two toy protocol shapes, we added three small, self-contained pieces:
   decision core is unmodified by this feature.
 - **`negotiation.suggest_upsell()`** — a separate, optional, non-blocking pure
   function (not part of `evaluate()`) that, given an already-APPROVED cart, suggests
-  at most one add-on item that keeps the order strictly below the human-confirm
-  threshold. Never influences the APPROVE/COUNTER_OFFER/ESCALATE decision itself.
-  This is the revenue-growth lever, and it's designed to be gated by trust tier later
-  (e.g. only offer upsells to STANDARD+ agents) without any change to `evaluate()`.
+  at most one add-on that keeps the order strictly below the human-confirm threshold.
+  Never influences the APPROVE/COUNTER_OFFER/ESCALATE decision itself.
+
+  It is now **predictive**: `audit_log.get_frequent_addons()` runs a co-occurrence
+  query over `json_each(cart_json)`, counting distinct *paid* orders containing any of
+  the cart's items, excluding what's already there, ranked by frequency with
+  `item_name` breaking ties so the order is stable rather than arbitrary. "Paid" means
+  `payment_id IS NOT NULL` — an order approved but abandoned at checkout is not
+  evidence anyone wanted the combination.
+
+  The SQL deliberately lives in `audit_log.py`, not in the core. `negotiation.py`
+  receives the ranking as a plain list, so it keeps its no-I/O property and the same
+  inputs still always produce the same answer; a test asserts it imports neither
+  `audit_log` nor `sqlite3`. **History only reorders candidates that already passed
+  the mandate's limits — it can never introduce one.** Tested against a popular item
+  that would breach the threshold (refused, next-best chosen), a disallowed category
+  (refused), and a stale item no longer on the menu (ignored, not crashed on). The
+  response carries a `basis` field ("bought together before" vs "best value that
+  fits") so the UI can say *why* rather than presenting a hunch.
 - **`catalog.py`** — a small FastAPI app exposing `GET /catalog`: a structured,
   machine-fetchable product feed modeled loosely on the real Agentic Commerce
   Protocol's (ACP, OpenAI + Stripe) product-feed shape. It also publishes the
@@ -236,20 +300,187 @@ Two further pieces were added while building steps 6-7, both worth calling out:
 Pitch line: *"We built the trust layer NPCI hasn't shipped yet — and we did it
 without touching the file that makes the actual money decision."*
 
-Both adapters were subsequently built spec-accurate to the real named protocols in the
-brief's "why now" line, rather than as invented shapes: ACP with a product feed,
-stateful checkout sessions and single-use delegate tokens; AP2 with Google's real
-Intent -> Cart -> Payment mandate chain. Adding AP2 required **zero** changes to
-`negotiation.py` or `orchestrator.py` — `git log` shows that commit adding only new
-files, and a test asserts both adapters share the identical orchestrator module object.
+## Three protocols, one brain
 
-**Still unbuilt, and the strongest remaining idea:** a third x402-style adapter. x402
-(Coinbase) is the most-used agentic payment protocol by volume and uses the literal
-HTTP 402 status code — the server replies `402 Payment Required` with a price, and the
-agent retries carrying a signed payment proof. Implementing that challenge/response
-flow but settling via **Razorpay test-mode instead of stablecoins** would show the same
-negotiation core bridging a Web3-native agent payment UX onto India's real payment
-rails. Three protocols judges recognize by name, one unchanged brain.
+All three are spec-accurate to the real named protocols in the brief's "why now" line,
+rather than invented shapes. Every one calls the same `orchestrator.negotiate_and_record()`
+— a test asserts all three share the *identical* orchestrator module object, and `git log`
+shows AP2 and x402 each landing as new files only.
+
+- **ACP** (OpenAI + Stripe) — product feed, stateful checkout sessions, single-use
+  expiring delegate tokens.
+- **AP2** (Google) — the Intent Mandate → Cart Mandate → Payment Mandate chain, with a
+  hash binding each payment to the exact cart it was matched against.
+- **x402** (Coinbase) — the highest-volume agentic payment protocol by usage, and
+  structurally unlike the other two: no session, no mandate chain. The buyer asks for the
+  resource, gets a real `402 Payment Required` carrying the price and a Razorpay link,
+  and **retries the same request** with proof. Payment is a property of the retry.
+
+  The security-critical part is that **the proof is never believed**. `X-Payment` carries
+  a claim; the adapter verifies it against Razorpay and binds it to the challenge it was
+  issued for. Tested against every way a dishonest buyer would try it: an unpaid link
+  presented as settled (402), a forged `payment_id` disagreeing with Razorpay (403),
+  replaying one payment to buy twice (409, via the same idempotency ledger the webhook
+  handler uses), moving proof onto a larger cart (409), and using another agent's
+  challenge (403).
+
+  Two bugs testing caught here, both worth remembering: re-POSTing the same cart while
+  awaiting a merchant decision used to mint a fresh order *and* audit event each time —
+  and since x402 has no session id, polling IS the buyer's only move while waiting, so
+  this would have buried the merchant's queue in duplicates. In-flight orders are now
+  resumed by agent+cart fingerprint. That same fix is what turns a merchant-approved
+  escalation into a 402: the buyer simply asks again.
+
+  A 402 is only ever issued for an APPROVED cart. Escalations and counter-offers answer
+  200 with the state, and **no payment link is created** — there is nothing legitimate to
+  demand payment for yet.
+
+This bridges a Web3-native agent payment UX onto India's real payment rails: three
+protocols judges recognise by name, one unchanged decision core.
+
+## The buyer agent actually reads the catalog
+
+For a while the two sides were only connected by accident: the parse endpoint reached
+straight into the merchant's config for its item list, so the agent never discovered
+anything and the agent-readable catalog — the merchant's whole growth surface — was
+doing no work. The buyer agent now fetches `GET /catalog` as a real first step and sends
+what it found back with the parse request. The terminal shows it: how many dishes are
+published, how many an agent may order, and her published limits, before any cart exists.
+
+Two things that makes possible:
+
+- **Off-menu items are reported, never swapped.** The menu goes into the prompt as well
+  as the enum, so the model can tell "not sold here" from "close to something here", and
+  returns it in `unmatched` using the customer's own words. "2 pizzas, a coke, and one
+  masala dosa" comes back with the dosa and both misses named.
+- **An in-person-only item is called out before the request goes out**, then sent anyway
+  — her gate is the authority, and the refusal confirms what the catalog published. That
+  keeps the category-refusal demo intact instead of short-circuiting it.
+
+## Reaching a human who has walked away
+
+Someone deploys an agent precisely so they don't have to sit and watch it. So all three
+human decisions can arrive on a phone, not only on a screen:
+
+- **Merchant escalation** (`escalations.py`) — "Order #40 from agent-x: 2x Chicken
+  Biryani (Rs.440). Reply '1' to APPROVE, '2' to REJECT." The `Order #` in the message is
+  the audit event id, so the number in the SMS *is* the row in the trail.
+- **Customer substitution** (`buyer_sms.py`) — "we don't have pizza; here's what we do
+  have. Reply with what you'd like instead."
+- **Customer approval** (`buyer_sms.py`) — "your agent wants to order X for Rs.440,
+  above the Rs.400 you asked to be checked on. Reply YES or NO."
+
+**Routing, because Twilio allows one webhook URL per number and in a demo the same
+person is often both parties.** Messages are routed by what they *are*, not only who sent
+them, in this order:
+
+1. An explicit `#<order>` names a merchant order and wins outright.
+2. The reply must plausibly answer what the customer was asked — nobody orders dinner by
+   replying "1" to "what would you like instead?", though "1" answers "approve this?"
+   fine. When it doesn't suit, the merchant path takes it, which is also the safer way to
+   be wrong: misrouting a merchant's approval only leaves it pending, while the reverse
+   would approve an order nobody confirmed.
+3. Otherwise the most recently asked question wins, because someone replying to their
+   phone is answering what just arrived.
+
+Plausibility and recency only apply when there is something to choose between; if the
+merchant has nothing outstanding, the customer is the only one who could be replying.
+The two sides also use deliberately different vocabularies — 1/2 for the merchant, YES/NO
+for the customer — which makes a collision much less likely in the first place.
+
+Other properties worth keeping:
+
+- **Parsing is a regex, never a model.** The input space is two options; a model here
+  would add latency, cost and a failure mode to a two-way branch. It is deliberately
+  strict — "12", "3", "1 or 2?", "approve 2", "maybe later" all come back unparseable
+  and ask again, because a wrong guess moves someone's money.
+- **A reply is a request, never an authorisation.** A substitution answer re-enters the
+  ordinary flow from the top: re-parsed against the catalog, the customer's own mandate,
+  Amma's rules, the audit trail. Arriving over WhatsApp skips no gate.
+- **SMS cannot approve what the console cannot.** A '1' goes through the adapter's own
+  `human_confirm`, so a disallowed category is still refused and Amma is told why.
+- **Sending can never break an order.** A transport failure is recorded and swallowed;
+  the escalation still sits in the queue and the console remains a complete path.
+- **Replies are single-use** and questions expire, so a stale answer cannot resurrect an
+  order the person has long forgotten.
+- Numbers are normalised to E.164 and compared on the last ten digits, so "98765 43210"
+  typed in a browser matches `whatsapp:+919876543210` as Twilio delivers it.
+- With no Twilio configured, messages land in an in-memory outbox the merchant console
+  renders, and the consoles offer reply boxes that post to the **same**
+  `/webhook/sms-reply` endpoint — so the offline path exercises the real one and the demo
+  cannot be broken by a carrier or a trial balance.
+
+**India note:** SMS to Indian numbers needs TRAI/DLT sender registration, which takes days
+and business paperwork. Twilio's WhatsApp Sandbox needs neither — join by texting a code —
+so WhatsApp is the realistic channel here. `notification_service` matches the recipient to
+the sender's channel (`whatsapp:` on both ends) automatically.
+
+## Autonomous settlement, honestly labelled
+
+The customer authorises a card once at signup; after that the agent should settle with
+nobody clicking anything. A Razorpay Payment Link cannot do that — it needs a browser, a
+card form and an OTP. `autonomous_payment.execute()` tries two real paths first:
+
+1. **UPI collect to `success@razorpay`**, Razorpay's official auto-approving test VPA.
+   Preferred: no browser, no card data in scope, genuine `pay_` id.
+2. **Server-to-server card charge.**
+
+Both live behind Razorpay's S2S API, **which has to be enabled per account**. This was
+probed against this project's own keys before the code was written, and it is not enabled:
+`/v1/payments/create/upi`, `/create/json` and `/create/ajax` all answer *"The requested URL
+was not found"*, as do Smart Collect virtual accounts and QR codes. Getting a real capture
+is therefore an **account change, not a code change** — ask Razorpay Support to enable S2S
+/ UPI collect, and the existing tested path starts returning real ids with no edits.
+
+Until then the Razorpay **Order is real** (it exists in the dashboard and can be checked)
+and the capture is **simulated and said to be**, everywhere it surfaces:
+
+- The reference is prefixed **`sim_`, never `pay_`**. That prefix is load-bearing: a
+  genuine Razorpay payment id always starts `pay_`, so nothing — audit trail, dashboard,
+  merchant console, trust engine — can mistake an assertion of ours for money that moved.
+  An auditor separates the two with a string prefix.
+- The audit trail renders **SIMULATED** rather than PAID, and simulated settlements are
+  **excluded from revenue totals** in both the dashboard and the merchant console.
+- The terminal says the collect was attempted, names why it was declined, and shows the
+  `sim_` reference — rather than printing "real payment confirmed" over a fallback.
+
+Writing a convincing fake `pay_...` would have been a two-character difference and would
+have quietly destroyed the one thing this project asks judges to trust. "Is that a real
+payment?" is exactly the question a judge asks, and there is a clean answer.
+
+## The merchant's settings are the real settings
+
+`mandate.py` holds the defaults; `merchant_config.py` holds what Amma actually configured,
+and that is what the decision path reads. A settings page that let her change her budget
+cap without the change reaching `negotiation.py` would show one set of limits while
+enforcing another — worse than having no page at all.
+
+`negotiation.py` is untouched by this: it already took `mandate` and `menu` as arguments
+and only used the module-level ones as defaults, so passing live values needed no change
+to the core. `orchestrator.py`, `catalog.py`, `dashboard.py` and `app.py` read
+`merchant_config` instead of importing the constants.
+
+Verified by editing the thali to Rs.175 and the ask-me threshold to Rs.100 in the browser:
+the very next order escalated with *"total Rs.175 at/above human confirmation threshold
+Rs.100"*. Typed numbers, enforced.
+
+The menu editor has a per-dish **"agents may order"** toggle — untick it and the dish stays
+on the catalog *marked unbuyable*, so an agent learns the rule instead of wasting a request
+discovering it. Validation refuses a confirm threshold above the budget cap, unnamed or
+unpriced dishes, and a menu no agent can order from; a refused save leaves the previous
+shop untouched, and a corrupt config file falls back to defaults rather than taking the
+shop offline. `conftest.py` resets it per test so a shop saved in the browser can never
+leak into the suite.
+
+## Card details never reach the server
+
+The buyer's signup page collects a card, but the full number **never leaves the browser
+and is never stored**: the page derives the last 4 and a token reference, keeps only those
+in `localStorage`, and wipes the number and CVV fields the moment it saves. That is how a
+real integration works and keeps the project out of PCI scope entirely. The Razorpay test
+card is pre-filled so nobody types a real one by reflex, and anything else warns first.
+Two tests guard it — one asserts no API surface accepts a card number or CVV, another that
+card entry never reappears on the ordering page.
 
 ## Build order — status
 
@@ -275,11 +506,20 @@ itself remains.
    the budget cap and the confirm threshold and is in stock, so the *only* thing refusing
    it is its category — which makes the demo unambiguous. A test asserts Razorpay is never
    called for it, rather than leaving that to narration.
-9. **REMAINING** — Polish + record the 5-minute pitch video.
+9. **REMAINING** — Record the 5-minute pitch video.
 
-Built beyond the original plan: the two-sided mandate model, the agent trust layer, the
-upsell hook, the agent-readable catalog, payment reconciliation, the one-command
-`demo.py`, and the two human web consoles.
+Built well beyond the original plan, roughly in this order: the two-sided mandate model,
+the agent trust layer, the agent-readable catalog, payment reconciliation, the
+one-command `demo.py`, the human web consoles, predictive upselling from real
+co-purchase history, the x402 adapter, SMS/WhatsApp escalation with a deterministic
+reply parser, autonomous no-browser settlement, live merchant configuration, genuine
+catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
+order instead and whether to approve a soft-cap order.
+
+**244 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
+payment- or database-related, checked on real imports rather than string mentions) and
+the identity assertion that all three adapters share one orchestrator object.
 
 ## What "done" looks like for the pitch
 
@@ -291,9 +531,29 @@ upsell hook, the agent-readable catalog, payment reconciliation, the one-command
 - The pitch explains the actual insight in one line: the intelligence is protocol-agnostic;
   only the adapters are protocol-specific.
 
-Two beats worth adding to that list, both now demonstrable live with two people:
+Beats now demonstrable live with two people that weren't on the original list:
 
 - An order stopped by the **buyer's own agent** before the merchant is ever contacted —
   showing bounded autonomy is not just something merchants impose on agents.
 - An escalation appearing in the merchant's queue and, on approval, the buyer's screen
   **unblocking itself** — the handoff between two humans and two agents, in one shot.
+- The agent **reading the catalog**, finding pizza isn't sold, **messaging the customer
+  on WhatsApp**, and ordering whatever they reply — the full round trip, on a phone.
+- A settlement with **no card form and no OTP** at all.
+- The merchant **changing her own limits mid-demo** and the next order obeying them.
+
+## Known gaps, stated plainly
+
+Worth being able to answer rather than being caught by:
+
+- **The autonomous capture is simulated**, because Razorpay gates S2S/UPI behind
+  per-account enablement (probed and documented above). The order is real; the capture
+  is labelled `sim_` and excluded from revenue. This is a one-line answer, not a wobble.
+- **Trust never decays.** A single disallowed-category attempt pins an agent at NEW
+  permanently. Defensible as a demo, arguably harsh as a design.
+- **Adapter state is in memory.** Sessions, mandates and x402 challenges do not survive a
+  restart; the audit trail and merchant config do.
+- **The buyer profile lives in `localStorage`**, so it is per-browser. That is deliberate
+  for the card, incidental for the rest.
+- **`success@razorpay` never actually gets pinged** on this account — the code sends the
+  collect request and Razorpay declines the endpoint.
