@@ -3,15 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Buyer portal — Amma's Kitchen</title>
+<title>Order — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
 <style>
-  .split { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 20px; align-items: start; }
+  .split { display: grid; grid-template-columns: minmax(330px, 400px) 1fr; gap: 20px; align-items: start; }
   @media (max-width: 940px) { .split { grid-template-columns: 1fr; } }
 
-  .pane-label {
-    display: flex; align-items: center; gap: 9px; margin-bottom: 12px;
-  }
+  .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
   .pane-num {
     width: 22px; height: 22px; border-radius: 6px; flex: none;
     background: var(--ink); color: #fff; font-size: 12px; font-weight: 700;
@@ -20,27 +18,43 @@
   .pane-title { font-size: 13px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
   .pane-sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 14px; }
 
-  .field { margin-bottom: 15px; }
-  .field-row { display: flex; gap: 12px; }
-  .field-row > * { flex: 1; }
-
-  .card-on-file {
-    display: flex; align-items: center; gap: 12px;
-    padding: 12px 14px; border-radius: 10px;
-    background: linear-gradient(135deg, #2a2724, #423b33);
-    color: #fff;
+  .who { display: flex; align-items: start; gap: 12px; margin-bottom: 4px; }
+  .avatar {
+    width: 38px; height: 38px; border-radius: 50%; flex: none;
+    background: var(--accent-soft); color: var(--accent);
+    display: grid; place-items: center; font-weight: 700; font-size: 15px;
+    border: 1px solid var(--accent-line);
   }
-  .card-chip {
-    width: 30px; height: 21px; border-radius: 4px; flex: none;
+  .who-name { font-weight: 650; }
+  .who-line { font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
+
+  .profile-row {
+    display: flex; justify-content: space-between; align-items: center; gap: 10px;
+    padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px;
+  }
+  .profile-row .k { color: var(--ink-3); }
+  .profile-row .v { font-weight: 620; }
+  .mini-card {
+    display: inline-flex; align-items: center; gap: 7px;
+    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
+  }
+  .mini-chip {
+    width: 20px; height: 14px; border-radius: 3px;
     background: linear-gradient(135deg, #e8c37a, #b98f3f);
   }
-  .card-num { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13.5px; letter-spacing: .5px; }
-  .card-note { font-size: 11px; color: #c9c2b8; margin-top: 1px; }
+
+  .quick { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; }
+  .quick button {
+    border: 1px solid var(--line-strong); background: var(--surface);
+    border-radius: 20px; padding: 6px 12px; font: inherit; font-size: 12.5px;
+    color: var(--ink-2); cursor: pointer;
+  }
+  .quick button:hover { border-color: var(--accent); color: var(--ink); }
 
   /* ---- terminal ---- */
   .terminal {
     background: #0d0f12; border: 1px solid #23272e; border-radius: var(--radius);
-    overflow: hidden; display: flex; flex-direction: column; height: 640px;
+    overflow: hidden; display: flex; flex-direction: column; height: 620px;
   }
   .term-bar {
     display: flex; align-items: center; gap: 8px;
@@ -64,14 +78,14 @@
   .ln + .ln { margin-top: 3px; }
   .ln .t { color: #4a525c; flex: none; }
   .ln .m { flex: 1; }
-  .ln.info .m   { color: #c9d1d9; }
-  .ln.step .m   { color: #79c0ff; }
-  .ln.ok .m     { color: #56d364; }
-  .ln.warn .m   { color: #e3b341; }
-  .ln.err .m    { color: #f85149; }
-  .ln.quiet .m  { color: #6e7681; }
-  .ln.head .m   { color: #d2a8ff; font-weight: 600; }
-  .ln .m b      { color: #fff; font-weight: 600; }
+  .ln.info .m  { color: #c9d1d9; }
+  .ln.step .m  { color: #79c0ff; }
+  .ln.ok .m    { color: #56d364; }
+  .ln.warn .m  { color: #e3b341; }
+  .ln.err .m   { color: #f85149; }
+  .ln.quiet .m { color: #6e7681; }
+  .ln.head .m  { color: #d2a8ff; font-weight: 600; }
+  .ln .m b     { color: #fff; font-weight: 600; }
 
   .cursor {
     display: inline-block; width: 7px; height: 14px; background: #56d364;
@@ -79,11 +93,11 @@
   }
   @keyframes blink { 50% { opacity: 0; } }
 
-  .term-ask {
-    border-top: 1px solid #23272e; background: #14181d; padding: 14px;
+  .term-ask { border-top: 1px solid #23272e; background: #14181d; padding: 14px; }
+  .term-ask p {
+    margin: 0 0 10px; color: #e3b341; font-size: 12.5px;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
   }
-  .term-ask p { margin: 0 0 10px; color: #e3b341; font-size: 12.5px;
-                font-family: ui-monospace, Menlo, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -93,6 +107,7 @@
       <span class="brand-role">Buyer</span>
     </div>
     <div class="topbar-links">
+      <a href="/buyer">Account</a>
       <a href="/merchant">Merchant console</a>
       <a href="/audit">Audit trail</a>
       <a href="/">Home</a>
@@ -100,66 +115,58 @@
   </div>
 
   <div class="page">
-    <h1>Send an agent to buy dinner</h1>
+    <h1>What would you like?</h1>
     <p class="lede">
-      You set the limits and say what you want. The agent does the rest on its own,
-      and shows you every step it takes.
+      Say it in your own words. Your agent takes it from there, and shows you
+      everything it does.
     </p>
 
     <div class="split">
-      <!-- ══════════════════ UI 1 — HUMAN USER PORTAL ══════════════════ -->
+      <!-- ─────────────── order form ─────────────── -->
       <div>
         <div class="pane-label">
           <span class="pane-num">1</span>
-          <span class="pane-title">You</span>
+          <span class="pane-title">Your order</span>
         </div>
-        <p class="pane-sub">The human customer. You are not doing the shopping.</p>
+        <p class="pane-sub">The only thing you still have to do.</p>
 
         <div class="card">
-          <div class="field">
-            <label for="address">Delivery address</label>
-            <input type="text" id="address" placeholder="Flat 402, Sunrise Apartments, Indiranagar">
-          </div>
-
-          <div class="field">
-            <label>Your spending mandate</label>
-            <div class="field-row">
-              <div>
-                <input type="text" id="hardCap" inputmode="numeric">
-                <div class="note" style="margin-top:5px">Hard cap &mdash; never exceed</div>
-              </div>
-              <div>
-                <input type="text" id="softCap" inputmode="numeric">
-                <div class="note" style="margin-top:5px">Soft cap &mdash; ask me first</div>
-              </div>
+          <div class="who">
+            <div class="avatar" id="avatar">?</div>
+            <div>
+              <div class="who-name" id="whoName">—</div>
+              <div class="who-line" id="whoAddress">—</div>
             </div>
           </div>
 
-          <div class="field">
-            <label>Payment profile</label>
-            <div class="card-on-file">
-              <span class="card-chip"></span>
-              <div>
-                <div class="card-num">**** **** **** 1007</div>
-                <div class="card-note">Authorised for autonomous payment under your hard cap</div>
-              </div>
-            </div>
+          <div class="profile-row" style="margin-top:14px">
+            <span class="k">Paying with</span>
+            <span class="v mini-card"><span class="mini-chip"></span><span id="whoCard">••••</span></span>
+          </div>
+          <div class="profile-row">
+            <span class="k">Agent may spend up to</span>
+            <span class="v" id="whoHard">—</span>
+          </div>
+          <div class="profile-row">
+            <span class="k">Asks you above</span>
+            <span class="v" id="whoSoft">—</span>
           </div>
 
-          <div class="field">
+          <div style="margin-top:18px">
             <label for="command">What do you want your AI to buy?</label>
             <textarea id="command" rows="3">Order 1 paneer bhurji and 4 tandoori roti</textarea>
+            <div class="quick" id="quick"></div>
           </div>
 
-          <button class="btn" id="deployBtn" style="width:100%">Deploy Agent</button>
-          <p class="note" id="portalNote">
-            Once deployed, the agent negotiates on its own. It comes back to you only if
-            something crosses your soft cap.
+          <button class="btn" id="deployBtn" style="width:100%; margin-top:15px">Deploy Agent</button>
+          <p class="note">
+            The agent negotiates on its own and pays with your saved card. It comes
+            back to you only if something crosses your soft cap.
           </p>
         </div>
       </div>
 
-      <!-- ══════════════════ UI 2 — BUYER AI TERMINAL ══════════════════ -->
+      <!-- ─────────────── agent terminal ─────────────── -->
       <div>
         <div class="pane-label">
           <span class="pane-num">2</span>
@@ -172,11 +179,11 @@
             <span class="term-dot" style="background:#ff5f57"></span>
             <span class="term-dot" style="background:#febc2e"></span>
             <span class="term-dot" style="background:#28c840"></span>
-            <span class="term-name">buyer-agent</span>
+            <span class="term-name" id="termName">buyer-agent</span>
             <span class="term-state" id="termState" style="color:#6e7681">IDLE</span>
           </div>
           <div class="term-body" id="term">
-            <div class="ln quiet"><span class="t">--:--:--</span><span class="m">Agent asleep. Fill in the form and deploy.</span></div>
+            <div class="ln quiet"><span class="t">--:--:--</span><span class="m">Agent asleep. Say what you want and deploy.</span></div>
           </div>
           <div class="term-ask" id="termAsk" style="display:none">
             <p id="askText"></p>
@@ -192,19 +199,35 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+const PROFILE_KEY = "ammas-kitchen-buyer-profile";
 const rupee = (n) => "₹" + n;
 const titleize = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 let MENU = [];
-let MANDATE = null;
+let PROFILE = null;
 let running = false;
+
+/* ------------------------------------------------------------ plumbing */
+
+async function api(path, opts) {
+  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || "HTTP " + res.status);
+  return body;
+}
+
+function toast(msg, isErr) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4200);
+}
 
 /* ------------------------------------------------------------ terminal */
 
-function stamp() {
-  return new Date().toLocaleTimeString("en-GB", { hour12: false });
-}
+const stamp = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 
 function log(message, kind = "info") {
   const line = document.createElement("div");
@@ -215,41 +238,26 @@ function log(message, kind = "info") {
   return line;
 }
 
-/** A line that "thinks" briefly before the next one, so the log reads at
- *  human pace instead of dumping all at once. */
 async function step(message, kind = "step", pause = 520) {
   const line = log("&gt; " + message, kind);
   await sleep(pause);
   return line;
 }
 
-function setState(text, colour) {
-  $("termState").textContent = text;
-  $("termState").style.color = colour;
-}
+const setState = (t, c) => { $("termState").textContent = t; $("termState").style.color = c; };
+const cursor = () => log('<span class="cursor"></span>', "quiet");
 
-function clearTerminal() {
-  $("term").innerHTML = "";
-  $("termAsk").style.display = "none";
-}
-
-function cursor() {
-  return log('<span class="cursor"></span>', "quiet");
-}
-
-/** Ask the human, from inside the terminal, and wait for their answer. */
 function askHuman(question) {
   return new Promise((resolve) => {
     $("askText").innerHTML = question;
     $("termAsk").style.display = "";
-    const done = (answer) => {
+    const done = (a) => {
       $("termAsk").style.display = "none";
       $("askYes").removeEventListener("click", yes);
       $("askNo").removeEventListener("click", no);
-      resolve(answer);
+      resolve(a);
     };
-    const yes = () => done(true);
-    const no = () => done(false);
+    const yes = () => done(true), no = () => done(false);
     $("askYes").addEventListener("click", yes);
     $("askNo").addEventListener("click", no);
   });
@@ -257,28 +265,38 @@ function askHuman(question) {
 
 /* ---------------------------------------------------------------- boot */
 
-async function api(path, opts) {
-  const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.detail || "HTTP " + res.status);
-  return body;
-}
-
-async function boot() {
-  const data = await api("/api/menu");
-  MENU = data.items;
-  MANDATE = data.mandate;
-
-  const defaults = await api("/api/buyer-mandate-defaults");
-  $("hardCap").value = defaults.spend_cap_inr;
-  $("softCap").value = defaults.confirm_above_inr;
-  $("address").value = "Flat 402, Sunrise Apartments, Indiranagar";
-}
-
 const priceOf = (id) => (MENU.find((m) => m.id === id) || {}).price_inr || 0;
 const cartTotal = (items) => items.reduce((s, i) => s + priceOf(i.item_id) * i.qty, 0);
-const cartLabel = (items) =>
-  items.map((i) => `${i.qty}x ${titleize(i.item_id)}`).join(", ");
+const cartLabel = (items) => items.map((i) => `${i.qty}x ${titleize(i.item_id)}`).join(", ");
+
+async function boot() {
+  const stored = localStorage.getItem(PROFILE_KEY);
+  if (!stored) {
+    // No account yet -- send them to set one up.
+    window.location.href = "/buyer";
+    return;
+  }
+  PROFILE = JSON.parse(stored);
+
+  $("avatar").textContent = (PROFILE.name || "?").trim().charAt(0).toUpperCase();
+  $("whoName").textContent = PROFILE.name;
+  $("whoAddress").textContent = PROFILE.address;
+  $("whoCard").textContent = "•••• " + PROFILE.card_last4;
+  $("whoHard").textContent = rupee(PROFILE.hard_cap_inr);
+  $("whoSoft").textContent = rupee(PROFILE.soft_cap_inr);
+  $("termName").textContent = PROFILE.agent_id;
+
+  MENU = (await api("/api/menu")).items;
+
+  const orderable = MENU.filter((m) => m.agent_orderable).slice(0, 4);
+  $("quick").innerHTML = orderable
+    .map((m) => `<button data-say="Order 1 ${m.title.toLowerCase()}">${m.title} ${rupee(m.price_inr)}</button>`)
+    .join("");
+  $("quick").addEventListener("click", (e) => {
+    const btn = e.target.closest("button");
+    if (btn) $("command").value = btn.dataset.say;
+  });
+}
 
 /* ------------------------------------------------------- the agent run */
 
@@ -287,24 +305,24 @@ async function deploy() {
   running = true;
   $("deployBtn").disabled = true;
   $("deployBtn").textContent = "Agent running…";
-  clearTerminal();
+  $("term").innerHTML = "";
+  $("termAsk").style.display = "none";
   setState("WAKING", "#e3b341");
 
-  const hardCap = parseInt($("hardCap").value, 10) || 0;
-  const softCap = parseInt($("softCap").value, 10) || 0;
-  const address = $("address").value.trim() || "(no address given)";
+  const hardCap = PROFILE.hard_cap_inr;
+  const softCap = PROFILE.soft_cap_inr;
   const prompt = $("command").value.trim();
 
   try {
     if (!prompt) throw new Error("You didn't say what to buy.");
 
     setState("RUNNING", "#56d364");
-    await step(`Human mandate locked: hard cap <b>${rupee(hardCap)}</b>, ask above <b>${rupee(softCap)}</b>.`, "head", 620);
-    await step(`Card on file ****1007 authorised for autonomous payment under the hard cap.`, "quiet", 480);
-    await step(`Delivering to: ${address}`, "quiet", 420);
-    await step(`Reading human prompt: "${prompt}"`, "info", 620);
+    await step(`Acting for <b>${PROFILE.name}</b>.`, "head", 520);
+    await step(`Mandate on file: hard cap <b>${rupee(hardCap)}</b>, ask above <b>${rupee(softCap)}</b>.`, "quiet", 480);
+    await step(`Card ••••${PROFILE.card_last4} pre-authorised (token ${PROFILE.card_token.slice(0, 14)}…).`, "quiet", 440);
+    await step(`Delivering to: ${PROFILE.address}`, "quiet", 420);
+    await step(`Reading request: "${prompt}"`, "info", 600);
 
-    // ---- 1. natural language -> structured cart (real Claude call) ----
     await step("Calling Claude to interpret this into a structured cart…", "step", 320);
     const thinking = cursor();
     let items;
@@ -320,17 +338,16 @@ async function deploy() {
     thinking.remove();
 
     const total = cartTotal(items);
-    await step(`Draft cart: <b>${cartLabel(items)}</b>. Estimated <b>${rupee(total)}</b>.`, "info", 620);
+    await step(`Draft cart: <b>${cartLabel(items)}</b>. Estimated <b>${rupee(total)}</b>.`, "info", 600);
 
-    // ---- 2. the buyer's OWN mandate, before contacting anyone ----------
-    await step("Checking against my own mandate before contacting any merchant…", "step", 480);
+    await step("Checking against my own mandate before contacting any merchant…", "step", 460);
     const gate = await api("/api/buyer-check", {
       method: "POST",
       body: JSON.stringify({ items, spend_cap_inr: hardCap, confirm_above_inr: softCap }),
     });
 
     if (gate.decision === "REFUSE") {
-      log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks my mandate: ${gate.reason}.`, "err");
+      log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks the mandate: ${gate.reason}.`, "err");
       log("&gt; Amma's Kitchen was never contacted. This was not her decision to make.", "err");
       setState("REFUSED", "#f85149");
       return;
@@ -338,36 +355,34 @@ async function deploy() {
 
     if (gate.decision === "ASK_USER") {
       log(`&gt; ${rupee(gate.total_inr)} is at or above your soft cap. Coming back to you.`, "warn");
-      const approved = await askHuman(
+      const ok = await askHuman(
         `This costs <b>${rupee(gate.total_inr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
       );
-      if (!approved) {
+      if (!ok) {
         log("&gt; You declined. Nothing was sent to Amma's Kitchen.", "err");
         setState("CANCELLED", "#f85149");
         return;
       }
       log("&gt; You approved. Proceeding.", "ok");
     } else {
-      await step(`${rupee(total)} is inside your ${rupee(hardCap)} mandate. Cleared, no need to disturb you.`, "ok", 520);
+      await step(`${rupee(total)} is inside the ${rupee(hardCap)} mandate. Cleared, no need to disturb you.`, "ok", 500);
     }
 
-    // ---- 3. pick a protocol and open contact --------------------------
-    await step("Selecting <b>AP2</b> — its mandate chain matches a pre-authorised card-on-file flow.", "step", 620);
-    await step("Initiating contact with Amma's Kitchen AI…", "step", 480);
+    await step("Selecting <b>AP2</b> — its mandate chain matches a pre-authorised card-on-file flow.", "step", 600);
+    await step("Initiating contact with Amma's Kitchen AI…", "step", 460);
 
     let mandate = (await api("/ap2/intent-mandates", {
       method: "POST",
       body: JSON.stringify({
-        agent_id: AGENT_ID,
+        agent_id: PROFILE.agent_id,
         intent: { items, auto_confirm_limit_inr: softCap },
       }),
     })).intent_mandate;
 
     log(`&gt; Intent Mandate opened. Amma's AI sees me as trust tier <b>${mandate.decision_detail.trust_tier}</b>.`, "quiet");
-    mandate = await handleMerchantResponse(mandate, hardCap, softCap);
+    mandate = await handleMerchantResponse(mandate, hardCap);
     if (!mandate) return;
 
-    // ---- 4. settle ----------------------------------------------------
     await settle(mandate, hardCap);
   } catch (err) {
     log("&gt; " + err.message, "err");
@@ -379,15 +394,13 @@ async function deploy() {
   }
 }
 
-/** Deal with whatever the merchant said back: approve, counter, escalate. */
-async function handleMerchantResponse(mandate, hardCap, softCap) {
+async function handleMerchantResponse(mandate, hardCap) {
   const d = mandate.decision_detail;
 
   if (d.decision === "COUNTER_OFFER" && d.alternatives.length) {
     log(`&gt; Amma countered: ${d.reason}.`, "warn");
     const alt = d.alternatives[0];
-    const altLabel = alt.map((l) => `${l.qty}x ${titleize(l.item)}`).join(", ");
-    await step(`Her best alternative: ${altLabel}. Taking it.`, "step", 520);
+    await step(`Her best alternative: ${alt.map((l) => `${l.qty}x ${titleize(l.item)}`).join(", ")}. Taking it.`, "step", 500);
     mandate = (await api(`/ap2/intent-mandates/${mandate.id}/accept-alternative`, {
       method: "POST", body: JSON.stringify({ index: 0 }),
     })).intent_mandate;
@@ -397,7 +410,10 @@ async function handleMerchantResponse(mandate, hardCap, softCap) {
     log(`&gt; Amma's AI escalated this to her: ${mandate.decision_detail.reason}.`, "warn");
     log("&gt; Nothing has been charged. Waiting for her decision…", "quiet");
     setState("WAITING ON MERCHANT", "#e3b341");
-    mandate = await waitForMerchant(mandate.id);
+    while (mandate.status === "requires_human") {
+      await sleep(2000);
+      mandate = (await api(`/ap2/intent-mandates/${mandate.id}`)).intent_mandate;
+    }
     if (mandate.status === "rejected") {
       log("&gt; Amma declined the order. Closing out — no payment was attempted.", "err");
       setState("DECLINED", "#f85149");
@@ -407,7 +423,6 @@ async function handleMerchantResponse(mandate, hardCap, softCap) {
     setState("RUNNING", "#56d364");
   }
 
-  // Upsell, if she offered one.
   const upsell = mandate.decision_detail.upsell_suggestion;
   if (upsell) {
     const newTotal = mandate.decision_detail.total_inr + upsell.price_inr;
@@ -417,7 +432,7 @@ async function handleMerchantResponse(mandate, hardCap, softCap) {
     log(`&gt; She suggests adding ${titleize(upsell.item)} (${rupee(upsell.price_inr)}) — ${because}.`, "quiet");
 
     if (newTotal <= hardCap) {
-      await step(`${rupee(newTotal)} still inside your ${rupee(hardCap)} cap. Accepting.`, "ok", 520);
+      await step(`${rupee(newTotal)} still inside your ${rupee(hardCap)} cap. Accepting.`, "ok", 500);
       mandate = (await api(`/ap2/intent-mandates/${mandate.id}/accept-upsell`, { method: "POST" })).intent_mandate;
       log(`&gt; Cart now <b>${rupee(mandate.decision_detail.total_inr)}</b>, re-checked against her rules.`, "quiet");
     } else {
@@ -428,21 +443,13 @@ async function handleMerchantResponse(mandate, hardCap, softCap) {
   return mandate;
 }
 
-async function waitForMerchant(intentId) {
-  while (true) {
-    await sleep(2000);
-    const m = (await api(`/ap2/intent-mandates/${intentId}`)).intent_mandate;
-    if (m.status !== "requires_human") return m;
-  }
-}
-
 async function settle(mandate, hardCap) {
   const total = mandate.decision_detail.total_inr;
 
-  await step(`Payment Mandate locked. Total: <b>${rupee(total)}</b>.`, "step", 560);
+  await step(`Payment Mandate locked. Total: <b>${rupee(total)}</b>.`, "step", 540);
   const cart = (await api(`/ap2/intent-mandates/${mandate.id}/cart-mandate`, { method: "POST" })).cart_mandate;
 
-  await step(`Utilising pre-authorised card ****1007 (within your ${rupee(hardCap)} cap).`, "step", 560);
+  await step(`Utilising pre-authorised card ••••${PROFILE.card_last4} (within your ${rupee(hardCap)} cap).`, "step", 540);
   setState("SETTLING", "#e3b341");
   await step("Executing server-to-server payment…", "step", 320);
 
@@ -454,7 +461,6 @@ async function settle(mandate, hardCap) {
   log(`&gt; Success: payment <b>${pm.payment_id}</b> confirmed.`, "ok");
 
   if (pm.simulated) {
-    // Never let the demo imply money moved when it did not.
     log(`&gt; Note: ${pm.method}. The order above is real; the capture is`, "warn");
     log(`&gt; simulated and marked <b>sim_</b> in the audit trail, not <b>pay_</b>.`, "warn");
   }
@@ -463,10 +469,6 @@ async function settle(mandate, hardCap) {
   log("&gt; No human touched a card form. My work here is done.", "ok");
   setState("COMPLETE", "#56d364");
 }
-
-/* -------------------------------------------------------------- events */
-
-const AGENT_ID = "agent-" + Math.random().toString(36).slice(2, 7);
 
 $("deployBtn").addEventListener("click", deploy);
 boot();

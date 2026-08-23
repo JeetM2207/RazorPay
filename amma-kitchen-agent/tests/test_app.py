@@ -17,10 +17,31 @@ def client(tmp_path, monkeypatch):
 
 
 def test_all_human_facing_pages_render(client):
-    for path in ("/", "/buyer", "/merchant", "/audit"):
+    for path in ("/", "/buyer", "/buyer/order", "/merchant", "/audit"):
         resp = client.get(path)
         assert resp.status_code == 200, path
         assert "Amma" in resp.text
+
+
+def test_buyer_is_split_into_setup_then_ordering(client):
+    """Account setup happens once at /buyer; /buyer/order is the page you
+    return to every time after that."""
+    setup = client.get("/buyer").text
+    ordering = client.get("/buyer/order").text
+
+    assert "Set up your account" in setup
+    assert "Card number" in setup
+    assert "Card number" not in ordering, "card entry must not reappear on the ordering page"
+    assert "Deploy Agent" in ordering
+
+
+def test_the_card_number_is_never_posted_to_the_server(client):
+    """The setup page must tokenise in the browser. Nothing server-side
+    should offer to receive a PAN."""
+    schema = unified.app.openapi()
+    blob = str(schema).lower()
+    for forbidden in ("card_number", "cardnumber", "\"cvv\"", "pan"):
+        assert forbidden not in blob, f"an API surface accepts {forbidden}"
 
 
 def test_both_protocols_are_served_from_one_app(client):

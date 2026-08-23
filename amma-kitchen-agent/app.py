@@ -76,8 +76,17 @@ def landing() -> FileResponse:
 
 
 @app.get("/buyer", response_class=HTMLResponse)
-def buyer_console() -> FileResponse:
-    return FileResponse(WEB_DIR / "buyer.html")
+def buyer_profile() -> FileResponse:
+    """One-time account setup: who you are, the card, and the standing
+    mandate. The card never reaches this server -- the page keeps only a
+    last-4 and a token reference in the browser."""
+    return FileResponse(WEB_DIR / "profile.html")
+
+
+@app.get("/buyer/order", response_class=HTMLResponse)
+def buyer_order() -> FileResponse:
+    """Day-to-day: say what you want, watch the agent work."""
+    return FileResponse(WEB_DIR / "order.html")
 
 
 @app.get("/merchant", response_class=HTMLResponse)
