@@ -21,7 +21,7 @@ from fastapi.responses import HTMLResponse
 
 import audit_log
 import trust
-from mandate import MANDATE
+import merchant_config
 
 router = APIRouter()
 
@@ -121,6 +121,7 @@ def _agent_tiers(events: list[dict], db_path: str) -> list[tuple[str, str, int]]
 
 
 def _render(events: list[dict], db_path: str, refresh: int) -> str:
+    _mandate = merchant_config.current_mandate()
     stats = _summary(events)
     refresh_tag = f"<meta http-equiv='refresh' content='{refresh}'>" if refresh > 0 else ""
 
@@ -227,9 +228,9 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 
   <div class="mandate">
     Merchant mandate in force &mdash;
-    budget cap <b>&#8377;{MANDATE.budget_cap_inr}</b> &middot;
-    human confirmation at <b>&#8377;{MANDATE.human_confirm_threshold_inr}</b> &middot;
-    allowed categories <b>{html.escape(", ".join(MANDATE.allowed_categories))}</b>
+    budget cap <b>&#8377;{_mandate.budget_cap_inr}</b> &middot;
+    human confirmation at <b>&#8377;{_mandate.human_confirm_threshold_inr}</b> &middot;
+    allowed categories <b>{html.escape(", ".join(_mandate.allowed_categories))}</b>
   </div>
 
   <div class="cards">{stat_cards}</div>

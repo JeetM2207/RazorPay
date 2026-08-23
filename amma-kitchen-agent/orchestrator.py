@@ -10,16 +10,21 @@ idea this file exists.
 import uuid
 
 import audit_log
+import merchant_config
 import negotiation
 import razorpay_client
 import trust
-from mandate import MANDATE, MENU
 
 
 def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int]]) -> dict:
     db_path = audit_log.DEFAULT_DB_PATH
-    adjusted_mandate, tier = trust.trust_adjusted_mandate(agent_id, MANDATE, db_path=db_path)
-    result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=MENU)
+    # Read the merchant's LIVE configuration, so edits she makes on the
+    # setup page are the limits actually enforced here.
+    menu = merchant_config.current_menu()
+    adjusted_mandate, tier = trust.trust_adjusted_mandate(
+        agent_id, merchant_config.current_mandate(), db_path=db_path
+    )
+    result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=menu)
 
     cart_payload = [{"item": name, "qty": qty} for name, qty in cart]
     event_id = audit_log.record_event(
@@ -54,7 +59,7 @@ def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int
             [name for name, _qty in cart], db_path=db_path
         )
         upsell = negotiation.suggest_upsell(
-            cart, mandate=adjusted_mandate, menu=MENU, ranked_addons=ranked_addons
+            cart, mandate=adjusted_mandate, menu=menu, ranked_addons=ranked_addons
         )
         if upsell:
             response["upsell_suggestion"] = {
@@ -86,10 +91,16 @@ def create_payment_for_cart(
     """
     db_path = audit_log.DEFAULT_DB_PATH
     if skip_reevaluation:
-        total_inr = sum(MENU[name].price_inr * qty for name, qty in cart)
+        total_inr = sum(
+            merchant_config.current_menu()[name].price_inr * qty for name, qty in cart
+        )
     else:
-        adjusted_mandate, _ = trust.trust_adjusted_mandate(agent_id, MANDATE, db_path=db_path)
-        result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=MENU)
+        adjusted_mandate, _ = trust.trust_adjusted_mandate(
+            agent_id, merchant_config.current_mandate(), db_path=db_path
+        )
+        result = negotiation.evaluate(
+            cart, mandate=adjusted_mandate, menu=merchant_config.current_menu()
+        )
         if result.decision != negotiation.Decision.APPROVE:
             raise ValueError(f"cart no longer approved at payment time: {result.decision}")
         total_inr = result.total_inr

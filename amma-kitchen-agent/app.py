@@ -38,7 +38,7 @@ import escalations
 import notification_service
 import trust
 import webhook_handler
-from mandate import MANDATE, MENU
+import merchant_config
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -90,8 +90,36 @@ def buyer_order() -> FileResponse:
 
 
 @app.get("/merchant", response_class=HTMLResponse)
+def merchant_setup() -> FileResponse:
+    """One-time shop setup: who you are, your limits, and your menu."""
+    return FileResponse(WEB_DIR / "shop.html")
+
+
+@app.get("/merchant/orders", response_class=HTMLResponse)
 def merchant_console() -> FileResponse:
+    """Day-to-day: the escalation queue, trust, and the decision log."""
     return FileResponse(WEB_DIR / "merchant.html")
+
+
+@app.get("/api/merchant-config")
+def get_merchant_config() -> dict:
+    return merchant_config.as_dict()
+
+
+class MerchantConfigRequest(BaseModel):
+    profile: dict
+    mandate: dict
+    menu: list[dict]
+
+
+@app.post("/api/merchant-config")
+def save_merchant_config(req: MerchantConfigRequest) -> dict:
+    """Save the shop. These values are what negotiation.py decides
+    against from the next order onward -- the page is not decorative."""
+    try:
+        return merchant_config.save(req.profile, req.mandate, req.menu)
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(400, str(exc))
 
 
 @app.get("/api/menu")
@@ -99,23 +127,11 @@ def menu() -> dict:
     """What the buyer console renders. Includes items the merchant sells
     but agents may not order, flagged rather than hidden -- the buyer
     should be able to see the rule being applied, not just its result."""
+    config = merchant_config.as_dict()
     return {
-        "items": [
-            {
-                "id": item.name,
-                "title": item.name.replace("_", " ").title(),
-                "category": item.category,
-                "price_inr": item.price_inr,
-                "stock": item.stock,
-                "agent_orderable": item.category in MANDATE.allowed_categories,
-            }
-            for item in MENU.values()
-        ],
-        "mandate": {
-            "budget_cap_inr": MANDATE.budget_cap_inr,
-            "human_confirm_threshold_inr": MANDATE.human_confirm_threshold_inr,
-            "allowed_categories": list(MANDATE.allowed_categories),
-        },
+        "items": config["menu"],
+        "mandate": config["mandate"],
+        "merchant": config["profile"],
     }
 
 
@@ -148,7 +164,7 @@ def parse_cart(req: ParseCartRequest) -> dict:
                         "items": {
                             "type": "object",
                             "properties": {
-                                "item_id": {"type": "string", "enum": list(MENU.keys())},
+                                "item_id": {"type": "string", "enum": list(merchant_config.current_menu().keys())},
                                 "qty": {"type": "integer", "minimum": 1},
                             },
                             "required": ["item_id", "qty"],
@@ -178,7 +194,11 @@ def buyer_check(req: BuyerCheckRequest) -> dict:
         spend_cap_inr=req.spend_cap_inr, confirm_above_inr=req.confirm_above_inr
     )
     cart = [(item.item_id, item.qty) for item in req.items]
-    result = buyer_mandate.check_cart(cart, mandate=mandate)
+    # Price against the merchant's LIVE menu, not the defaults -- a buyer
+    # checking its own budget must use the prices actually being charged.
+    result = buyer_mandate.check_cart(
+        cart, mandate=mandate, menu=merchant_config.current_menu()
+    )
     return {
         "decision": result.decision.value,
         "reason": result.reason,

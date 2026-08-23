@@ -30,7 +30,8 @@
     </div>
     <div class="topbar-links">
       <span class="live"><span class="dot"></span> live</span>
-      <a href="/buyer">Buyer console</a>
+      <a href="/merchant">Shop settings</a>
+      <a href="/buyer/order">Buyer console</a>
       <a href="/audit">Full audit trail</a>
       <a href="/">Home</a>
     </div>
@@ -142,6 +143,15 @@ const DECISION_PATH = {
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
+  const config = await api("/api/merchant-config");
+  if (!config.profile.configured) {
+    // Shop not set up yet -- send them there rather than showing an
+    // orders screen governed by limits they never chose.
+    window.location.href = "/merchant";
+    return;
+  }
+  document.querySelector(".brand-mark").textContent = config.profile.shop_name;
+
   MANDATE = (await api("/api/menu")).mandate;
   $("mandateStrip").innerHTML =
     "<span>Your mandate &mdash;</span>" +

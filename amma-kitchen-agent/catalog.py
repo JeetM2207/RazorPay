@@ -11,7 +11,7 @@ agent can self-limit its request before ever hitting the negotiation core
 
 from fastapi import APIRouter, FastAPI
 
-from mandate import MANDATE, MENU
+import merchant_config
 
 router = APIRouter()
 
@@ -19,7 +19,7 @@ router = APIRouter()
 @router.get("/catalog")
 def get_catalog() -> dict:
     return {
-        "merchant": {"name": "Amma's Kitchen", "currency": "INR"},
+        "merchant": {"name": merchant_config.profile()["shop_name"], "currency": "INR"},
         "items": [
             {
                 "id": item.name,
@@ -32,16 +32,21 @@ def get_catalog() -> dict:
                 # Published honestly: some items the merchant genuinely
                 # sells are still not orderable by an autonomous agent.
                 # Saying so here saves the agent a wasted round-trip.
-                "agent_orderable": item.category in MANDATE.allowed_categories,
+                "agent_orderable": item.category in _m().allowed_categories,
             }
-            for item in MENU.values()
+            for item in merchant_config.current_menu().values()
         ],
         "order_limits": {
-            "max_order_inr": MANDATE.budget_cap_inr,
-            "human_confirm_at_inr": MANDATE.human_confirm_threshold_inr,
-            "allowed_categories": list(MANDATE.allowed_categories),
+            "max_order_inr": _m().budget_cap_inr,
+            "human_confirm_at_inr": _m().human_confirm_threshold_inr,
+            "allowed_categories": list(_m().allowed_categories),
         },
     }
+
+
+
+def _m():
+    return merchant_config.current_mandate()
 
 
 app = FastAPI(title="Amma's Kitchen Agent Catalog")

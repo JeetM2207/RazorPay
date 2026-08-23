@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up your shop — Amma's Kitchen</title>
+<link rel="stylesheet" href="/static/shared.css">
+<style>
+  .wrap { max-width: 720px; margin: 0 auto; }
+  .steps { display: flex; gap: 8px; margin-bottom: 26px; }
+  .pip { flex: 1; height: 3px; border-radius: 2px; background: var(--line-strong); }
+  .pip.on { background: var(--accent); }
+
+  .field { margin-bottom: 17px; }
+  .field-row { display: flex; gap: 12px; }
+  .field-row > * { flex: 1; }
+  .hint { font-size: 12px; color: var(--ink-3); margin-top: 5px; }
+
+  .section-head {
+    font-size: 12px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+    color: var(--ink-3); margin: 26px 0 14px; padding-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .section-head:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
+
+  .dish {
+    display: grid;
+    grid-template-columns: 1.7fr 1.1fr 82px 78px auto auto;
+    gap: 9px; align-items: center; margin-bottom: 9px;
+  }
+  .dish input, .dish select { padding: 8px 10px; font-size: 13.5px; }
+  .dish-head {
+    display: grid;
+    grid-template-columns: 1.7fr 1.1fr 82px 78px auto auto;
+    gap: 9px; margin-bottom: 7px;
+    font-size: 11px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: var(--ink-3);
+  }
+  @media (max-width: 720px) {
+    .dish, .dish-head { grid-template-columns: 1fr 1fr; }
+    .dish-head { display: none; }
+  }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 8px; cursor: pointer;
+    border: 1px solid var(--line-strong); background: var(--surface);
+    color: var(--ink-2); font: inherit; font-size: 15px; line-height: 1;
+  }
+  .icon-btn:hover { border-color: var(--stop); color: var(--stop); }
+  .toggle {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 12px; color: var(--ink-2); white-space: nowrap; cursor: pointer;
+  }
+  .toggle input { width: auto; margin: 0; }
+
+  .saved-banner {
+    display: flex; align-items: center; gap: 12px; justify-content: space-between;
+    padding: 14px 16px; border-radius: 10px; margin-bottom: 20px;
+    background: var(--ok-soft); border: 1px solid #bfe3cd; color: var(--ok);
+    font-size: 13.5px;
+  }
+  .live-note {
+    display: flex; gap: 10px; padding: 12px 14px; border-radius: 9px;
+    background: var(--info-soft); border: 1px solid #cfe2f2;
+    font-size: 12.5px; color: #14486f; line-height: 1.5; margin-bottom: 18px;
+  }
+  .live-note b { color: #0b3a5c; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-role">Merchant</span>
+    </div>
+    <div class="topbar-links">
+      <a href="/buyer/order">Buyer console</a>
+      <a href="/audit">Audit trail</a>
+      <a href="/">Home</a>
+    </div>
+  </div>
+
+  <div class="page">
+    <div class="wrap">
+      <div class="steps"><span class="pip on"></span><span class="pip"></span></div>
+
+      <h1>Set up your shop</h1>
+      <p class="lede">
+        Once only. Your limits and menu are what the system enforces on every
+        agent order after this &mdash; you won't be asked again unless you change them.
+      </p>
+
+      <div id="savedBanner" class="saved-banner" style="display:none">
+        <span>Your shop is set up.</span>
+        <a class="btn btn-sm btn-ok" href="/merchant/orders" style="text-decoration:none">Go to orders</a>
+      </div>
+
+      <div class="live-note">
+        <span>&#9881;</span>
+        <span>
+          <b>These aren't just settings on a screen.</b> What you enter here is
+          exactly what the negotiation engine checks every incoming order against
+          &mdash; the same numbers, no separate copy.
+        </span>
+      </div>
+
+      <div class="card">
+        <div class="section-head">Your shop</div>
+
+        <div class="field">
+          <label for="shopName">Shop name</label>
+          <input type="text" id="shopName" placeholder="Amma's Kitchen">
+        </div>
+
+        <div class="field">
+          <label for="address">Address</label>
+          <textarea id="address" rows="2" placeholder="12, 4th Cross, Jayanagar, Bengaluru 560011"></textarea>
+        </div>
+
+        <div class="field">
+          <label for="phone">Phone</label>
+          <input type="text" id="phone" placeholder="98765 43210" inputmode="numeric">
+          <div class="hint">Where escalation alerts are sent when an order needs you.</div>
+        </div>
+
+        <div class="section-head">What you'll accept from an agent</div>
+
+        <div class="field field-row">
+          <div>
+            <label for="budgetCap">Largest order you'll take</label>
+            <input type="text" id="budgetCap" inputmode="numeric">
+            <div class="hint">Anything bigger is refused outright.</div>
+          </div>
+          <div>
+            <label for="confirmAt">Ask me from</label>
+            <input type="text" id="confirmAt" inputmode="numeric">
+            <div class="hint">Orders this size or above wait for your yes.</div>
+          </div>
+        </div>
+
+        <div class="section-head">Today's menu</div>
+        <p class="note" style="margin:-6px 0 14px">
+          Untick <b>agents may order</b> for anything you'll only sell in person &mdash;
+          catering that needs a phone call, say. Agents are told it exists and that
+          they can't buy it, so they don't waste a request on it.
+        </p>
+
+        <div class="dish-head">
+          <span>Dish</span><span>Category</span><span>Price</span><span>Stock</span><span></span><span></span>
+        </div>
+        <div id="dishes"></div>
+
+        <button class="btn btn-ghost btn-sm" id="addDish" style="margin-top:6px">+ Add a dish</button>
+
+        <button class="btn" id="saveBtn" style="width:100%; margin-top:22px">Save and continue</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function toast(msg, isErr) {
+  const el = document.createElement("div");
+  el.className = "toast" + (isErr ? " err" : "");
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 5000);
+}
+
+/* --------------------------------------------------------------- menu */
+
+function dishRow(item = {}) {
+  const row = document.createElement("div");
+  row.className = "dish";
+  row.innerHTML = `
+    <input type="text" class="d-title" placeholder="Veg Thali" value="${esc(item.title || "")}">
+    <input type="text" class="d-cat" placeholder="meals" value="${esc(item.category || "meals")}">
+    <input type="text" class="d-price" inputmode="numeric" placeholder="150" value="${esc(item.price_inr ?? "")}">
+    <input type="text" class="d-stock" inputmode="numeric" placeholder="20" value="${esc(item.stock ?? "")}">
+    <label class="toggle">
+      <input type="checkbox" class="d-agent" ${item.agent_orderable !== false ? "checked" : ""}>
+      agents may order
+    </label>
+    <button class="icon-btn" title="Remove">&times;</button>`;
+  row.dataset.id = item.id || "";
+  row.querySelector(".icon-btn").addEventListener("click", () => {
+    if ($("dishes").children.length === 1) return toast("Keep at least one dish.", true);
+    row.remove();
+  });
+  return row;
+}
+
+function readMenu() {
+  return [...$("dishes").children].map((row) => ({
+    id: row.dataset.id,
+    title: row.querySelector(".d-title").value,
+    category: row.querySelector(".d-cat").value,
+    price_inr: parseInt(row.querySelector(".d-price").value, 10) || 0,
+    stock: parseInt(row.querySelector(".d-stock").value, 10) || 0,
+    agent_orderable: row.querySelector(".d-agent").checked,
+  }));
+}
+
+/* --------------------------------------------------------------- save */
+
+async function save() {
+  const payload = {
+    profile: {
+      shop_name: $("shopName").value,
+      address: $("address").value,
+      phone: $("phone").value,
+    },
+    mandate: {
+      budget_cap_inr: parseInt($("budgetCap").value, 10) || 0,
+      human_confirm_threshold_inr: parseInt($("confirmAt").value, 10) || 0,
+    },
+    menu: readMenu(),
+  };
+
+  const res = await fetch("/api/merchant-config", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const body = await res.json().catch(() => ({}));
+
+  if (!res.ok) return toast(body.detail || "Could not save.", true);
+
+  toast("Shop saved. Taking you to your orders…");
+  setTimeout(() => (window.location.href = "/merchant/orders"), 700);
+}
+
+/* --------------------------------------------------------------- boot */
+
+async function boot() {
+  const config = await (await fetch("/api/merchant-config")).json();
+
+  $("shopName").value = config.profile.shop_name || "";
+  $("address").value = config.profile.address || "";
+  $("phone").value = config.profile.phone || "";
+  $("budgetCap").value = config.mandate.budget_cap_inr;
+  $("confirmAt").value = config.mandate.human_confirm_threshold_inr;
+
+  $("dishes").innerHTML = "";
+  for (const item of config.menu) $("dishes").appendChild(dishRow(item));
+
+  if (config.profile.configured) {
+    $("savedBanner").style.display = "";
+    $("saveBtn").textContent = "Update and continue";
+  }
+}
+
+$("addDish").addEventListener("click", () => $("dishes").appendChild(dishRow()));
+$("saveBtn").addEventListener("click", save);
+boot();
+</script>
+</body>
+</html>
