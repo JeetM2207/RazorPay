@@ -170,7 +170,7 @@ amma-kitchen-agent/
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
   scripts/                # early plumbing probes, kept for reference
-  tests/                  # 280 tests; test_negotiation.py still matters most
+  tests/                  # 282 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -451,7 +451,7 @@ file for card-shaped literals; it is written to match card *structures* rather t
 long digit run, because the first version cried wolf on an example phone number in a
 docstring and a test that cries wolf gets ignored.
 
-**What broke while building it.** Three things worth recording:
+**What broke while building it.** Four things worth recording:
 
 - `audit_log.get_events_for_agent`'s `db_path` default is bound when the module is
   imported, so the adapter's "have I already checked this cart out?" lookups were reading
@@ -470,6 +470,14 @@ docstring and a test that cries wolf gets ignored.
   never have worked without `MCP_ALLOWED_HOSTS`. Two of the three failures in this
   adapter were only visible over a real request from a real client -- worth
   remembering when the unit suite is green and something still does not work.
+- The migration that added the four new audit columns was check-then-act: read
+  `PRAGMA table_info`, then `ALTER TABLE`. FastAPI serves sync endpoints from a
+  threadpool, so two requests both read before either altered and the loser died on
+  `duplicate column name` -- a 500 on `/api/agents` seconds after a restart. The
+  existing tests were all single-threaded and could not have caught it. The check is
+  now only an optimisation and the ALTER tolerates its own duplicate, which is what
+  makes it correct; anything else still raises. The regression test runs eight
+  threads through a barrier and was confirmed to fail without the fix.
 
 **Connecting it to a real Claude account.** The server must be reachable by Anthropic's
 cloud — Claude connects from Anthropic's infrastructure, not from the user's machine, so
@@ -672,7 +680,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**280 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**282 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

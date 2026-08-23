@@ -108,6 +108,79 @@ def test_frequent_addons_ordering_is_stable_on_ties(tmp_path):
     assert first == second, "tied results must not reorder between calls"
 
 
+def test_concurrent_init_does_not_collide_on_the_migration(tmp_path):
+    """FastAPI serves sync endpoints from a threadpool, so several
+    requests can enter init_db at once on a database that predates the
+    added columns. Two of them racing must not 500 the loser.
+    """
+    import sqlite3
+    import threading
+
+    db_path = str(tmp_path / "audit.db")
+    # A database at the ORIGINAL schema, before the columns were added.
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE audit_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, "
+            "agent_id TEXT NOT NULL, protocol TEXT NOT NULL, cart_json TEXT NOT NULL, "
+            "decision TEXT NOT NULL, reason TEXT NOT NULL, total_inr INTEGER NOT NULL, "
+            "payment_id TEXT, payment_link_id TEXT)"
+        )
+
+    errors = []
+    barrier = threading.Barrier(8)
+
+    def migrate():
+        try:
+            barrier.wait(timeout=5)
+            audit_log.init_db(db_path)
+        except Exception as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=migrate) for _ in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=10)
+
+    assert errors == [], f"concurrent migration failed: {errors}"
+
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(audit_events)")}
+    assert {"buyer_reasoning", "delivery_name", "delivery_phone", "delivery_address"} <= columns
+
+
+def test_an_older_database_gains_the_new_columns(tmp_path):
+    """An existing audit.db must not have to be thrown away."""
+    import sqlite3
+
+    db_path = str(tmp_path / "audit.db")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "CREATE TABLE audit_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT, ts TEXT NOT NULL, "
+            "agent_id TEXT NOT NULL, protocol TEXT NOT NULL, cart_json TEXT NOT NULL, "
+            "decision TEXT NOT NULL, reason TEXT NOT NULL, total_inr INTEGER NOT NULL, "
+            "payment_id TEXT, payment_link_id TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO audit_events (ts, agent_id, protocol, cart_json, decision, reason, total_inr) "
+            "VALUES ('2026-01-01', 'old-agent', 'acp', '[]', 'APPROVE', 'legacy row', 100)"
+        )
+
+    event_id = audit_log.record_event(
+        "new-agent", "mcp", [{"item": "masala_dosa", "qty": 1}], "APPROVE", "ok", 80,
+        db_path=db_path,
+    )
+    audit_log.attach_buyer_reasoning(event_id, "because they asked", db_path=db_path)
+
+    events = audit_log.get_all_events(db_path=db_path)
+    assert len(events) == 2, "the pre-existing row was lost"
+    assert events[0]["buyer_reasoning"] == "because they asked"
+    old = [e for e in events if e["agent_id"] == "old-agent"][0]
+    assert old["buyer_reasoning"] is None
+
+
 def test_events_are_isolated_per_agent(tmp_path):
     db_path = str(tmp_path / "audit.db")
     audit_log.record_event("agent-a", "acp", [], "APPROVE", "ok", 100, db_path=db_path)

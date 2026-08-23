@@ -47,8 +47,19 @@ def init_db(db_path: str = DEFAULT_DB_PATH) -> None:
         conn.execute(_SCHEMA)
         existing = {row[1] for row in conn.execute("PRAGMA table_info(audit_events)")}
         for column, coltype in _ADDED_COLUMNS.items():
-            if column not in existing:
+            if column in existing:
+                continue
+            try:
                 conn.execute(f"ALTER TABLE audit_events ADD COLUMN {column} {coltype}")
+            except sqlite3.OperationalError as exc:
+                # init_db runs on nearly every call, and FastAPI serves
+                # sync endpoints from a threadpool -- so two requests can
+                # both read PRAGMA before either ALTERs, and the loser
+                # gets "duplicate column name". The check above is an
+                # optimisation; THIS is what makes it correct. Anything
+                # else is a real error and still raises.
+                if "duplicate column name" not in str(exc).lower():
+                    raise
 
 
 def record_event(
