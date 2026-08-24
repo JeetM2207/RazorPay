@@ -36,7 +36,25 @@ def _handle_paid(payment_link_id: str, payment_entity: dict, db_path: str) -> st
     original = audit_log.get_event_by_payment_link(payment_link_id, db_path=db_path)
     if original is None:
         return "processed_unmatched"
-    audit_log.mark_paid(original["id"], payment_entity.get("id", ""), db_path=db_path)
+    payment_id = payment_entity.get("id", "")
+    audit_log.mark_paid(original["id"], payment_id, db_path=db_path)
+
+    # The Claude-chat path continues after payment: confirm it, or ask
+    # Amma and refund if she declines. Scoped to that protocol on
+    # purpose -- ACP, AP2 and x402 finish at capture, as they always
+    # have. Already claimed through the shared ledger by the caller, so
+    # this runs once however many times Razorpay delivers the webhook.
+    if original["protocol"] == "mcp":
+        try:
+            import mcp_orders
+
+            original = dict(original, payment_id=payment_id)
+            mcp_orders.on_payment_captured(original, payment_id)
+        except Exception:
+            # The payment is recorded either way; a follow-up failure
+            # must not make Razorpay retry a capture we already have.
+            pass
+
     return "processed"
 
 

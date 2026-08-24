@@ -73,6 +73,20 @@ def fetch_payment(payment_id: str) -> dict:
     return client.payment.fetch(payment_id)
 
 
+def refund_payment(payment_id: str, amount_inr: int | None = None) -> dict:
+    """Refund a captured payment, in full unless an amount is given.
+
+    Used when a merchant declines an order that was already paid for.
+    Speed matters here: the customer's money is held against an order
+    that is not going to happen, so the refund is issued as part of the
+    rejection rather than queued for later.
+    """
+    payload = {"speed": "normal"}
+    if amount_inr is not None:
+        payload["amount"] = amount_inr * 100
+    return client.payment.refund(payment_id, payload)
+
+
 def verify_webhook_signature(body: bytes, signature: str, webhook_secret: str) -> bool:
     try:
         client.utility.verify_webhook_signature(

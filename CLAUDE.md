@@ -164,13 +164,14 @@ amma-kitchen-agent/
   notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
   escalations.py          # merchant escalations + THE one inbound webhook + router
   buyer_sms.py            # asking the customer: what instead? / approve this?
+  mcp_orders.py           # MCP order lifecycle: pay -> confirm -> refund if declined
 
   demo.py                 # one-command scripted walkthrough (starts its own servers)
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
   scripts/                # early plumbing probes, kept for reference
-  tests/                  # 283 tests; test_negotiation.py still matters most
+  tests/                  # 309 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -418,6 +419,78 @@ server-side, because a schema constrains a cooperative caller and nothing else.
   on its own to make the assistant collect them in conversation; no separate "ask for
   delivery details" flow was built, and none should be. Written onto the same audit row
   as the order.
+
+## Pay first, confirm after: the MCP order lifecycle
+
+The Claude-chat path completes differently from the other three adapters, and the reason
+is a constraint of the medium rather than a preference.
+
+The earlier design made a large order wait for Amma **before** taking any money. That
+required the customer to keep the Claude conversation open, watch for her decision, and
+then come back and ask Claude to finish checking out. Claude cannot be woken between
+turns, so in practice the order simply stalled — and the customer was told it was
+"pending confirmation" about something they had no way to follow.
+
+So for MCP only, payment happens first and confirmation runs afterwards over WhatsApp,
+fully decoupled from the chat. **Claude's involvement ends the moment it hands over a
+payment link.** ACP, AP2 and x402 are untouched and still finish at capture.
+
+The decision is *not* re-derived after payment. `negotiation.py` already said APPROVE or
+ESCALATE when the cart was proposed; that verdict is carried on the order and simply
+actioned later. The cap is evaluated once, where it always was.
+
+```
+propose_cart  -> APPROVE / COUNTER_OFFER / ESCALATE      (negotiation.py, unchanged)
+checkout      -> AWAITING_PAYMENT + a Razorpay link      (Claude's part ends here)
+payment       -> PAID
+   verdict APPROVE   -> AUTO_CONFIRMED          customer + informational ping to Amma
+   verdict ESCALATE  -> PENDING_MERCHANT_APPROVAL        Amma asked ACCEPT / REJECT
+        ACCEPT  -> MERCHANT_ACCEPTED
+        REJECT  -> MERCHANT_REJECTED  -> REFUNDED
+        silence -> MERCHANT_TIMEOUT_REFUNDED -> REFUNDED
+```
+
+Every transition is its own append-only audit row carrying `order_ref` back to the
+decision that started it, so the trail reads top to bottom — payment, decision,
+merchant action, outcome — each timestamped, rather than one row mutated four times.
+
+**The obvious objection is "you took money for an order she might refuse."** It is
+answered by making rejection refund automatically and immediately, in the same call that
+records it: a declined order returns the money without anyone chasing it. The refund is
+attempted *before* the terminal status is written, so an order can never sit marked
+REFUNDED without the refund having been called; if Razorpay refuses, the failure is
+recorded and the order stays visibly rejected-but-unrefunded rather than quietly closed.
+
+**One case pay-first must not cover.** A disallowed category also comes back ESCALATE,
+but no human can wave that one through — so charging for it would guarantee a refund.
+`checkout` refuses those before any money moves, and only a *threshold* escalation is
+payable. That distinction is the same `_HUMAN_OVERRIDABLE_MARKER` the other adapters use,
+and it was missed on the first pass: the tests caught a version that happily took payment
+for a catering tray it could never fulfil.
+
+**`get_catalog` no longer publishes the merchant's limits.** `catalog.py` still does, for
+well-behaved buyer agents that can self-limit — but this feed is read by a model talking
+directly to the customer, and a number in the context is a number that gets said out
+loud. "Anything under Rs.400 goes straight through" is an invitation to order Rs.399.
+The limits are applied server-side inside `propose_cart` and never leave it; a test
+asserts the keys are absent rather than merely unused.
+
+**What surprised us wiring the WhatsApp side.** The merchant was being messaged twice —
+once when the cart was *proposed*, from the old pre-payment escalation path, and again
+after payment. Worse, the first ping fired for carts nobody ever paid for. Under pay-first
+she should hear nothing until money has actually arrived, so the propose-time alert was
+removed entirely. It only showed up in a live run: the unit tests were asserting the old
+behaviour, and passing.
+
+Inbound replies reuse the existing `/webhook/sms-reply` handler rather than a second one.
+`mcp_orders` registers the paid escalation with `escalations.notify(..., send=False)` —
+registered so a reply can resolve it, but silent, because the message it needs is worded
+for an order that is already paid for and whose rejection refunds.
+
+**Not built, deliberately:** nothing schedules the timeout. The project has no expiry
+mechanism for merchant escalations to reuse, and inventing a scheduler was out of scope,
+so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.
+That is the honest gap: the capability is there, the clock is not.
 
 ## The payment boundary: three checkpoints, none of them optional
 
@@ -696,7 +769,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**283 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**309 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

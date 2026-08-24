@@ -38,11 +38,17 @@ CREATE TABLE IF NOT EXISTS audit_events (
 # merchant's rules would just restate what `reason` already holds, in
 # worse prose. The customer's actual reason is the one thing this system
 # has no other way to see, so that is what the field is for.
+# `order_ref` links a lifecycle transition back to the decision row that
+# started the order. The trail stays append-only: a status change is a
+# NEW row carrying the status in `decision`, not an edit of an old one,
+# so reading top to bottom shows payment -> decision -> merchant action
+# -> outcome in the order they actually happened.
 _ADDED_COLUMNS = {
     "buyer_reasoning": "TEXT",
     "delivery_name": "TEXT",
     "delivery_phone": "TEXT",
     "delivery_address": "TEXT",
+    "order_ref": "INTEGER",
 }
 
 
@@ -75,13 +81,14 @@ def record_event(
     total_inr: int,
     payment_id: str | None = None,
     db_path: str = DEFAULT_DB_PATH,
+    order_ref: int | None = None,
 ) -> int:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
             "INSERT INTO audit_events "
-            "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id, order_ref) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).isoformat(),
                 agent_id,
@@ -91,6 +98,7 @@ def record_event(
                 reason,
                 total_inr,
                 payment_id,
+                order_ref,
             ),
         )
         return cursor.lastrowid
@@ -161,6 +169,60 @@ def get_event_by_payment_link(
             (payment_link_id,),
         ).fetchone()
         return dict(row) if row else None
+
+
+def get_order_rows(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> list[dict]:
+    """Everything that has happened to one order, oldest first.
+
+    The decision row itself, plus every lifecycle transition pointing at
+    it. This is what makes the trail readable end to end: payment, then
+    the decision being actioned, then the merchant's answer, then the
+    outcome, each with its own timestamp.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM audit_events WHERE id = ? OR order_ref = ? ORDER BY id",
+            (order_ref, order_ref),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_order_status(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> str | None:
+    """The order's current status: the most recent transition recorded
+    against it, or None if it has not entered the lifecycle yet."""
+    rows = get_order_rows(order_ref, db_path=db_path)
+    transitions = [r for r in rows if r["order_ref"] == order_ref]
+    return transitions[-1]["decision"] if transitions else None
+
+
+def get_orders_with_status(
+    status: str, db_path: str = DEFAULT_DB_PATH, protocol: str | None = None
+) -> list[dict]:
+    """Orders whose LATEST transition is `status`.
+
+    Deliberately not "orders that ever hit this status" -- an order that
+    was pending and has since been accepted is no longer pending, and a
+    queue built the other way would never empty.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        refs = conn.execute(
+            "SELECT DISTINCT order_ref FROM audit_events WHERE order_ref IS NOT NULL"
+            + (" AND protocol = ?" if protocol else ""),
+            (protocol,) if protocol else (),
+        ).fetchall()
+
+    matching = []
+    for row in refs:
+        ref = row["order_ref"]
+        if get_order_status(ref, db_path=db_path) != status:
+            continue
+        origin = get_order_rows(ref, db_path=db_path)
+        matching.append(origin[0])
+    return matching
 
 
 def get_events_for_agent(agent_id: str, db_path: str = DEFAULT_DB_PATH) -> list[dict]:

@@ -51,6 +51,18 @@ def propose(*pairs, reasoning=WHY, client=None):
     return adapter_mcp.propose_cart_impl(cart(*pairs), reasoning, client)
 
 
+def decisions(agent_id, db):
+    """Decision rows only. Lifecycle transitions (AWAITING_PAYMENT,
+    PAID, ...) are audit rows too, and would otherwise be counted as
+    if the same cart had been decided twice."""
+    import mcp_orders
+
+    return [
+        e for e in audit_log.get_events_for_agent(agent_id, db_path=db)
+        if e["decision"] not in mcp_orders.LIFECYCLE_STATUSES
+    ]
+
+
 def buy(*pairs, client=None, **overrides):
     fields = {**DELIVERY, **overrides}
     return adapter_mcp.checkout_impl(cart(*pairs), client=client, **fields)
@@ -105,7 +117,6 @@ def test_a_client_cannot_present_as_another_protocols_agent(db):
 
 def test_catalog_then_propose_then_checkout(db, link):
     feed = adapter_mcp.get_catalog_impl()
-    assert feed["order_limits"]["max_order_inr"] == 500
     dosa = next(i for i in feed["items"] if i["id"] == "masala_dosa")
     assert dosa["price_inr"] == 80 and dosa["agent_orderable"] is True
 
@@ -115,12 +126,12 @@ def test_catalog_then_propose_then_checkout(db, link):
     assert proposed["trust_tier"] == "NEW"
 
     placed = buy(("masala_dosa", 1))
-    assert placed["status"] == "placed"
+    assert placed["status"] == "awaiting_payment"
     assert placed["amount_inr"] == 80
     assert placed["payment_link_id"] == "plink_mcp1"
     assert len(link) == 1
 
-    events = audit_log.get_events_for_agent("mcp:claude", db_path=db)
+    events = decisions("mcp:claude", db)
     assert len(events) == 1, "propose then checkout must not log the same decision twice"
     assert events[0]["payment_link_id"] == "plink_mcp1"
 
@@ -139,17 +150,21 @@ def test_the_catalog_stays_compact(db):
 def test_checkout_without_ever_proposing_still_goes_through_the_core(db, link):
     """A client may just call checkout. It still gets decided, not obeyed."""
     placed = buy(("masala_dosa", 1))
-    assert placed["status"] == "placed"
+    assert placed["status"] == "awaiting_payment"
 
-    events = audit_log.get_events_for_agent("mcp:claude", db_path=db)
+    events = decisions("mcp:claude", db)
     assert len(events) == 1
     assert events[0]["decision"] == "APPROVE"
 
 
 def test_checkout_without_proposing_is_refused_when_the_core_says_no(db, link):
-    placed = buy(("chicken_biryani", 2))   # Rs.440
+    """A hard merchant rule refuses before any money moves. An
+    over-threshold cart is different -- see test_mcp_orders.py -- it is
+    paid for first and confirmed by Amma afterwards, because she CAN
+    say yes to it and a category rule she cannot."""
+    placed = buy(("party_catering_tray", 1))
     assert placed["status"] == "refused"
-    assert placed["decision"] == "ESCALATE"
+    assert "category not allowed" in placed["reason"]
     assert link == [], "a refused cart must not create a payment"
 
 
@@ -173,20 +188,20 @@ def test_two_identical_checkouts_place_exactly_one_order(db, link):
     first = buy(("masala_dosa", 1))
     second = buy(("masala_dosa", 1))
 
-    assert first["status"] == "placed"
+    assert first["status"] == "awaiting_payment"
     assert second["status"] == "already_placed"
     assert second["duplicate"] is True
     assert second["payment_link_id"] == first["payment_link_id"]
 
     assert len(link) == 1, "a retry created a second Razorpay order"
-    assert len(audit_log.get_events_for_agent("mcp:claude", db_path=db)) == 1, "a retry wrote a second audit row"
+    assert len(decisions("mcp:claude", db)) == 1, "a retry wrote a second audit row"
 
 
 def test_a_different_cart_is_not_treated_as_a_duplicate(db, link):
     buy(("masala_dosa", 1))
     other = buy(("veg_thali", 1))
 
-    assert other["status"] == "placed"
+    assert other["status"] == "awaiting_payment"
     assert len(link) == 2
 
 
@@ -194,7 +209,7 @@ def test_the_same_cart_from_a_different_client_is_its_own_order(db, link):
     buy(("masala_dosa", 1), client="alice")
     bob = buy(("masala_dosa", 1), client="bob")
 
-    assert bob["status"] == "placed"
+    assert bob["status"] == "awaiting_payment"
     assert len(link) == 2
 
 
@@ -267,8 +282,9 @@ def test_menu_text_cannot_influence_the_decision(db, link):
     assert "human confirmation threshold" in result["reason"]
     assert result["total_inr"] == 480
 
-    assert buy((injected_id, 1))["status"] == "refused"
-    assert link == []
+    # It is payable (a human could accept it), but the verdict itself
+    # was untouched by the wording, which is what this test is for.
+    assert buy((injected_id, 1))["status"] == "awaiting_payment"
 
 
 def test_the_same_item_priced_low_is_approved_showing_price_is_what_decides(db, link):
@@ -385,9 +401,9 @@ def test_checkout_without_a_delivery_field_places_no_order(db, link, missing):
 def test_a_completed_order_has_a_real_recipient_on_record(db, link):
     propose(("masala_dosa", 1))
     placed = buy(("masala_dosa", 1))
-    assert placed["status"] == "placed"
+    assert placed["status"] == "awaiting_payment"
 
-    event = audit_log.get_all_events(db_path=db)[0]
+    event = decisions("mcp:claude", db)[0]
     assert event["delivery_name"] == "Priya Sharma"
     assert event["delivery_phone"] == "9876543210"
     assert "Indiranagar" in event["delivery_address"]
@@ -468,9 +484,11 @@ def test_checkout_is_marked_destructive_so_clients_confirm_first():
 
 # ------------------------------ an escalation must reach the merchant
 
-def test_an_escalation_texts_the_merchant(db, monkeypatch):
-    """The bug that started this: an MCP order over the threshold was
-    recorded and then went nowhere -- no message, no queue entry."""
+def test_proposing_an_over_cap_cart_does_not_text_the_merchant(db, monkeypatch):
+    """Under pay-first she is told once the money has arrived, not when a
+    cart is merely proposed -- see mcp_orders.on_payment_captured. Alerting
+    here meant she was pinged about carts nobody paid for, and pinged again
+    afterwards for the ones they did."""
     import escalations
     import notification_service
 
@@ -478,12 +496,10 @@ def test_an_escalation_texts_the_merchant(db, monkeypatch):
     notification_service.clear_outbox()
     escalations.reset()
 
-    propose(("chicken_biryani", 2))          # Rs.440, over the Rs.400 threshold
+    result = propose(("chicken_biryani", 2))
 
-    outbox = notification_service.outbox()
-    assert len(outbox) == 1, "an escalated MCP order did not reach Amma"
-    assert "2x Chicken Biryani" in outbox[0]["body"]
-    assert "Reply '1' to APPROVE" in outbox[0]["body"]
+    assert result["decision"] == "ESCALATE"
+    assert notification_service.outbox() == []
 
 
 def test_an_approved_order_texts_nobody(db, monkeypatch):
@@ -498,63 +514,57 @@ def test_an_approved_order_texts_nobody(db, monkeypatch):
     assert notification_service.outbox() == []
 
 
-def test_an_escalation_appears_in_the_merchant_queue(db):
-    """Rebuilt from the audit trail, since this adapter holds no session."""
-    result = propose(("chicken_biryani", 2))
-
-    pending = adapter_mcp.list_pending()["sessions"]
-    assert len(pending) == 1
-    entry = pending[0]
-    assert entry["protocol"] == "mcp"
-    assert entry["status"] == "requires_human"
-    assert entry["decision_detail"]["event_id"] == result["order_id"]
-    assert entry["cart"] == [{"item": "chicken_biryani", "qty": 2}]
-    assert entry["decision_detail"]["buyer_reasoning"] == WHY
-
-
-def test_the_queue_survives_a_restart(db):
-    """No in-memory state to lose -- which is the point of being
-    stateless, and is what the other adapters cannot claim."""
+def test_an_unpaid_escalation_is_not_yet_the_merchants_problem(db, link):
+    """Under pay-first the queue holds orders that have been PAID for and
+    exceed her threshold. A cart merely proposed is not hers to decide --
+    the customer may never pay it."""
     propose(("chicken_biryani", 2))
+    assert adapter_mcp.list_pending()["sessions"] == []
+
+    buy(("chicken_biryani", 2))              # link issued, not yet paid
+    assert adapter_mcp.list_pending()["sessions"] == [], "queued before the money arrived"
+
+
+def test_the_queue_survives_a_restart(db, link, monkeypatch):
+    """No in-memory state to lose -- the point of being stateless, and
+    what the other three adapters cannot claim."""
+    import mcp_orders
+
+    placed = buy(("chicken_biryani", 2))
+    order = mcp_orders.get_order(placed["order_id"])
+    mcp_orders.on_payment_captured(dict(order, payment_id="pay_x"), "pay_x")
+    assert len(adapter_mcp.list_pending()["sessions"]) == 1
 
     import importlib
 
-    importlib.reload(adapter_mcp)          # as if the process restarted
+    importlib.reload(adapter_mcp)            # as if the process restarted
     assert len(adapter_mcp.list_pending()["sessions"]) == 1
 
 
-def test_approving_it_clears_the_queue_and_lets_checkout_proceed(db, link):
-    escalated = propose(("chicken_biryani", 2))
-    assert escalated["decision"] == "ESCALATE"
-
-    adapter_mcp.human_confirm(escalated["order_id"])
-    assert adapter_mcp.list_pending()["sessions"] == [], "still queued after approval"
-
-    placed = buy(("chicken_biryani", 2))
-    assert placed["status"] == "placed"
-    assert placed["amount_inr"] == 440
-
-
-def test_rejecting_it_clears_the_queue_and_blocks_checkout(db, link):
-    escalated = propose(("chicken_biryani", 2))
-    adapter_mcp.human_reject(escalated["order_id"])
-
-    assert adapter_mcp.list_pending()["sessions"] == []
-    assert link == []
-
-
-def test_a_hard_rule_cannot_be_approved_from_the_queue_either(db, link):
-    """Same restriction as every other adapter: a disallowed category is
-    not a threshold, and no human waves it through here."""
+def test_an_order_cannot_be_accepted_before_it_is_paid_for(db, link):
+    """Accepting is a decision about money already taken. There is
+    nothing to accept until the customer has paid."""
     from fastapi import HTTPException
 
-    escalated = propose(("party_catering_tray", 1))
+    placed = buy(("chicken_biryani", 2))
     with pytest.raises(HTTPException) as raised:
-        adapter_mcp.human_confirm(escalated["order_id"])
+        adapter_mcp.human_confirm(placed["order_id"])
+    assert raised.value.status_code == 409
 
-    assert raised.value.status_code == 403
-    assert adapter_mcp.list_pending()["sessions"] != [], "it should still be waiting"
-    assert link == []
+
+def test_a_hard_rule_never_reaches_the_queue_at_all(db, link):
+    """A disallowed category is refused at checkout, before payment, so
+    it can never become an order Amma is asked to decide -- which is
+    right, because she could not accept it either."""
+    from fastapi import HTTPException
+
+    refused = buy(("party_catering_tray", 1))
+    assert refused["status"] == "refused"
+    assert adapter_mcp.list_pending()["sessions"] == []
+    assert link == [], "an unacceptable cart reached Razorpay"
+
+    with pytest.raises(HTTPException):
+        adapter_mcp.human_confirm(refused["order_id"])
 
 
 def test_deciding_an_order_that_is_not_waiting_is_refused(db):
@@ -594,8 +604,8 @@ def test_no_session_survives_between_calls(db, link):
     assert not hasattr(adapter_mcp, "_SESSIONS")
 
     placed = buy(("masala_dosa", 1))
-    assert placed["status"] == "placed"
-    assert len(audit_log.get_events_for_agent("mcp:claude", db_path=db)) == 1
+    assert placed["status"] == "awaiting_payment"
+    assert len(decisions("mcp:claude", db)) == 1
 
 
 def test_a_human_approved_escalation_can_still_check_out(db, link):
@@ -610,7 +620,7 @@ def test_a_human_approved_escalation_can_still_check_out(db, link):
     )
 
     placed = buy(("chicken_biryani", 2))
-    assert placed["status"] == "placed"
+    assert placed["status"] == "awaiting_payment"
     assert placed["amount_inr"] == 440
 
 

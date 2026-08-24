@@ -71,12 +71,23 @@ def pending() -> list[dict]:
 
 # --------------------------------------------------------------- trigger
 
-def notify(protocol: str, session_id: str, detail: dict, cart: list[tuple[str, int]]) -> Escalation | None:
+def notify(
+    protocol: str,
+    session_id: str,
+    detail: dict,
+    cart: list[tuple[str, int]],
+    send: bool = True,
+) -> Escalation | None:
     """Register an escalation and text Amma about it.
 
     Called by the adapters when a decision comes back ESCALATE. Returns
     None if this order was already registered, so a buyer polling for a
     verdict cannot fire a fresh SMS on every poll.
+
+    send=False registers the escalation so an inbound reply can resolve
+    it, without sending the standard alert -- used by the pay-first MCP
+    flow, which words its own message because the order is already paid
+    for and declining it refunds.
     """
     order_id = detail["event_id"]
     if order_id in _PENDING:
@@ -93,6 +104,9 @@ def notify(protocol: str, session_id: str, detail: dict, cart: list[tuple[str, i
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     _PENDING[order_id] = escalation
+
+    if not send:
+        return escalation
 
     notification_service.send_sms(
         notification_service.format_escalation_alert(

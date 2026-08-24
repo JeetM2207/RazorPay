@@ -126,33 +126,21 @@ def _settled_checkout(agent_id: str, cart: list[tuple[str, int]]) -> dict | None
     return None
 
 
-def _approved_unpaid_event(agent_id: str, cart: list[tuple[str, int]]) -> dict | None:
-    """An APPROVE already recorded for this cart and not yet paid for, so
-    proposing then checking out doesn't record the same decision twice."""
+def _decided_unpaid_event(agent_id: str, cart: list[tuple[str, int]]) -> dict | None:
+    """A decision already recorded for this cart and not yet paid for.
+
+    Covers ESCALATE as well as APPROVE now: under pay-first, an
+    escalated cart proceeds to payment carrying its verdict, so
+    proposing then checking out must not log the same decision twice.
+    """
     for event in _events_for(agent_id):
         if (
-            event["decision"] == "APPROVE"
+            event["decision"] in ("APPROVE", "ESCALATE")
             and not event["payment_link_id"]
             and _same_cart(event, cart)
         ):
             return event
     return None
-
-
-def _notify_merchant(detail: dict, cart: list[tuple[str, int]]) -> None:
-    """Text Amma about an escalation, exactly as the other adapters do.
-
-    The handle passed through is the audit event id rather than a session
-    id: this adapter keeps no session, so the audit row IS the order.
-    Isolated and swallowed for the same reason as everywhere else -- a
-    notification problem must never stop an order being recorded.
-    """
-    try:
-        import escalations
-
-        escalations.notify(PROTOCOL, str(detail["event_id"]), detail, cart)
-    except Exception:
-        pass
 
 
 def _is_resolved(agent_id: str, cart: list[tuple[str, int]], after_id: int) -> bool:
@@ -178,100 +166,67 @@ def _cart_from(event: dict) -> list[tuple[str, int]]:
 
 
 def list_pending() -> dict:
-    """MCP escalations awaiting a human, in the shape the merchant console
-    already understands.
+    """Paid MCP orders waiting on Amma, in the shape her console expects.
 
-    Rebuilt from the audit trail on each call rather than held in memory,
-    so it survives a restart and a reconnecting client -- which is the
-    whole point of this adapter being stateless.
+    Under pay-first these are orders the customer has ALREADY paid for
+    and which exceeded her confirmation threshold -- so declining one
+    refunds rather than merely cancelling. Rebuilt from the audit trail
+    on each call, so it survives a restart and a reconnecting client.
     """
+    import mcp_orders
     import trust
 
     db_path = audit_log.DEFAULT_DB_PATH
     sessions = []
-    for event in audit_log.get_all_events(db_path=db_path, limit=500):
-        if not event["agent_id"].startswith(AGENT_PREFIX):
-            continue
-        if event["decision"] != "ESCALATE":
-            continue
-        cart = _cart_from(event)
-        if not cart or _is_resolved(event["agent_id"], cart, event["id"]):
-            continue
-
+    for order in mcp_orders.pending_orders():
         sessions.append(
             {
-                "session_id": str(event["id"]),
-                "agent_id": event["agent_id"],
+                "session_id": str(order["id"]),
+                "agent_id": order["agent_id"],
                 "status": "requires_human",
                 "protocol": PROTOCOL,
-                "cart": [{"item": name, "qty": qty} for name, qty in cart],
+                "cart": json.loads(order["cart_json"]),
                 "decision_detail": {
-                    "event_id": event["id"],
-                    "agent_id": event["agent_id"],
+                    "event_id": order["id"],
+                    "agent_id": order["agent_id"],
                     "decision": "ESCALATE",
-                    "reason": event["reason"],
-                    "total_inr": event["total_inr"],
+                    "reason": order["reason"] + " -- already paid; declining refunds the customer",
+                    "total_inr": order["total_inr"],
                     "trust_tier": trust.compute_trust_tier(
-                        event["agent_id"], db_path=db_path
+                        order["agent_id"], db_path=db_path
                     ).value,
                     "alternatives": [],
-                    "buyer_reasoning": event.get("buyer_reasoning"),
+                    "buyer_reasoning": order.get("buyer_reasoning"),
+                    "already_paid": True,
                 },
             }
         )
     return {"sessions": sessions}
 
 
-def _escalated_event(order_id) -> dict:
-    event_id = int(order_id)
-    for session in list_pending()["sessions"]:
-        if session["decision_detail"]["event_id"] == event_id:
-            return session
-    raise HTTPException(409, f"order #{event_id} is not awaiting a decision")
-
-
 def human_confirm(order_id, items: list[CartItem] | None = None) -> dict:
-    """A human approves an escalated MCP order.
+    """Amma accepts a paid order that exceeded her threshold.
 
-    Same restriction as every other adapter: only a threshold escalation
-    can be waved through. A disallowed category is a hard merchant rule
-    and no human overrides it here.
+    Thin: the lifecycle lives in mcp_orders. Reached from her console and
+    from an ACCEPT reply on WhatsApp, which both land here.
     """
-    session = _escalated_event(order_id)
-    detail = session["decision_detail"]
-    cart = [(line["item"], line["qty"]) for line in session["cart"]]
+    import mcp_orders
 
-    if _HUMAN_OVERRIDABLE_MARKER not in detail["reason"]:
-        raise HTTPException(
-            403,
-            "this escalation is a hard merchant rule (disallowed category, "
-            "unknown item, or over the flexible margin) and cannot be "
-            "human-overridden here",
-        )
-
-    new_event_id = orchestrator.record_human_override(
-        session["agent_id"], PROTOCOL, cart, detail
-    )
-    return {
-        "order_id": new_event_id,
-        "status": "approved",
-        "reason": f"human override: {detail['reason']}",
-    }
+    try:
+        return mcp_orders.accept(int(order_id))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
 
 
 def human_reject(order_id) -> dict:
-    session = _escalated_event(order_id)
-    detail = session["decision_detail"]
-    cart = [(line["item"], line["qty"]) for line in session["cart"]]
+    """Amma declines a paid order. The refund is issued as part of this,
+    not queued for someone to chase later."""
+    import mcp_orders
 
-    new_event_id = orchestrator.record_human_rejection(
-        session["agent_id"], PROTOCOL, cart, detail
-    )
-    return {
-        "order_id": new_event_id,
-        "status": "rejected",
-        "reason": f"human rejected: {detail['reason']}",
-    }
+    try:
+        return mcp_orders.reject(int(order_id))
+    except ValueError as exc:
+        raise HTTPException(409, str(exc))
 
 
 # Merchant-side REST, separate from the MCP protocol surface: these are
@@ -305,7 +260,19 @@ def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
         "alternatives": detail["alternatives"],
     }
     if detail.get("upsell_suggestion"):
-        response["upsell_suggestion"] = detail["upsell_suggestion"]
+        # Same data the other adapters get -- suggest_upsell() ranked by
+        # audit_log.get_frequent_addons(). Surfaced under a name that
+        # reads as a suggestion to offer the customer, not a decision.
+        upsell = detail["upsell_suggestion"]
+        response["suggested_addon"] = {
+            "item_id": upsell["item"],
+            "price_inr": upsell["price_inr"],
+            "basis": upsell.get("basis"),
+            "how_to_offer": (
+                "Ask the customer if they would like to add this. If they say yes, call "
+                "propose_cart again with it included. Never add it on their behalf."
+            ),
+        }
     unmatched = _unmatched(cart)
     if unmatched:
         response["unmatched_items"] = unmatched
@@ -319,7 +286,16 @@ def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
 def get_catalog_impl() -> dict:
     """Wraps catalog.py rather than re-deriving the feed, and trims the
     per-item currency repetition -- custom connector responses have a
-    token ceiling and none of it should go on saying "INR" 20 times."""
+    token ceiling and none of it should go on saying "INR" 20 times.
+
+    The merchant's LIMITS are deliberately absent. catalog.py publishes
+    them for well-behaved buyer agents that can self-limit, but this feed
+    is read by a model talking directly to the customer, and a number in
+    the context is a number that gets repeated out loud. Amma's cap and
+    confirmation threshold are hers; a customer being told "anything
+    under Rs.400 goes straight through" is an invitation to order Rs.399.
+    They are applied server-side inside propose_cart and never leave it.
+    """
     feed = catalog.get_catalog()
     return {
         "merchant": feed["merchant"],
@@ -334,11 +310,11 @@ def get_catalog_impl() -> dict:
             }
             for item in feed["items"]
         ],
-        "order_limits": feed["order_limits"],
         "note": (
             "Items with agent_orderable=false are sold in person only and will be "
-            "refused if ordered. Orders at or above human_confirm_at_inr wait for "
-            "the merchant to approve them."
+            "refused if ordered. Call propose_cart to find out whether a particular "
+            "order is accepted -- do not guess, and do not speculate about the "
+            "kitchen's internal limits."
         ),
     }
 
@@ -376,8 +352,6 @@ def propose_cart_impl(
     audit_log.attach_buyer_reasoning(
         detail["event_id"], reasoning.strip(), db_path=audit_log.DEFAULT_DB_PATH
     )
-    if detail["decision"] == "ESCALATE":
-        _notify_merchant(detail, cart)
     response = _decision_response(detail, cart)
     response["buyer_reasoning"] = reasoning.strip()
     return response
@@ -431,25 +405,47 @@ def checkout_impl(
             "reason": "this exact cart was already checked out; returning the original order",
         }
 
-    # Reuse an APPROVE already on record for this cart -- including one a
-    # human granted for an escalated order -- rather than re-deciding and
-    # writing a second audit row for the same decision.
-    approved = _approved_unpaid_event(agent_id, cart)
-    if approved is None:
+    # Re-decide, or reuse a decision already on record for this exact
+    # cart. Either way the verdict is negotiation.py's, unchanged.
+    decided = _decided_unpaid_event(agent_id, cart)
+    if decided is None:
         detail = orchestrator.negotiate_and_record(agent_id, PROTOCOL, cart)
-        if detail["decision"] == "ESCALATE":
-            _notify_merchant(detail, cart)
-        if detail["decision"] != "APPROVE":
-            # No claim was made, so a legitimate retry after the merchant
-            # approves is still able to check out.
-            refusal = _decision_response(detail, cart)
-            refusal["status"] = "refused"
-            return refusal
-        event_id = detail["event_id"]
-        human_approved = False
     else:
-        event_id = approved["id"]
-        human_approved = "human override" in (approved["reason"] or "")
+        detail = {
+            "event_id": decided["id"],
+            "decision": decided["decision"],
+            "reason": decided["reason"],
+            "total_inr": decided["total_inr"],
+        }
+
+    # An ESCALATE is only payable if a human COULD say yes to it. A
+    # threshold escalation qualifies; a disallowed category or unknown
+    # item does not -- those are hard merchant rules that no one can wave
+    # through, so taking money for one would mean charging for an order
+    # that is guaranteed to be refunded. Refuse before the money moves.
+    unpayable_escalation = detail["decision"] == "ESCALATE" and (
+        _HUMAN_OVERRIDABLE_MARKER not in (detail.get("reason") or "")
+    )
+
+    # COUNTER_OFFER and unknown items are answered here, not paid for --
+    # there is a different cart to agree on first.
+    if unpayable_escalation or detail["decision"] not in ("APPROVE", "ESCALATE"):
+        refusal = _decision_response(detail, cart) if decided is None else {
+            "decision": detail["decision"], "reason": detail["reason"],
+            "total_inr": detail["total_inr"], "order_id": detail["event_id"],
+        }
+        refusal["status"] = "refused"
+        return refusal
+
+    # An ESCALATE is NOT refused here any more. Payment is taken first and
+    # Amma's answer is collected afterwards over WhatsApp, because Claude
+    # cannot be woken between turns to finish an order that was left
+    # waiting. The verdict is carried forward and actioned after payment;
+    # if she declines, the refund is automatic. See mcp_orders.py.
+    event_id = detail["event_id"]
+    human_approved = detail["decision"] == "ESCALATE" or "human override" in (
+        detail.get("reason") or ""
+    )
 
     # Claim through the SAME ledger the webhook handler and reconciler
     # use. Claimed only once the order is genuinely going to be created.
@@ -484,11 +480,14 @@ def checkout_impl(
         delivery_address.strip(),
         db_path=db_path,
     )
+    import mcp_orders
+
+    mcp_orders.open_order(event_id)
     total = sum(
         merchant_config.current_menu()[name].price_inr * qty for name, qty in cart
     )
     return {
-        "status": "placed",
+        "status": "awaiting_payment",
         "order_id": event_id,
         "amount_inr": total,
         "payment_link_id": link["id"],
@@ -587,9 +586,13 @@ def propose_cart(
         "if it was approved a moment ago. Calling this twice with the same cart is "
         "safe: the original order is returned rather than a second one being placed. "
         "You must collect the customer's name, phone and delivery address from them "
-        "first — ask in conversation, never invent them. This returns a payment link "
-        "for the customer to open; you cannot pay on their behalf and hold no card or "
-        "UPI details to try."
+        "first — ask in conversation, never invent them. "
+        "This does NOT complete the order. It returns a payment link for the customer "
+        "to open and pay on Razorpay's own page. Give them the link and tell them the "
+        "kitchen will confirm by WhatsApp — larger orders are checked by the cook "
+        "after payment, and are refunded automatically if she cannot take them. Your "
+        "part is finished once you have handed over the link; do not wait for or claim "
+        "a final status, and do not tell the customer the order is confirmed."
     ),
     annotations=ToolAnnotations(
         read_only_hint=False, destructive_hint=True, idempotent_hint=True, open_world_hint=False
