@@ -491,6 +491,18 @@ for an order that is already paid for and whose rejection refunds.
 
 **Twilio trial accounts cap at 50 messages a day** (error 63038). Worth knowing before a demo: it is an account limit, not a failure of this code, and the mock outbox is unaffected. `SMS_ENABLED=false` forces the mock if the cap is hit.
 
+**A claim is not always a fact.** `checkout` claims the shared ledger *before* asking
+Razorpay for a payment link, which makes that claim a lock rather than a record — and
+nothing released it. One real Razorpay refusal (`test mode limit of 30 reached`) left the
+lock held for that agent and cart permanently, so every later attempt was told *"a
+checkout for this cart is already underway"* with nothing underway and nothing that ever
+would be. The customer was asked to wait and retry, indefinitely, for an order the kitchen
+had already accepted. The webhook and the reconciler are right never to release — for them
+the fact stays true — so `idempotency.release_claim()` is documented as being only for
+work that provably did not happen, and `checkout` calls it in exactly one place: around
+`create_payment_for_cart`, which attaches the link as its last step, so a raise there means
+no link exists. Once a link is out the lock is kept and a retry returns the original order.
+
 **The safety net had a hole in it.** `webhook_handler` entered this lifecycle after a
 capture; `reconcile_payments.py` did not. It marked the order paid and stopped there, so
 if the webhook never arrived -- a Razorpay account with none configured yet, a closed
