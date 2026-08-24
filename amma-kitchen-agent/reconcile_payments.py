@@ -6,8 +6,8 @@ payment systems always keep a reconciliation job as the safety net, and
 so does this one.
 
 For every audit event that has a payment link but no recorded payment,
-this asks Razorpay what actually happened to that link and records the
-answer. It claims through the SAME idempotency ledger the webhook
+this asks Razorpay what actually happened to that link, records the
+answer, and runs whatever follow-up the webhook would have run. It claims through the SAME idempotency ledger the webhook
 handler uses (see idempotency.py), so a fact already recorded by a
 webhook is never recorded twice here, and vice versa.
 
@@ -60,6 +60,14 @@ def reconcile(db_path: str = None) -> dict:
                 audit_log.mark_paid(event["id"], payment_id, db_path=db_path)
                 stats["marked_paid"] += 1
                 print(f"  event {event['id']}: link {link_id} -> PAID ({payment_id})")
+                # Recording the payment is only half of it. An MCP order
+                # still has to be confirmed to the customer and put in
+                # front of Amma, and if the webhook never arrived this is
+                # the only path that will do it. Same function the
+                # webhook calls, claimed through the same ledger.
+                import mcp_orders
+
+                mcp_orders.follow_up_after_capture(event, payment_id)
             else:
                 # A webhook already handled this one; nothing to redo.
                 stats["still_open"] += 1

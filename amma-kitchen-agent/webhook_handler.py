@@ -40,20 +40,15 @@ def _handle_paid(payment_link_id: str, payment_entity: dict, db_path: str) -> st
     audit_log.mark_paid(original["id"], payment_id, db_path=db_path)
 
     # The Claude-chat path continues after payment: confirm it, or ask
-    # Amma and refund if she declines. Scoped to that protocol on
-    # purpose -- ACP, AP2 and x402 finish at capture, as they always
-    # have. Already claimed through the shared ledger by the caller, so
-    # this runs once however many times Razorpay delivers the webhook.
-    if original["protocol"] == "mcp":
-        try:
-            import mcp_orders
+    # Amma and refund if she declines. The follow-up is shared with the
+    # reconciler rather than written out here, so the fast path and the
+    # safety net cannot drift apart -- it is a no-op for ACP, AP2 and
+    # x402, which finish at capture. Already claimed through the shared
+    # ledger by the caller, so it runs once however many times Razorpay
+    # delivers the webhook.
+    import mcp_orders
 
-            original = dict(original, payment_id=payment_id)
-            mcp_orders.on_payment_captured(original, payment_id)
-        except Exception:
-            # The payment is recorded either way; a follow-up failure
-            # must not make Razorpay retry a capture we already have.
-            pass
+    mcp_orders.follow_up_after_capture(original, payment_id)
 
     return "processed"
 

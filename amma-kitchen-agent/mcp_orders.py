@@ -151,6 +151,34 @@ def open_order(order_ref: int) -> int:
 
 # ----------------------------------------------- step 2: payment captured
 
+def follow_up_after_capture(event: dict, payment_id: str) -> None:
+    """Continue this lifecycle for an order just recorded as paid.
+
+    EVERY path that learns a payment completed calls this, so none of
+    them can quietly forget to. The webhook is the fast path; the
+    reconciler is the safety net for when the webhook never arrived at
+    all -- a Razorpay account whose webhook is not configured yet, a
+    closed tunnel, a server that was down. The reconciler used to mark
+    such an order paid and stop there, which meant the customer paid and
+    heard nothing and Amma never saw it: correct in the trail, invisible
+    everywhere else.
+
+    A no-op for ACP, AP2 and x402, which finish at capture. Both callers
+    have already claimed the payment through the shared idempotency
+    ledger, so this runs once per payment.
+    """
+    if event.get("protocol") != PROTOCOL:
+        return
+    try:
+        on_payment_captured(dict(event, payment_id=payment_id), payment_id)
+    except Exception as exc:
+        # The payment is recorded either way, and a follow-up failure must
+        # never make Razorpay retry a capture we already have. Printed
+        # rather than swallowed: an invisible failure here is the exact
+        # bug this function exists to close.
+        print(f"  ! post-payment follow-up failed for order {event.get('id')}: {exc}")
+
+
 def on_payment_captured(order: dict, payment_id: str) -> str:
     """Razorpay says the customer paid. Record it, tell them, then action
     the decision negotiation.py already made.

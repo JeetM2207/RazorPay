@@ -491,6 +491,16 @@ for an order that is already paid for and whose rejection refunds.
 
 **Twilio trial accounts cap at 50 messages a day** (error 63038). Worth knowing before a demo: it is an account limit, not a failure of this code, and the mock outbox is unaffected. `SMS_ENABLED=false` forces the mock if the cap is hit.
 
+**The safety net had a hole in it.** `webhook_handler` entered this lifecycle after a
+capture; `reconcile_payments.py` did not. It marked the order paid and stopped there, so
+if the webhook never arrived -- a Razorpay account with none configured yet, a closed
+tunnel, a server that was down -- the customer paid, heard nothing, and Amma never saw the
+order. Correct in the trail, invisible everywhere else: the same class of bug as the
+stranded escalation above, in the component whose entire job is to catch that. The
+follow-up is now one shared `mcp_orders.follow_up_after_capture()` that both paths call,
+so the fast path cannot gain a step the safety net never gets, and a test asserts neither
+module reaches into the lifecycle directly.
+
 **Not built, deliberately:** nothing schedules the timeout. The project has no expiry
 mechanism for merchant escalations to reuse, and inventing a scheduler was out of scope,
 so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.
