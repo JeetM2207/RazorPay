@@ -5,6 +5,7 @@ adversarial text in from the menu. The happy path is the easy part.
 """
 
 import asyncio
+import json
 
 import pytest
 
@@ -278,9 +279,14 @@ def test_menu_text_cannot_influence_the_decision(db, link):
     )
     result = propose((injected_id, 1))
 
-    assert result["decision"] == "ESCALATE", "menu prose changed the outcome"
-    assert "human confirmation threshold" in result["reason"]
+    assert result["decision"] == adapter_mcp.PAYABLE_PENDING, "menu prose changed the outcome"
     assert result["total_inr"] == 480
+
+    # The wire label differs from the core's verdict, and the audit row is
+    # where you check that the verdict itself was untouched.
+    row = audit_log.get_events_for_agent("mcp:claude", db_path=db)[0]
+    assert row["decision"] == "ESCALATE"
+    assert "human confirmation threshold" in row["reason"]
 
     # It is payable (a human could accept it), but the verdict itself
     # was untouched by the wording, which is what this test is for.
@@ -617,7 +623,7 @@ def test_proposing_an_over_cap_cart_does_not_text_the_merchant(db, monkeypatch):
 
     result = propose(("chicken_biryani", 2))
 
-    assert result["decision"] == "ESCALATE"
+    assert result["decision"] == adapter_mcp.PAYABLE_PENDING
     assert notification_service.outbox() == []
 
 
@@ -731,7 +737,7 @@ def test_a_human_approved_escalation_can_still_check_out(db, link):
     """An order the cook waved through must be payable, even though
     re-running the check would escalate it again forever."""
     escalated = propose(("chicken_biryani", 2))
-    assert escalated["decision"] == "ESCALATE"
+    assert escalated["decision"] == adapter_mcp.PAYABLE_PENDING
 
     adapter_mcp.orchestrator.record_human_override(
         "mcp:claude", "mcp", [("chicken_biryani", 2)],
@@ -754,3 +760,74 @@ def test_trust_accrues_to_an_mcp_agent_like_any_other(db, link):
 
     later = propose(("veg_thali", 1))
     assert later["trust_tier"] == "STANDARD"
+
+
+# ------------------------------------------- what the model is told, and not
+
+def test_a_threshold_escalation_reads_as_payable_not_as_a_refusal(db):
+    """The bug this guards against was not in the money path -- checkout
+    already took these -- it was in the words. The model saw "ESCALATE",
+    read it as blocked, apologised to the customer and stopped, so a cart
+    every layer below was ready to sell never reached checkout."""
+    result = propose(("chicken_biryani", 2))          # Rs.440, over Rs.400
+
+    assert result["payable"] is True
+    assert result["decision"] == adapter_mcp.PAYABLE_PENDING
+    assert "check out" in result["next_step"] or "call checkout" in result["next_step"]
+    assert "order less" in result["next_step"], "must not be talked down to a smaller cart"
+
+
+def test_the_merchants_own_limits_never_reach_the_customer(db):
+    """Her cap and her confirmation threshold are hers. This is the one
+    adapter whose reason is read aloud to a customer by a model, and a
+    customer who learns the threshold has been handed the rule to game."""
+    import merchant_config
+
+    mandate = merchant_config.current_mandate()
+    forbidden = (str(mandate.budget_cap_inr), str(mandate.human_confirm_threshold_inr))
+
+    carts = [
+        ("chicken_biryani", 2),        # over the confirm threshold
+        ("chicken_biryani", 3),        # over the budget cap
+        ("party_catering_tray", 1),    # disallowed category
+        ("masala_dosa", 1),            # plain approve
+    ]
+    for line in carts:
+        blob = json.dumps(propose(line))
+        assert "threshold" not in blob.lower(), line
+        assert "budget cap" not in blob.lower(), line
+        for number in forbidden:
+            assert number not in blob, (line, number)
+
+
+def test_the_audit_trail_still_records_the_real_reason(db):
+    """Sanitising is done at the edge, for the customer. Amma's own
+    console and the dashboard must still see exactly what the core said,
+    or the trail would be worth less than the thing it audits."""
+    propose(("chicken_biryani", 2))
+    row = audit_log.get_events_for_agent("mcp:claude", db_path=db)[0]
+
+    assert row["decision"] == "ESCALATE"
+    assert row["reason"] == "total Rs.440 at/above human confirmation threshold Rs.400"
+
+
+def test_an_unpayable_cart_is_still_plainly_refused(db):
+    """The relabelling must not turn a hard rule into a maybe."""
+    result = propose(("party_catering_tray", 1))
+
+    assert result["payable"] is False
+    assert result["decision"] == "ESCALATE"
+    assert "category not allowed" in result["reason"]
+    assert "Do not call checkout" in result["next_step"]
+
+
+def test_get_catalog_never_describes_the_kitchens_limits(db):
+    """The description used to promise limits the implementation had
+    already stopped returning -- which taught the model they existed and
+    invited it to talk about them."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    description = tools["get_catalog"].description.lower()
+
+    assert "largest order" not in description
+    assert "confirm by hand" not in description
+    assert "should not try to infer them" in description

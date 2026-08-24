@@ -496,6 +496,64 @@ mechanism for merchant escalations to reuse, and inventing a scheduler was out o
 so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.
 That is the honest gap: the capability is there, the clock is not.
 
+## The word "ESCALATE" broke the pay-first flow
+
+The pay-first lifecycle worked. `checkout_impl` had accepted a threshold escalation and
+issued a payment link for it since the day it was built, and `mcp_orders.py` had the
+whole after-payment path -- WhatsApp to Amma, accept or reject, automatic refund. None of
+it ever ran in a real conversation, because the *words* still described the old flow:
+
+- the server instructions said **"Only call checkout once propose_cart has returned
+  APPROVE"**,
+- `checkout`'s description said **"Place an order that propose_cart has already
+  APPROVED"**,
+- and `propose_cart` handed the model the string `ESCALATE`, which reads as *blocked*.
+
+So a Rs.450 order came back payable, and Claude apologised and stopped: *"Checkout only
+works on carts the kitchen has actually approved... the 3-thali order needs to go through
+Amma directly."* Every layer below it was ready to sell. The sale was lost in the prose.
+
+Worse, it explained *why*. The `reason` field is written by `negotiation.py` for the audit
+trail and for Amma -- **"total Rs.450 at/above human confirmation threshold Rs.400"** --
+and this is the one adapter whose reason is read out loud to a customer by a model. So the
+customer was told the exact threshold, and invited to order Rs.399 forever after. Her cap
+and her threshold are hers; publishing them to the person on the other side of the
+negotiation is the same mistake as printing your reserve price on the lot.
+
+Three fixes, all of them at the edge -- `negotiation.py`, `orchestrator.py` and the money
+path are untouched:
+
+- **A customer-safe reason.** `_customer_safe_reason()` rewrites the two limit-bearing
+  reasons and leaves everything else exactly as the core wrote it -- an unknown item, a
+  disallowed category and an out-of-stock dish say nothing about her limits and are
+  precisely what the customer needs to hear. The audit row keeps the original wording,
+  because it is written by the orchestrator *before* this runs. A test asserts the trail
+  still reads `total Rs.440 at/above human confirmation threshold Rs.400` while no cart --
+  over-threshold, over-cap, disallowed or approved -- leaks either number on the wire.
+- **A wire label that matches the flow.** A payable escalation is returned as
+  `ACCEPTED_PENDING_CONFIRMATION`, with `payable: true` and a `next_step`. The core still
+  says ESCALATE and the audit row still says ESCALATE -- that is what happened and it is
+  not being rewritten. But an adapter's job is translation, and under pay-first this
+  protocol's answer for that cart is *take the payment now, collect her yes or no after*.
+  Handing the model a word that contradicted the flow was a translation bug.
+- **`payable` as the field to act on.** A single boolean is much harder for a model to
+  talk itself out of than a verdict word it has prior opinions about. `checkout` uses the
+  same `_is_payable()` predicate, so the tool and the advice cannot drift apart.
+
+`get_catalog`'s description was also still promising *"the kitchen's own limits -- the
+largest order it will accept, and the amount above which the cook must confirm by
+hand"*, long after the implementation stopped returning them. A stale description is
+not harmless: it taught the model those numbers existed and invited it to go looking.
+
+**The lesson, and it is the same one as three bugs before it.** The unit suite was green
+throughout -- 324 tests, including ones asserting a threshold cart reaches
+`awaiting_payment`. Nothing tested the sentence the model actually reads. For an adapter
+whose caller is somebody else's model, **the tool descriptions are load-bearing code**,
+and the only way to test them is to have a real client read them. There are now tests
+that at least pin the wording that was wrong: that `next_step` says call checkout and
+does not say order less, that `get_catalog` no longer advertises limits, and that no
+response carries her numbers.
+
 ## Off-menu demand: what Claude was quietly swallowing
 
 `get_catalog` puts the whole menu into Claude's own context, which makes it a competent
@@ -865,5 +923,11 @@ Worth being able to answer rather than being caught by:
   restart; the audit trail and merchant config do.
 - **The buyer profile lives in `localStorage`**, so it is per-browser. That is deliberate
   for the card, incidental for the rest.
+- **Razorpay test mode caps an account at 30 payment links**, and this project creates
+  one per demo run. Past that, `checkout` fails with *"test mode limit of 30 reached for
+  payment_link"* -- which looks like a bug in the adapter and is not one.
+  `scripts/free_payment_links.py` cancels stale UNPAID links to make room; paid ones are
+  never touched, because the audit trail and the reconciler still refer to them. Run it
+  before a demo, not during one.
 - **`success@razorpay` never actually gets pinged** on this account — the code sends the
   collect request and Razorpay declines the endpoint.
