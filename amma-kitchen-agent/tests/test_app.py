@@ -102,6 +102,23 @@ def test_pending_drops_an_order_once_it_is_decided(client):
     assert client.get("/api/pending").json()["pending"] == []
 
 
+def test_demand_endpoint_surfaces_what_she_does_not_sell(client):
+    """Collected signal that nothing displays is signal nobody acts on --
+    the same mistake as an escalation that never reaches her queue."""
+    import adapter_mcp
+
+    for _ in range(2):
+        adapter_mcp.propose_cart_impl([], "no reason given", None, ["2 pizzas"])
+    adapter_mcp.propose_cart_impl([], "no reason given", None, ["tiramisu"])
+
+    report = client.get("/api/demand").json()["demand"]
+    assert [r["requested"] for r in report] == ["2 pizzas", "tiramisu"]
+    assert report[0]["times"] == 2
+
+    console = client.get("/merchant/orders").text
+    assert "Asked for, but not on your menu" in console
+
+
 def test_agents_endpoint_reports_trust_tiers(client):
     detail = client.post(
         "/acp/checkout_sessions",

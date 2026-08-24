@@ -496,6 +496,59 @@ mechanism for merchant escalations to reuse, and inventing a scheduler was out o
 so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.
 That is the honest gap: the capability is there, the clock is not.
 
+## Off-menu demand: what Claude was quietly swallowing
+
+`get_catalog` puts the whole menu into Claude's own context, which makes it a competent
+assistant and, for a while, a lossy one. Asked for "2 pizzas" it would look at the menu,
+correctly conclude Amma doesn't sell pizza, and say so in chat — **without ever calling
+`propose_cart`**. Nothing broke. But the request never reached the server, so it was
+never recorded, and the most useful thing an agent channel can tell a merchant — what
+people keep trying to buy that she hasn't put on the menu — was being thrown away one
+polite refusal at a time.
+
+`propose_cart` gained an optional `requested_but_unclear: string[]`, and its description
+now says plainly: always call the tool with whatever the user asked for, don't decide
+availability yourself first, and put anything you can't map into that field **even if the
+cart would otherwise be empty**.
+
+Two honest corrections to how this was scoped:
+
+- **There was no existing unmatched-demand audit path to reuse.** Every adapter detects
+  off-menu items and *tells the customer* — the buyer console does it, `buyer_sms` asks
+  what they'd like instead — but none of them ever logged it. The signal was being lost
+  everywhere, not just in MCP. `audit_log.record_unmatched_demand()` is now that path:
+  one writer, the same table, an `UNMATCHED_DEMAND` decision and the customer's words
+  verbatim in `reason`, distinguishable from any other row only by that value and the
+  source tag. A test asserts a demand row has the identical shape to a decision row.
+- **There was no reusable free-text matcher either.** `_unmatched()` is an id-membership
+  check; the only free-text mapping was `app.parse_cart`, which is an LLM call.
+  `merchant_config.resolve_item()` is now the shared one, and deliberately not a model:
+  it strips a leading quantity, singularises, and matches exactly or by *unambiguous*
+  containment. Two possible items means it returns None rather than guessing, because
+  putting a dish nobody asked for into a cart is worse than logging one extra miss.
+
+That resolver matters more than it looks. The assistant's uncertainty is a hint, not a
+verdict: "2 masala dosas" arrives in `requested_but_unclear` fairly often, and it is a
+real dish described loosely. It joins the cart at the right quantity instead of being
+recorded as phantom demand for something she already sells.
+
+Unmatched entries are logged *beside* the decision and never folded into it — they aren't
+priced and can't move APPROVE/COUNTER_OFFER/ESCALATE for the valid items in the same
+call. There's a control test that runs the same cart with and without noise and asserts
+the two decisions are identical.
+
+**Known limitation, stated honestly: this is best-effort, not enforceable.** Nothing
+server-side can verify that Claude reported everything it couldn't match — the entire
+point is catching things the server didn't already know about, so there is nothing to
+validate against. A model that decides to be helpful and filter anyway will still lose
+the signal. The schema field and the description are an instruction, and they are the
+only lever available.
+
+The merchant console shows the result as "Asked for, but not on your menu", ranked by
+frequency. Collecting a signal nothing displays would have repeated the exact bug
+recorded above — an MCP escalation that was logged correctly and reached no surface — so
+the report and the panel shipped together.
+
 ## The payment boundary: three checkpoints, none of them optional
 
 Between an AI proposing a cart and money actually moving there are three independent

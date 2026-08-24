@@ -482,6 +482,125 @@ def test_checkout_is_marked_destructive_so_clients_confirm_first():
     assert tools["propose_cart"].annotations.destructive_hint is not True
 
 
+# ------------------------------------------- off-menu demand signal
+
+def unclear(*phrases, items=(), client=None):
+    return adapter_mcp.propose_cart_impl(
+        cart(*items), WHY, client, list(phrases)
+    )
+
+
+def demand(db):
+    return [
+        e for e in audit_log.get_all_events(db_path=db)
+        if e["decision"] == audit_log.UNMATCHED_DEMAND
+    ]
+
+
+def test_the_field_is_optional_and_asks_for_the_users_own_words():
+    """Optional on purpose: it catches what the server did not already
+    know about, so there is nothing to validate it against."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    schema = tools["propose_cart"].input_schema
+
+    assert "requested_but_unclear" not in schema["required"]
+    described = schema["properties"]["requested_but_unclear"]["description"].lower()
+    assert "own words" in described
+    assert "always include" in described
+    # The tool description must steer the model off deciding for itself.
+    assert "do not decide" in tools["propose_cart"].description.lower()
+
+
+def test_an_off_menu_request_alone_is_recorded_not_an_error(db):
+    """A cart of nothing but pizza is still worth knowing about."""
+    result = unclear("2 pizzas")
+
+    assert result["decision"] == "ESCALATE"
+    assert result["total_inr"] == 0
+    assert result["unavailable"] == ["2 pizzas"]
+    assert "nothing on this menu matched" in result["reason"]
+
+    rows = demand(db)
+    assert len(rows) == 1
+    assert rows[0]["reason"] == "2 pizzas"
+    assert rows[0]["agent_id"] == "mcp:claude"
+    assert rows[0]["protocol"] == "mcp"
+    assert rows[0]["total_inr"] == 0
+
+
+def test_each_off_menu_item_is_recorded_separately(db):
+    unclear("2 pizzas", "a coke", "tiramisu")
+    assert sorted(r["reason"] for r in demand(db)) == ["2 pizzas", "a coke", "tiramisu"]
+
+
+def test_off_menu_demand_does_not_contaminate_the_decision(db):
+    """Valid items are priced and decided exactly as if the unmatched
+    ones had never been mentioned."""
+    with_noise = unclear("2 pizzas", items=[("masala_dosa", 1)])
+    clean = adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)), WHY, "control")
+
+    assert with_noise["decision"] == clean["decision"] == "APPROVE"
+    assert with_noise["total_inr"] == clean["total_inr"] == 80
+    assert with_noise["unavailable"] == ["2 pizzas"]
+    assert len(demand(db)) == 1, "the control call should not have logged demand"
+
+
+def test_something_the_assistant_only_thought_was_unavailable_is_resolved(db):
+    """Its uncertainty is a hint, not a verdict -- a real dish described
+    loosely joins the cart instead of being logged as phantom demand."""
+    result = unclear("2 masala dosas")
+
+    assert result["decision"] == "APPROVE"
+    assert result["total_inr"] == 160, "the quantity in the phrase was lost"
+    assert result.get("unavailable") is None
+    assert demand(db) == [], "a dish she actually sells was logged as unmet demand"
+
+
+def test_a_mixed_bag_is_split_correctly(db):
+    result = unclear("one filter coffee", "2 pizzas", items=[("masala_dosa", 1)])
+
+    assert result["decision"] == "APPROVE"
+    assert result["total_inr"] == 110, "dosa 80 + coffee 30"
+    assert result["unavailable"] == ["2 pizzas"]
+    assert [r["reason"] for r in demand(db)] == ["2 pizzas"]
+
+
+def test_demand_is_logged_through_the_shared_writer_not_a_parallel_one(db):
+    """Same table, same columns, same writer -- distinguishable from any
+    other event only by its decision value and the source tag."""
+    unclear("2 pizzas")
+    propose(("masala_dosa", 1))
+
+    rows = audit_log.get_all_events(db_path=db)
+    assert len(rows) == 2, "demand landed somewhere other than the audit trail"
+    assert {r["decision"] for r in rows} == {audit_log.UNMATCHED_DEMAND, "APPROVE"}
+    # Identical shape: the demand row is an ordinary audit row.
+    assert set(rows[0]) == set(rows[1])
+
+
+def test_demand_can_be_read_back_ranked_for_the_merchant(db):
+    for _ in range(3):
+        unclear("pizza")
+    unclear("tiramisu")
+
+    report = audit_log.get_unmatched_demand(db_path=db)
+    assert report[0] == {"requested": "pizza", "times": 3, "last_asked": report[0]["last_asked"]}
+    assert [r["requested"] for r in report] == ["pizza", "tiramisu"]
+
+
+def test_blank_entries_are_ignored(db):
+    result = unclear("", "   ", items=[("masala_dosa", 1)])
+    assert result["decision"] == "APPROVE"
+    assert demand(db) == []
+
+
+def test_omitting_the_field_entirely_still_works(db):
+    """It is additive: the existing contract is untouched."""
+    result = adapter_mcp.propose_cart_impl(cart(("masala_dosa", 1)), WHY)
+    assert result["decision"] == "APPROVE"
+    assert result.get("unavailable") is None
+
+
 # ------------------------------ an escalation must reach the merchant
 
 def test_proposing_an_over_cap_cart_does_not_text_the_merchant(db, monkeypatch):

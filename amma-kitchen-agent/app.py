@@ -372,6 +372,17 @@ def pending() -> dict:
     return {"pending": acp + ap2 + x402 + mcp}
 
 
+@app.get("/api/demand")
+def unmatched_demand() -> dict:
+    """What agents asked for that the merchant doesn't sell.
+
+    Surfaced because a signal nobody can see is a signal nobody acts on --
+    which is the same mistake as logging an escalation that never reaches
+    her queue.
+    """
+    return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
+
+
 @app.get("/api/sms")
 def sms_state() -> dict:
     """What the merchant console shows in place of a real phone: the

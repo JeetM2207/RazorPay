@@ -171,6 +171,58 @@ def get_event_by_payment_link(
         return dict(row) if row else None
 
 
+UNMATCHED_DEMAND = "UNMATCHED_DEMAND"
+
+
+def record_unmatched_demand(
+    agent_id: str,
+    protocol: str,
+    requested: str,
+    db_path: str = DEFAULT_DB_PATH,
+) -> int:
+    """Someone asked for something this merchant does not sell.
+
+    Worth a row of its own. Every other surface in this project *tells*
+    the customer an item is unavailable and then forgets it, which throws
+    away the most useful thing a merchant could learn from an agent
+    channel: what people keep trying to buy from her that she has not put
+    on the menu.
+
+    Written through the same writer as every other event, into the same
+    table, distinguishable only by `decision` and the source tag on
+    `agent_id` -- not a parallel log. `reason` holds the customer's words
+    verbatim, so a demand report is a plain query rather than prose
+    parsing. Priced at zero because nothing was sold.
+    """
+    return record_event(
+        agent_id=agent_id,
+        protocol=protocol,
+        cart=[],
+        decision=UNMATCHED_DEMAND,
+        reason=requested.strip(),
+        total_inr=0,
+        db_path=db_path,
+    )
+
+
+def get_unmatched_demand(db_path: str = DEFAULT_DB_PATH, limit: int = 50) -> list[dict]:
+    """What people asked for and could not be sold, most requested first.
+
+    The merchant-facing point of the whole thing: "eleven people asked
+    for pizza this week" is a menu decision she can act on.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute(
+            "SELECT LOWER(TRIM(reason)) AS requested, COUNT(*) AS times, "
+            "       MAX(ts) AS last_asked "
+            "FROM audit_events WHERE decision = ? "
+            "GROUP BY requested ORDER BY times DESC, requested ASC LIMIT ?",
+            (UNMATCHED_DEMAND, limit),
+        ).fetchall()
+    return [{"requested": r[0], "times": r[1], "last_asked": r[2]} for r in rows]
+
+
 def get_order_rows(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> list[dict]:
     """Everything that has happened to one order, oldest first.
 

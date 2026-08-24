@@ -68,6 +68,19 @@
       </p>
     </div>
 
+    <h2 style="margin-top:34px">Asked for, but not on your menu</h2>
+    <div class="card card-flush">
+      <table>
+        <thead><tr><th>What they asked for</th><th class="right">Times</th><th>Last asked</th></tr></thead>
+        <tbody id="demandRows"></tbody>
+      </table>
+    </div>
+    <p class="note">
+      Requests an AI agent brought you that you don't currently sell. Nothing was
+      charged for these &mdash; they're here because what people keep trying to buy is
+      worth knowing before you decide what to cook next.
+    </p>
+
     <h2 style="margin-top:34px">Buyer agents &amp; earned trust</h2>
     <div class="card card-flush">
       <table>
@@ -131,6 +144,11 @@ async function api(path, opts) {
 
 const titleize = (s) => s.replace(/_/g, " ");
 
+/* Demand text is whatever a customer said, relayed by someone else's
+   model. It goes straight into innerHTML, so it gets escaped first. */
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
 /* Each protocol names its human-decision endpoints differently. This is
    the only place the merchant console knows or cares which protocol an
    order arrived on -- the decision itself is identical for all three. */
@@ -164,7 +182,23 @@ async function boot() {
 }
 
 async function tick() {
-  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms()]);
+  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms(), renderDemand()]);
+}
+
+/* -------------------------------------------------------------- demand */
+
+async function renderDemand() {
+  const { demand } = await api("/api/demand");
+  if (!changed("demand", demand)) return;
+
+  $("demandRows").innerHTML = demand.length
+    ? demand.map((d) => `
+        <tr>
+          <td>${esc(d.requested)}</td>
+          <td class="right">${d.times}</td>
+          <td class="mono muted nowrap">${esc((d.last_asked || "").slice(0, 10))}</td>
+        </tr>`).join("")
+    : `<tr><td colspan="3" class="empty">Nothing yet &mdash; every request so far was something you sell.</td></tr>`;
 }
 
 /* ----------------------------------------------------------------- sms */

@@ -95,6 +95,53 @@ def _unmatched(cart: list[tuple[str, int]]) -> list[str]:
     return [item for item, _qty in cart if item not in menu]
 
 
+def _resolve_unclear(requested: list[str]) -> tuple[list[tuple[str, int]], list[str]]:
+    """Split what the assistant could not place into things we actually
+    sell, and things we genuinely do not.
+
+    The assistant's uncertainty is a hint, not a verdict. It may have
+    failed to match a dish that plainly exists, so each phrase goes
+    through merchant_config.resolve_item() -- the shared, conservative
+    resolver -- before anything is written off as unavailable.
+    """
+    resolved: list[tuple[str, int]] = []
+    unsellable: list[str] = []
+    for phrase in requested:
+        text = (phrase or "").strip()
+        if not text:
+            continue
+        item_id = merchant_config.resolve_item(text)
+        if item_id:
+            resolved.append((item_id, _quantity_in(text)))
+        else:
+            unsellable.append(text)
+    return resolved, unsellable
+
+
+def _quantity_in(text: str) -> int:
+    """A leading count if the phrase carries one -- "2 masala dosas" is
+    two of them, not one. Anything unparseable is one."""
+    import re
+
+    match = re.match(r"\s*(\d{1,3})\b", text or "")
+    if not match:
+        return 1
+    return max(1, min(int(match.group(1)), 99))
+
+
+def _log_demand(agent_id: str, unsellable: list[str]) -> list[str]:
+    """Record what was asked for and cannot be sold. Never allowed to
+    break a decision that otherwise succeeded."""
+    for text in unsellable:
+        try:
+            audit_log.record_unmatched_demand(
+                agent_id, PROTOCOL, text, db_path=audit_log.DEFAULT_DB_PATH
+            )
+        except Exception:
+            pass
+    return unsellable
+
+
 def _same_cart(event: dict, cart: list[tuple[str, int]]) -> bool:
     try:
         lines = json.loads(event["cart_json"])
@@ -320,18 +367,38 @@ def get_catalog_impl() -> dict:
 
 
 def propose_cart_impl(
-    items: list[CartItem], reasoning: str, client: str | None = None
+    items: list[CartItem],
+    reasoning: str,
+    client: str | None = None,
+    requested_but_unclear: list[str] | None = None,
 ) -> dict:
     agent_id = _agent_id(client)
     cart = _cart_of(items)
+
+    # Things the assistant could not confidently map. It may simply
+    # have been wrong -- "2 masala dosas" is a real dish described
+    # loosely -- so each is put through the shared resolver first and
+    # joins the cart if it turns out to be real. Only the genuine
+    # misses are logged as demand.
+    resolved, unsellable = _resolve_unclear(requested_but_unclear or [])
+    cart = cart + resolved
     if not cart:
+        # Nothing sellable, but the asking is still worth recording --
+        # a request for something she does not stock is exactly the
+        # signal this path used to throw away.
+        logged = _log_demand(agent_id, unsellable)
         return {
             "decision": "ESCALATE",
-            "reason": "empty cart: nothing to price",
+            "reason": (
+                "nothing on this menu matched the request"
+                if unsellable
+                else "empty cart: nothing to price"
+            ),
             "total_inr": 0,
             "trust_tier": "NEW",
             "order_id": None,
             "alternatives": [],
+            "unavailable": logged,
         }
 
     # Required by the schema, but checked here too: a schema stops a
@@ -354,6 +421,12 @@ def propose_cart_impl(
     )
     response = _decision_response(detail, cart)
     response["buyer_reasoning"] = reasoning.strip()
+    # Logged beside the decision, never folded into it: unmatched
+    # items are not priced and do not move APPROVE/COUNTER/ESCALATE
+    # for the valid items in the same call.
+    logged = _log_demand(agent_id, unsellable)
+    if logged:
+        response["unavailable"] = logged
     return response
 
 
@@ -555,7 +628,13 @@ def get_catalog() -> dict:
         "not sell is named back to you rather than substituted. This does not take "
         "any payment. Also pass along the context the user gave for wanting this order: "
         "the kitchen can see the cart and the price, but has no other way to know who "
-        "it is for or what the occasion is."
+        "it is for or what the occasion is. "
+        "ALWAYS call this tool with whatever the user asked for. Do not decide "
+        "availability yourself before calling it -- the server matches against the live "
+        "catalog and will tell you what is unavailable, and it is often right where you "
+        "were unsure. Put anything you cannot map to a known item_id into "
+        "requested_but_unclear rather than omitting it. This applies even when the cart "
+        "would otherwise be empty: call the tool anyway so the request is recorded."
     ),
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
@@ -571,9 +650,20 @@ def propose_cart(
             "no reason, say so plainly rather than inventing one."
         )
     ),
+    requested_but_unclear: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Anything the user asked for that you could not confidently match to a "
+            "catalog item_id, in the user's own words (e.g. '2 pizzas'). ALWAYS "
+            "include these -- even when you are sure it is not on the menu -- "
+            "rather than telling the user it is unavailable without reporting it. "
+            "The merchant uses this to see real demand for things she does not "
+            "currently sell, and it is the only way she ever finds out."
+        ),
+    ),
     client: str | None = None,
 ) -> dict:
-    return propose_cart_impl(items, reasoning, client)
+    return propose_cart_impl(items, reasoning, client, requested_but_unclear)
 
 
 @mcp_server.tool(

@@ -20,6 +20,7 @@ wipe the shop. Tests call reset_to_defaults() to stay isolated from it.
 
 import json
 import os
+import re
 from dataclasses import asdict, replace
 from pathlib import Path
 
@@ -141,6 +142,54 @@ def as_dict() -> dict:
 
 
 # ---------------------------------------------------------------- writes
+
+_QTY_PREFIX = re.compile(r"^\s*\d+\s*(x|nos?\.?|pcs?\.?|plates?|portions?)?\s+", re.IGNORECASE)
+
+
+def _normalise_request(text: str) -> str:
+    """Reduce a phrase a person typed to something comparable with a menu
+    entry: drop a leading quantity, lowercase, collapse punctuation, and
+    singularise the last word ("2 masala dosas" -> "masala dosa")."""
+    cleaned = _QTY_PREFIX.sub("", (text or "").strip().lower())
+    cleaned = "".join(ch if ch.isalnum() or ch.isspace() else " " for ch in cleaned)
+    words = cleaned.split()
+    if words and len(words[-1]) > 3 and words[-1].endswith("s"):
+        words[-1] = words[-1][:-1]
+    return " ".join(words)
+
+
+def resolve_item(text: str) -> str | None:
+    """Best-effort free-text -> catalog item_id, deliberately conservative.
+
+    Exists because a caller may report something it could not match, and
+    it may simply have been wrong -- "2 masala dosas" is a real item
+    described loosely. Getting a real match back is better than logging
+    phantom demand for something the merchant already sells.
+
+    Conservative on purpose: exact matches first, then a containment pass
+    that requires exactly ONE candidate. Two possible items means the
+    phrase is ambiguous, and guessing would put a dish nobody asked for
+    into somebody's cart -- so it returns None and the caller logs it as
+    unmatched instead. No fuzzy distance, no model call.
+    """
+    query = _normalise_request(text)
+    if not query:
+        return None
+
+    menu = current_menu()
+    by_id = {name: _normalise_request(name.replace("_", " ")) for name in menu}
+
+    for item_id, title in by_id.items():
+        if query in (item_id, title, _normalise_request(item_id)):
+            return item_id
+
+    candidates = [
+        item_id
+        for item_id, title in by_id.items()
+        if title and (title in query or query in title)
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
 
 def _slug(text: str) -> str:
     cleaned = "".join(ch if ch.isalnum() else "_" for ch in text.strip().lower())
