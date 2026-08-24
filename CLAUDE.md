@@ -487,6 +487,10 @@ Inbound replies reuse the existing `/webhook/sms-reply` handler rather than a se
 registered so a reply can resolve it, but silent, because the message it needs is worded
 for an order that is already paid for and whose rejection refunds.
 
+**A delivery bug the audit trail caught.** A real order completed correctly end to end -- AWAITING_PAYMENT, PAID, AUTO_CONFIRMED all recorded -- and the customer got nothing. The merchant's number is configured in E.164 and worked; the customer's arrives however the assistant typed what they said, so `8306610707` became a recipient of `whatsapp:8306610707` and Twilio rejected it. It now goes through the same normaliser `buyer_sms` uses. Two things made this findable rather than mysterious: send failures are recorded on the message rather than swallowed silently, and the order status is written before the send is attempted -- so the trail showed an order that genuinely completed alongside three messages that genuinely failed, instead of one ambiguous absence.
+
+**Twilio trial accounts cap at 50 messages a day** (error 63038). Worth knowing before a demo: it is an account limit, not a failure of this code, and the mock outbox is unaffected. `SMS_ENABLED=false` forces the mock if the cap is hit.
+
 **Not built, deliberately:** nothing schedules the timeout. The project has no expiry
 mechanism for merchant escalations to reuse, and inventing a scheduler was out of scope,
 so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.

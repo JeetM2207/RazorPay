@@ -134,6 +134,39 @@ def test_nobody_is_told_anything_before_payment(env):
 
 # ------------------------------------------------- within cap: auto-confirm
 
+@pytest.mark.parametrize(
+    "typed,expected",
+    [
+        ("8306610707", "+918306610707"),
+        ("98765 43210", "+919876543210"),
+        ("+91 98765 43210", "+919876543210"),
+        ("whatsapp:+919876543210", "+919876543210"),
+    ],
+)
+def test_the_customer_number_is_normalised_before_sending(env, typed, expected):
+    """It arrives however the assistant typed what the customer told it.
+    Twilio needs E.164 -- a raw "8306610707" became `whatsapp:8306610707`
+    and was rejected outright, while the merchant's own number (already
+    E.164 in config) went through, which is what made it look like the
+    flow had silently stopped working."""
+    placed = adapter_mcp.checkout_impl(
+        cart(("masala_dosa", 1)),
+        delivery_name="Jeet",
+        delivery_phone=typed,
+        delivery_address="Sharad Apartment",
+    )
+    pay(env, placed["payment_link_id"])
+
+    customer_messages = [
+        m for m in notification_service.outbox() if "order #" in m["body"].lower()
+        and "no action needed" not in m["body"]
+    ]
+    assert customer_messages, "the customer was never messaged"
+    assert all(m["to"] == expected for m in customer_messages), (
+        f"sent to {[m['to'] for m in customer_messages]}, expected {expected}"
+    )
+
+
 def test_within_cap_order_auto_confirms_on_payment(env):
     placed = checkout(("masala_dosa", 1))
     assert pay(env, placed["payment_link_id"]).json()["status"] == "processed"

@@ -97,12 +97,23 @@ def _transition(order: dict, status: str, reason: str) -> int:
 
 
 def _tell(phone: str | None, message: str) -> None:
-    """Send, and never let a failure break the order. The status is
-    already recorded by the time this runs."""
+    """Message the customer, and never let a failure break the order. The
+    status is already recorded by the time this runs.
+
+    The number is normalised first. It arrives however the assistant
+    typed what the customer told it -- "8306610707", "98765 43210",
+    "+91 …" -- and Twilio needs E.164. Sending the raw string produced a
+    recipient of `whatsapp:8306610707`, which is rejected outright, while
+    the merchant's own number (already E.164 in config) worked fine. The
+    same normaliser buyer_sms uses, rather than a second one.
+    """
     if not phone:
         return
     try:
-        notification_service.send_sms(message, to=phone)
+        import buyer_sms
+
+        recipient = buyer_sms.normalise_phone(phone) or phone
+        notification_service.send_sms(message, to=recipient)
     except Exception:
         pass
 
