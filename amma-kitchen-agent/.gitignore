@@ -7,3 +7,4 @@ __pycache__/
 # local server logs
 uvicorn*.log
 merchant_config.json
+*.log
