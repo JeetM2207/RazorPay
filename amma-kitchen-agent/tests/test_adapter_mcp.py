@@ -831,3 +831,60 @@ def test_get_catalog_never_describes_the_kitchens_limits(db):
     assert "largest order" not in description
     assert "confirm by hand" not in description
     assert "should not try to infer them" in description
+
+
+# ------------------------------- a failed checkout must not brick the cart
+
+def test_a_failed_payment_link_does_not_make_the_cart_unbuyable(db, monkeypatch):
+    """checkout claims the ledger BEFORE asking Razorpay for a link, so
+    the claim is a lock rather than a record. Razorpay refused once
+    ("test mode limit of 30 reached") and the lock was never given back:
+    the same cart then answered "a checkout for this cart is already
+    underway" to every retry, forever, with nothing underway. The
+    customer was told to wait for something that would never happen."""
+    calls = {"n": 0}
+
+    def flaky(*args, **kwargs):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise Exception("test mode limit of 30 reached for payment_link")
+        return {"id": "plink_after_retry", "short_url": "https://rzp.io/x"}
+
+    monkeypatch.setattr(adapter_mcp.orchestrator, "create_payment_for_cart", flaky)
+
+    with pytest.raises(Exception, match="test mode limit"):
+        buy(("chicken_biryani", 2))
+
+    placed = buy(("chicken_biryani", 2))
+    assert placed["status"] == "awaiting_payment", "the retry was still locked out"
+    assert placed["payment_link_id"] == "plink_after_retry"
+
+
+def test_the_lock_is_kept_once_a_link_actually_exists(db, link):
+    """Released only when the guarded work provably did not happen. Once
+    a link is out, a retry must return the ORIGINAL order rather than
+    being allowed through to make a second one."""
+    first = buy(("chicken_biryani", 2))
+    second = buy(("chicken_biryani", 2))
+
+    assert second["duplicate"] is True
+    assert second["payment_link_id"] == first["payment_link_id"]
+    assert len(link) == 1, "a second payment link was created"
+
+
+def test_a_cart_refused_at_payment_time_can_be_bought_after_she_relents(db, link):
+    """The re-check at payment time is defense in depth, and a cart it
+    refuses may become fine later -- she raises her cap, stock arrives.
+    Holding the lock would make that unbuyable for good."""
+    def refuse(*args, **kwargs):
+        raise ValueError("cart no longer approved at payment time: Decision.ESCALATE")
+
+    real = adapter_mcp.orchestrator.create_payment_for_cart
+    adapter_mcp.orchestrator.create_payment_for_cart = refuse
+    try:
+        with pytest.raises(ValueError):
+            buy(("masala_dosa", 1))
+    finally:
+        adapter_mcp.orchestrator.create_payment_for_cart = real
+
+    assert buy(("masala_dosa", 1))["status"] == "awaiting_payment"

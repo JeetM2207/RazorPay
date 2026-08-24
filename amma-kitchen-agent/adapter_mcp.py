@@ -628,9 +628,20 @@ def checkout_impl(
     # client claiming "this was approved" is never taken at its word.
     # skip_reevaluation only for a cart a human explicitly waved through,
     # which would otherwise re-escalate forever.
-    link = orchestrator.create_payment_for_cart(
-        agent_id, event_id, cart, skip_reevaluation=human_approved
-    )
+    # The claim above is a lock, not a record: it is taken BEFORE the work
+    # rather than after it. So if the work fails -- Razorpay refuses, the
+    # cart stopped being approvable, the network dropped -- the lock has
+    # to go back, or this exact cart is unbuyable by this agent forever
+    # and every retry is told "already underway" with nothing underway.
+    # create_payment_for_cart attaches the link as its last step, so a
+    # raise here means no link exists and releasing is safe.
+    try:
+        link = orchestrator.create_payment_for_cart(
+            agent_id, event_id, cart, skip_reevaluation=human_approved
+        )
+    except Exception:
+        idempotency.release_claim("mcp.checkout", _fingerprint(agent_id, cart), db_path)
+        raise
     audit_log.attach_delivery(
         event_id,
         delivery_name.strip(),

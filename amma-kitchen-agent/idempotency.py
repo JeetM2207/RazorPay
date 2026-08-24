@@ -47,3 +47,27 @@ def claim_event(event_type: str, payment_link_id: str, db_path: str) -> bool:
         return True
     except sqlite3.IntegrityError:
         return False
+
+
+def release_claim(event_type: str, payment_link_id: str, db_path: str) -> bool:
+    """Give a claim back because the work it was guarding never happened.
+
+    A claim means "this fact is recorded" for the webhook and reconciler,
+    which is why they never release: the fact stays true. But a caller
+    that claims BEFORE doing work -- adapter_mcp.checkout claims, then
+    asks Razorpay for a payment link -- is using this as a lock, and a
+    lock that is never released after a failure is a permanent one. That
+    is not theoretical: a Razorpay error mid-checkout left one cart
+    unbuyable for one agent forever, answering "already underway" to
+    every retry with nothing actually underway.
+
+    Only ever call this when the guarded work provably did not happen.
+    """
+    init_ledger(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "DELETE FROM processed_webhook_events "
+            "WHERE event_type = ? AND payment_link_id = ?",
+            (event_type, payment_link_id),
+        )
+        return cursor.rowcount > 0
