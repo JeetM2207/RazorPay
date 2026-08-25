@@ -947,14 +947,23 @@ strictly below the human-confirm **threshold**, so at Rs.450 there was no headro
 all. That rule is right for ACP, AP2 and x402, where crossing the threshold turns a
 finished sale into one waiting on a human, and it stays exactly as it is.
 
-`adapter_mcp._addon_for_a_payable_escalation()` asks the same core function with her
-**budget cap** as the ceiling instead, and only for a cart that is *already* escalating.
-The rule, stated once: **an add-on may never make the order worse than it already is.**
-Already over the threshold, so the cap is what binds; approved, and the threshold still
-binds, because turning an auto-confirmed order into one she has to look at is not an
-improvement for anybody. `negotiation.py` is untouched -- the ceiling arrives as a field
-on the mandate it was always given, and the `-1` inside it keeps the new total strictly
-below the cap, so an add-on can never be what makes an order unbuyable.
+`adapter_mcp._addon_for()` asks the same core function with her **budget cap** as the
+ceiling instead, for **every payable cart**. The first version of this applied the cap
+only to carts already escalating, on the reasoning that an add-on should never turn an
+auto-confirmed order into one Amma has to look at. That was too cautious and it showed
+immediately: an order at Rs.370 has Rs.29 left under the threshold and the cheapest thing
+on the menu is a Rs.30 coffee, so it was offered nothing at all -- one rupee short of the
+smallest item she sells.
+
+The trade is now taken deliberately: an add-on **can** carry an order past the threshold,
+so the customer is told the kitchen confirms just after payment instead of straight away.
+They chose to add it, the order still completes, and a declined one refunds itself. Worth
+it to be able to offer something on every order rather than only the small ones.
+
+What does not move is the cap. `negotiation.py` is untouched -- the ceiling arrives as a
+field on the mandate it was always given, and the `-1` inside it keeps the new total
+strictly **below** the cap, so an add-on can never be the thing that makes an order
+unbuyable. A test walks five carts and asserts it.
 
 **The second fault was worse, because it was silent.** With no history, `suggest_upsell()`
 falls back to "the most expensive item that still fits" -- so a single Rs.80 Masala Dosa
@@ -977,14 +986,18 @@ this order" / "best value that fits" -- so the assistant can say *why* instead o
 presenting a hunch. This part is not MCP-specific: the cold-start fallback was bad for
 every adapter, so the fix is in `orchestrator.suggest_addon()` where all four get it.
 
-Checked against the live trail rather than asserted: Paneer Bhurji + Tandoori Roti returns
+Coverage, checked over the real MCP protocol against the live trail: **8 of 8 payable
+carts** are offered something, from a Rs.30 coffee to a Rs.450 dinner, and the disallowed
+catering tray is offered nothing because there is no sale to add to. Checked against the
+live trail rather than asserted: Paneer Bhurji + Tandoori Roti returns
 Filter Coffee from **real** co-purchase history, and the pairing table independently ranks
 it first too. Masala Dosa still returns Chicken Biryani -- and that is correct, because
 six genuinely paid orders in this database contain both. History is *supposed* to beat the
 table when it disagrees.
 
-The tool description now tells the model to mention `suggested_addon` once and let the
-customer decide. That sentence is load-bearing for the same reason the ESCALATE wording
+The tool description now tells the model to offer `suggested_addon` **every time** one
+comes back, in one sentence before checkout, and to carry on to checkout unchanged if the
+customer declines. That sentence is load-bearing for the same reason the ESCALATE wording
 was: nothing surfaces unless the description says to surface it.
 
 ## Before a demo, run the check

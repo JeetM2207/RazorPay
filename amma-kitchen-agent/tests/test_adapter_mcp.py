@@ -952,3 +952,87 @@ def test_propose_cart_tells_the_model_to_offer_it_not_add_it(db):
 
     assert "suggested_addon" in description
     assert "Never add it yourself" in description
+
+
+# ------------------------------- an add-on on every order that can be bought
+
+def test_an_approved_cart_with_no_room_under_the_threshold_still_gets_one(db):
+    """Veg Thali + Chicken Biryani is Rs.370: approved, but only Rs.29 of
+    headroom under the Rs.400 threshold, and the cheapest thing on the
+    menu is a Rs.30 coffee. The shared rule therefore offered nothing on
+    an order that was one rupee short of affording the smallest item she
+    sells. Under pay-first the cap is what binds, and Rs.129 buys plenty."""
+    result = propose(("veg_thali", 1), ("chicken_biryani", 1))
+
+    assert result["decision"] == "APPROVE"
+    assert result["total_inr"] == 370
+    assert result["suggested_addon"], "no add-on offered on a payable order"
+
+
+def test_every_payable_cart_is_offered_something(db):
+    """The point of the change: a customer is asked on each order, not
+    only on the small ones."""
+    carts = [
+        (("masala_dosa", 1),),                        # Rs.80,  approved
+        (("veg_thali", 2),),                          # Rs.300, approved
+        (("veg_thali", 1), ("chicken_biryani", 1)),   # Rs.370, approved, tight
+        (("paneer_bhurji", 2), ("tandoori_roti", 3)), # Rs.450, escalates, payable
+    ]
+    for cart in carts:
+        result = propose(*cart)
+        assert result["payable"] is True, cart
+        assert result.get("suggested_addon"), f"nothing offered for {cart}"
+
+
+def test_the_cap_still_binds(db):
+    """The ceiling moved from threshold to cap. It did not disappear --
+    an add-on that made the order unbuyable would be worse than none."""
+    import merchant_config
+
+    cap = merchant_config.current_mandate().budget_cap_inr
+    for cart in (
+        (("masala_dosa", 1),),
+        (("veg_thali", 2),),
+        (("veg_thali", 1), ("chicken_biryani", 1)),
+        (("paneer_bhurji", 2), ("tandoori_roti", 3)),
+        (("chicken_biryani", 2),),
+    ):
+        result = propose(*cart)
+        addon = result.get("suggested_addon")
+        if addon:
+            assert result["total_inr"] + addon["price_inr"] < cap, cart
+
+
+def test_a_counter_offer_is_not_upsold(db):
+    """There is no agreed cart yet -- adding to it is meaningless."""
+    result = propose(("chicken_biryani", 2), ("filter_coffee", 3))
+
+    assert result["payable"] is False
+    assert "suggested_addon" not in result
+
+
+def test_the_other_adapters_keep_the_threshold_ceiling(db):
+    """This is a pay-first consequence and belongs to this protocol only.
+    ACP, AP2 and x402 finish at capture, so an add-on that crossed her
+    threshold there would strand a sale that was already done."""
+    detail = adapter_mcp.orchestrator.negotiate_and_record(
+        "acp-upsell", "acp", [("veg_thali", 1), ("chicken_biryani", 1)]
+    )
+    # Rs.370 leaves Rs.29 under the Rs.400 threshold, and the cheapest
+    # item is Rs.30: nothing fits, and nothing should be offered.
+    assert detail["decision"] == "APPROVE"
+    assert "upsell_suggestion" not in detail
+
+    # The same cart through MCP is offered one, because the cap binds here.
+    assert propose(("veg_thali", 1), ("chicken_biryani", 1))["suggested_addon"]
+
+
+def test_the_model_is_told_to_offer_it_every_time(db):
+    """Nothing surfaces unless the description says to surface it -- the
+    same lesson as the ESCALATE wording."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    description = tools["propose_cart"].description
+
+    assert "ALWAYS offer the `suggested_addon`" in description
+    assert "every time" in description
+    assert "Never add it yourself" in description
