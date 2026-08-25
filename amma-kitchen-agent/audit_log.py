@@ -171,6 +171,26 @@ def get_event_by_payment_link(
         return dict(row) if row else None
 
 
+def get_event_by_payment_id(
+    payment_id: str, db_path: str = DEFAULT_DB_PATH
+) -> dict | None:
+    """The order a captured payment belongs to.
+
+    Refund webhooks arrive carrying a payment id rather than a payment
+    link id, so the existing lookup cannot answer them. Oldest first: the
+    row that CARRIES the payment is the original decision, and later
+    lifecycle rows copy it forward.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM audit_events WHERE payment_id = ? ORDER BY id ASC LIMIT 1",
+            (payment_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 UNMATCHED_DEMAND = "UNMATCHED_DEMAND"
 
 

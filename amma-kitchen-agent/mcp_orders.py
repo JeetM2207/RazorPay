@@ -58,6 +58,7 @@ LIFECYCLE_STATUSES = {
     MERCHANT_REJECTED,
     MERCHANT_TIMEOUT_REFUNDED,
     REFUNDED,
+    "REFUND_FAILED",
 }
 
 # Statuses a merchant reply can still act on.
@@ -263,8 +264,26 @@ def _refund(order: dict, status: str, reason: str) -> dict:
         _tell(phone, f"Order #{order_ref} couldn't be accepted.")
         return {"order_ref": order_ref, "status": status, "refunded": False}
 
+    # Ask Razorpay what is actually left to refund rather than trusting
+    # our own figure. A payment partly refunded by hand leaves less than
+    # the order total, and asking for the total would just fail; one
+    # already refunded in full leaves nothing, which is the outcome we
+    # wanted and must not be reported as an error. None means Razorpay
+    # could not be reached -- fall back to the order total and let the
+    # refund itself fail loudly rather than guessing it is fine.
+    outstanding = razorpay_client.outstanding_paise(payment_id)
+    if outstanding is not None and outstanding <= 0:
+        _transition(
+            order, REFUNDED, f"payment {payment_id} was already refunded in full"
+        )
+        _tell(phone, f"Order #{order_ref} couldn't be accepted. Rs.{total} has been refunded.")
+        return {"order_ref": order_ref, "status": REFUNDED, "refunded": True, "refund": None}
+
     try:
-        refund = razorpay_client.refund_payment(payment_id, total)
+        if outstanding is None:
+            refund = razorpay_client.refund_payment(payment_id, amount_inr=total)
+        else:
+            refund = razorpay_client.refund_payment(payment_id, amount_paise=outstanding)
     except Exception as exc:
         _transition(
             order,
@@ -281,6 +300,53 @@ def _refund(order: dict, status: str, reason: str) -> dict:
     _transition(order, REFUNDED, f"refund {refund.get('id', '')} issued for payment {payment_id}")
     _tell(phone, f"Order #{order_ref} couldn't be accepted. Rs.{total} has been refunded.")
     return {"order_ref": order_ref, "status": REFUNDED, "refunded": True, "refund": refund}
+
+
+REFUND_FAILED = "REFUND_FAILED"
+
+
+def on_refund_settled(order: dict, refund: dict) -> str | None:
+    """Razorpay has finished with a refund we issued, one way or the other.
+
+    Issuing a refund returns immediately with a `created` refund; whether
+    the money actually reaches the customer is decided afterwards, and in
+    live mode that is days later. Without this, a refund that Razorpay
+    later FAILED would sit in the trail as REFUNDED forever while the
+    customer had nothing -- the same shape as every other bug in this
+    project's history: recorded correctly, reaching nobody.
+
+    Called from the webhook handler, which has already claimed the event
+    through the shared idempotency ledger.
+    """
+    order_ref = order["id"]
+    refund_id = refund.get("id", "")
+    status = (refund.get("status") or "").lower()
+    amount = int(refund.get("amount", 0)) // 100
+
+    if status == "processed":
+        _transition(order, REFUNDED, f"refund {refund_id} confirmed processed by Razorpay")
+        return REFUNDED
+
+    if status == "failed":
+        # Deliberately NOT left as REFUNDED. The customer is owed money
+        # and somebody has to know.
+        _transition(
+            order,
+            REFUND_FAILED,
+            f"refund {refund_id} FAILED at Razorpay and needs manual attention",
+        )
+        _tell(
+            order.get("delivery_phone"),
+            f"The refund for order #{order_ref} (Rs.{amount}) did not go through. "
+            "We are sorting it out and will be in touch.",
+        )
+        _tell_merchant(
+            f"Refund for order #{order_ref} (Rs.{amount}) FAILED at Razorpay -- "
+            "the customer is still owed this money."
+        )
+        return REFUND_FAILED
+
+    return None
 
 
 def accept(order_ref: int) -> dict:

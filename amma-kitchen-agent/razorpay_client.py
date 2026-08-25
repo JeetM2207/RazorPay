@@ -73,18 +73,45 @@ def fetch_payment(payment_id: str) -> dict:
     return client.payment.fetch(payment_id)
 
 
-def refund_payment(payment_id: str, amount_inr: int | None = None) -> dict:
+def refund_payment(
+    payment_id: str, amount_inr: int | None = None, amount_paise: int | None = None
+) -> dict:
     """Refund a captured payment, in full unless an amount is given.
 
     Used when a merchant declines an order that was already paid for.
     Speed matters here: the customer's money is held against an order
     that is not going to happen, so the refund is issued as part of the
     rejection rather than queued for later.
+
+    `amount_paise` is what callers should prefer: Razorpay works in paise
+    and refuses anything above amount-minus-already-refunded, so the
+    figure worth sending is the one read back from the payment itself
+    rather than one derived from our own record of what it should have
+    been. `amount_inr` stays for callers that only know rupees.
     """
     payload = {"speed": "normal"}
-    if amount_inr is not None:
+    if amount_paise is not None:
+        payload["amount"] = int(amount_paise)
+    elif amount_inr is not None:
         payload["amount"] = amount_inr * 100
     return client.payment.refund(payment_id, payload)
+
+
+def outstanding_paise(payment_id: str) -> int | None:
+    """How much of this payment is still refundable, or None if Razorpay
+    cannot tell us.
+
+    Asked rather than assumed, for two reasons. A payment partially
+    refunded by hand in the dashboard leaves less than the order total
+    available, and asking for the total would simply fail. And a payment
+    already refunded in full leaves zero -- which is not an error, it is
+    the outcome we wanted, and should not be reported as a failure.
+    """
+    try:
+        payment = fetch_payment(payment_id)
+    except Exception:
+        return None
+    return int(payment.get("amount", 0)) - int(payment.get("amount_refunded", 0))
 
 
 def verify_webhook_signature(body: bytes, signature: str, webhook_secret: str) -> bool:

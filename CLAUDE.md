@@ -513,6 +513,56 @@ follow-up is now one shared `mcp_orders.follow_up_after_capture()` that both pat
 so the fast path cannot gain a step the safety net never gets, and a test asserts neither
 module reaches into the lifecycle directly.
 
+## How the refund actually works
+
+The pay-first flow's whole defence is that a rejected order returns the money by itself.
+That is a claim about Razorpay's behaviour, so it was checked against Razorpay rather than
+reasoned about.
+
+A refund is issued against the **payment**, not the order or the payment link:
+`POST /v1/payments/{id}/refund`, amount in paise, omitted for a full refund. It is a real
+call in test mode and returns a `rfnd_...` id. `mcp_orders._refund()` makes it inside the
+rejection, **before** the terminal status is written, so an order can never read REFUNDED
+without a refund having been attempted; if Razorpay refuses, the failure is recorded and
+the order stays visibly rejected-but-unrefunded.
+
+Three things a live run changed:
+
+- **Refund what is outstanding, not what the order cost.** `razorpay_client
+  .outstanding_paise()` asks the payment for `amount - amount_refunded`. A payment partly
+  refunded by hand leaves less than the order total, and asking for the total would simply
+  be refused; one already refunded in full leaves zero, which is *the outcome we wanted*
+  and must not be reported as a failure. If Razorpay cannot be reached the order total is
+  sent instead and the refund is allowed to fail loudly, rather than assuming it is fine.
+- **A refund is not finished when you issue it.** The real one came back
+  `status=pending`, not `processed` — money reaches the customer later, and in live mode
+  days later. So `refund.processed` and `refund.failed` are handled: processed confirms the
+  trail, and **failed moves the order to `REFUND_FAILED` and tells both the customer and
+  Amma**, because a failed refund left reading REFUNDED is the same bug as every other one
+  here — recorded correctly, reaching nobody. They are keyed by the refund's own id through
+  the same idempotency ledger a capture uses, since a refund event carries no payment link
+  at all. `audit_log.get_event_by_payment_id()` is the lookup that makes that possible.
+- **Those two events must be subscribed in Razorpay**, and were not. `predemo_check.py`
+  now warns when they are missing, because nothing else would have said so.
+
+**Verified end to end on a real captured payment**, not asserted:
+
+```
+order #145  PENDING_MERCHANT_APPROVAL  pay_TTvsyMZkHks6Hd
+  before  captured  Rs.450  refunded Rs.0
+  reject  -> rfnd_TTyiNrkpmgoNTu  Rs.450  status=pending
+  after   refunded  Rs.450  refund_status=full
+  trail   ESCALATE -> AWAITING_PAYMENT -> PAID -> PENDING_MERCHANT_APPROVAL
+          -> MERCHANT_REJECTED -> REFUNDED
+```
+
+The webhook path was exercised over the real tunnel with signed deliveries — a retry
+answered `duplicate_ignored`, an unsigned one `400`, and a refund for a payment this
+system never saw was acknowledged rather than crashed on. Those probes deliberately used
+an unknown payment id: writing "confirmed processed" into a real order's trail for a
+refund Razorpay had not yet processed would have put a false fact in the audit log to make
+a test pass.
+
 **Not built, deliberately:** nothing schedules the timeout. The project has no expiry
 mechanism for merchant escalations to reuse, and inventing a scheduler was out of scope,
 so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.

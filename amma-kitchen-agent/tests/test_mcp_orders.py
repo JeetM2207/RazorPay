@@ -48,14 +48,43 @@ def env(tmp_path, monkeypatch):
 
     refunds = []
 
-    def fake_refund(payment_id, amount_inr=None):
-        refunds.append({"payment_id": payment_id, "amount_inr": amount_inr})
-        return {"id": f"rfnd_{len(refunds)}", "status": "processed"}
+    def fake_refund(payment_id, amount_inr=None, amount_paise=None):
+        refunds.append(
+            {"payment_id": payment_id, "amount_inr": amount_inr, "amount_paise": amount_paise}
+        )
+        return {"id": f"rfnd_{len(refunds)}", "status": "created"}
 
     monkeypatch.setattr(mcp_orders.razorpay_client, "refund_payment", fake_refund)
+    # Stands in for asking Razorpay what is left to refund. Mocked rather
+    # than left to fail: unmocked it makes a real API call, which is slow
+    # and makes the suite depend on a network and a live account.
+    outstanding = {"paise": 44000}
+    monkeypatch.setattr(
+        mcp_orders.razorpay_client,
+        "outstanding_paise",
+        lambda payment_id: outstanding["paise"],
+    )
 
-    return {"db": db_path, "links": links, "refunds": refunds,
+    return {"db": db_path, "links": links, "refunds": refunds, "outstanding": outstanding,
             "client": TestClient(webhook_handler.app)}
+
+
+def refund_webhook(env, event, refund_id, payment_id, amount_paise):
+    """A signed refund delivery, in Razorpay's own payload shape."""
+    body = json.dumps({
+        "event": event,
+        "payload": {
+            "refund": {"entity": {
+                "id": refund_id, "payment_id": payment_id,
+                "amount": amount_paise, "status": event.split(".")[1],
+            }},
+        },
+    })
+    signature = hmac.new(WEBHOOK_SECRET.encode(), body.encode(), hashlib.sha256).hexdigest()
+    return env["client"].post(
+        "/webhooks/razorpay", data=body,
+        headers={"X-Razorpay-Signature": signature, "Content-Type": "application/json"},
+    )
 
 
 def cart(*pairs):
@@ -215,7 +244,11 @@ def test_merchant_rejecting_refunds_the_actual_payment(env):
     result = mcp_orders.reject(placed["order_id"])
 
     assert result["refunded"] is True
-    assert env["refunds"] == [{"payment_id": "pay_realone", "amount_inr": 440}]
+    # Refunded in paise, and for what Razorpay says is outstanding rather
+    # than what our own row says the order cost.
+    assert env["refunds"] == [
+        {"payment_id": "pay_realone", "amount_inr": None, "amount_paise": 44000}
+    ]
     assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUNDED
     assert mcp_orders.MERCHANT_REJECTED in statuses(placed["order_id"], env["db"])
     assert any("Rs.440 has been refunded" in m for m in messages())
@@ -355,3 +388,124 @@ def test_other_protocols_are_untouched_by_the_new_flow(env):
 
     assert mcp_orders.status_of(detail["event_id"]) is None, "an ACP order entered the lifecycle"
     assert messages() == [], "an ACP payment sent a customer message"
+
+
+# ------------------------------------------------------- refund edge cases
+
+def test_it_refunds_what_is_outstanding_not_what_the_order_cost(env):
+    """Somebody refunded half of it by hand in the dashboard. Asking for
+    the order total would simply be refused by Razorpay, so the figure
+    that gets sent is the one read back from the payment."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_half")
+    env["outstanding"]["paise"] = 20000          # Rs.200 of Rs.440 left
+
+    result = mcp_orders.reject(placed["order_id"])
+
+    assert result["refunded"] is True
+    assert env["refunds"][-1]["amount_paise"] == 20000
+
+
+def test_an_already_refunded_payment_is_not_reported_as_a_failure(env):
+    """Zero outstanding is the outcome we wanted, not an error. Calling
+    Razorpay again would fail and leave the order looking unrefunded when
+    the customer already has their money."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_done")
+    env["outstanding"]["paise"] = 0
+
+    result = mcp_orders.reject(placed["order_id"])
+
+    assert result["refunded"] is True
+    assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUNDED
+    assert env["refunds"] == [], "asked Razorpay to refund nothing"
+
+
+def test_it_still_tries_when_razorpay_cannot_be_asked(env, monkeypatch):
+    """If the lookup fails we do NOT assume it is fine -- we send our own
+    figure and let the refund itself succeed or fail loudly."""
+    monkeypatch.setattr(mcp_orders.razorpay_client, "outstanding_paise", lambda _id: None)
+
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_blind")
+    result = mcp_orders.reject(placed["order_id"])
+
+    assert result["refunded"] is True
+    assert env["refunds"][-1]["amount_inr"] == 440
+
+
+def test_a_refund_razorpay_later_fails_does_not_stay_marked_refunded(env):
+    """Issuing a refund returns immediately; whether the money arrives is
+    settled afterwards. A failure that left the order reading REFUNDED
+    would be the same bug as every other one here -- recorded correctly,
+    reaching nobody."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_willfail")
+    mcp_orders.reject(placed["order_id"])
+    assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUNDED
+
+    notification_service.clear_outbox()
+    resp = refund_webhook(env, "refund.failed", "rfnd_1", "pay_willfail", 44000)
+
+    assert resp.json()["status"] == "processed"
+    assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUND_FAILED
+    told = " ".join(m["body"] for m in notification_service.outbox())
+    assert "did not go through" in told, "the customer was not told"
+    assert "still owed" in told, "the merchant was not told"
+
+
+def test_a_processed_refund_confirms_the_order(env):
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_willwork")
+    mcp_orders.reject(placed["order_id"])
+
+    refund_webhook(env, "refund.processed", "rfnd_ok", "pay_willwork", 44000)
+
+    assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUNDED
+    reasons = [r["reason"] for r in audit_log.get_order_rows(placed["order_id"], db_path=env["db"])]
+    assert any("confirmed processed" in r for r in reasons)
+
+
+def test_a_duplicate_refund_webhook_is_ignored(env):
+    """Razorpay delivers at least once. Keyed on the refund's own id,
+    through the same ledger a capture uses."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_dup")
+    mcp_orders.reject(placed["order_id"])
+
+    first = refund_webhook(env, "refund.failed", "rfnd_dup", "pay_dup", 44000)
+    second = refund_webhook(env, "refund.failed", "rfnd_dup", "pay_dup", 44000)
+
+    assert first.json()["status"] == "processed"
+    assert second.json()["status"] == "duplicate_ignored"
+    rows = [r for r in audit_log.get_order_rows(placed["order_id"], db_path=env["db"])
+            if r["decision"] == mcp_orders.REFUND_FAILED]
+    assert len(rows) == 1
+
+
+def test_a_refund_for_an_unknown_payment_is_acknowledged_not_crashed(env):
+    """A refund issued by hand in the dashboard, for something this
+    system never saw. Acknowledge it so Razorpay stops retrying."""
+    resp = refund_webhook(env, "refund.processed", "rfnd_x", "pay_never_seen", 100)
+    assert resp.json()["status"] == "processed_unmatched"
+
+
+def test_rejecting_twice_refunds_once(env):
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_twice")
+
+    mcp_orders.reject(placed["order_id"])
+    with pytest.raises(ValueError, match="not awaiting a decision"):
+        mcp_orders.reject(placed["order_id"])
+
+    assert len(env["refunds"]) == 1
+
+
+def test_an_accepted_order_cannot_then_be_refunded(env):
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_accepted")
+    mcp_orders.accept(placed["order_id"])
+
+    with pytest.raises(ValueError, match="not awaiting a decision"):
+        mcp_orders.reject(placed["order_id"])
+    assert env["refunds"] == []

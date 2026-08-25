@@ -161,6 +161,17 @@ def check_razorpay(public_url: str | None) -> None:
     else:
         report("PASS", "Razorpay webhook", urls[0])
 
+    # Issuing a refund returns immediately; whether the money reaches the
+    # customer is settled afterwards. Without these two events a refund
+    # Razorpay went on to fail reads as REFUNDED forever.
+    subscribed = {name for hook in live for name, on in (hook.get("events") or {}).items() if on}
+    for event in ("payment_link.paid", "refund.processed", "refund.failed"):
+        if event not in subscribed:
+            report("WARN", f"webhook event {event}",
+                   "not subscribed -- tick it in Razorpay > Settings > Webhooks")
+    if {"payment_link.paid", "refund.processed", "refund.failed"} <= subscribed:
+        report("PASS", "webhook events", "capture and both refund outcomes subscribed")
+
 
 # ------------------------------------------------------------------ messaging
 
