@@ -10,7 +10,7 @@ Razorpay itself uses -- and POSTs it to the running webhook handler
 twice, to prove the second delivery is correctly ignored.
 
 Run:
-    uvicorn webhook_handler:app --port 8002
+    uvicorn app:app --port 8000
     python simulate_webhook_delivery.py <payment_link_id> <payment_id>
 """
 
@@ -27,7 +27,11 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 load_dotenv()
 
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "http://127.0.0.1:8002/webhooks/razorpay")
+# Defaults to the unified server on 8000. Each adapter used to run its
+# own process on its own port; app.py mounts all of them now, and a
+# default pointing at a port nothing listens on is a demo that fails on
+# a fresh clone with a connection error rather than anything readable.
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "http://127.0.0.1:8000/webhooks/razorpay")
 
 
 def _build_payload(payment_link_id: str, payment_id: str) -> bytes:

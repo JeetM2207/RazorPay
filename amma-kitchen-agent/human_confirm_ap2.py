@@ -26,7 +26,11 @@ load_dotenv()
 
 from razorpay_client import client as razorpay_sdk_client
 
-AP2_BASE_URL = os.environ.get("AP2_BASE_URL", "http://127.0.0.1:8001")
+# Defaults to the unified server on 8000. Each adapter used to run its
+# own process on its own port; app.py mounts all of them now, and a
+# default pointing at a port nothing listens on is a demo that fails on
+# a fresh clone with a connection error rather than anything readable.
+AP2_BASE_URL = os.environ.get("AP2_BASE_URL", "http://127.0.0.1:8000")
 
 
 def _poll_payment(payment_link_id: str) -> None:

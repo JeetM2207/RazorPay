@@ -12,7 +12,7 @@ language into a structured cart -- it never sees or influences the
 APPROVE/COUNTER_OFFER/ESCALATE decision.
 
 Run (with adapter_ap2:app already running in another terminal):
-    uvicorn adapter_ap2:app --port 8001
+    uvicorn app:app --port 8000
     python buyer_agent_b.py "Get me one veg thali" buyer-agent-b-demo
 """
 
@@ -31,7 +31,11 @@ from llm_client import call_with_forced_tool
 from mandate import MENU
 from razorpay_client import client as razorpay_sdk_client
 
-AP2_BASE_URL = os.environ.get("AP2_BASE_URL", "http://127.0.0.1:8001")
+# Defaults to the unified server on 8000. Each adapter used to run its
+# own process on its own port; app.py mounts all of them now, and a
+# default pointing at a port nothing listens on is a demo that fails on
+# a fresh clone with a connection error rather than anything readable.
+AP2_BASE_URL = os.environ.get("AP2_BASE_URL", "http://127.0.0.1:8000")
 REQUEST_TEXT = sys.argv[1] if len(sys.argv) > 1 else "Get me one veg thali"
 AGENT_ID = sys.argv[2] if len(sys.argv) > 2 else "buyer-agent-b-demo"
 
