@@ -888,3 +888,67 @@ def test_a_cart_refused_at_payment_time_can_be_bought_after_she_relents(db, link
         adapter_mcp.orchestrator.create_payment_for_cart = real
 
     assert buy(("masala_dosa", 1))["status"] == "awaiting_payment"
+
+
+# --------------------------------------- add-ons on the orders worth the most
+
+def test_a_payable_escalation_still_gets_an_addon(db):
+    """2x Paneer Bhurji + 3x Tandoori Roti is Rs.450 -- over her Rs.400
+    threshold, and under pay-first still a sale. The shared rule keeps a
+    suggestion strictly below the THRESHOLD, which is right for the three
+    adapters that finish at capture and silently killed the upsell here on
+    exactly the biggest orders. This protocol's ceiling is her cap."""
+    result = propose(("paneer_bhurji", 2), ("tandoori_roti", 3))
+
+    assert result["payable"] is True
+    addon = result["suggested_addon"]
+    assert addon["item_id"] == "filter_coffee"
+    assert result["total_inr"] + addon["price_inr"] < 500, "an add-on must stay under her cap"
+
+
+def test_the_addon_explains_itself(db):
+    """`basis` is what lets the assistant say why rather than presenting a
+    hunch, and the instruction is never to add it unasked."""
+    addon = propose(("paneer_bhurji", 2), ("tandoori_roti", 3))["suggested_addon"]
+
+    assert addon["basis"] == "goes well with this order"
+    assert "Never add it on their behalf" in addon["how_to_offer"]
+
+
+def test_an_addon_can_never_push_a_cart_past_her_cap(db):
+    """The ceiling moved from threshold to cap; it did not disappear. An
+    add-on that made the order unbuyable would be worse than none."""
+    import merchant_config
+
+    cap = merchant_config.current_mandate().budget_cap_inr
+    for line in ((("chicken_biryani", 2),), (("veg_thali", 3),), (("paneer_bhurji", 3),)):
+        result = propose(*line)
+        addon = result.get("suggested_addon")
+        if addon:
+            assert result["total_inr"] + addon["price_inr"] < cap, line
+
+
+def test_an_unpayable_cart_is_never_upsold(db):
+    """Nothing to add to an order she will not take at all."""
+    assert "suggested_addon" not in propose(("party_catering_tray", 1))
+
+
+def test_the_addon_does_not_touch_the_decision(db):
+    """It is computed after the verdict and reported beside it. Same cart,
+    same answer, whether or not a suggestion came back."""
+    result = propose(("paneer_bhurji", 2), ("tandoori_roti", 3))
+    row = audit_log.get_events_for_agent("mcp:claude", db_path=db)[0]
+
+    assert "suggested_addon" in result
+    assert row["decision"] == "ESCALATE"
+    assert row["total_inr"] == 450, "the suggestion was not priced into the order"
+
+
+def test_propose_cart_tells_the_model_to_offer_it_not_add_it(db):
+    """The description is the only thing that makes a real client mention
+    the suggestion at all -- the same lesson as the ESCALATE wording."""
+    tools = {t.name: t for t in asyncio.run(adapter_mcp.mcp_server.list_tools())}
+    description = tools["propose_cart"].description
+
+    assert "suggested_addon" in description
+    assert "Never add it yourself" in description

@@ -370,6 +370,52 @@ def reject_mcp_order(order_id: str) -> dict:
     return human_reject(order_id)
 
 
+def _addon_for_a_payable_escalation(
+    detail: dict, cart: list[tuple[str, int]], payable: bool
+) -> dict | None:
+    """An add-on for a cart that is over her confirmation threshold but
+    still payable. MCP only, and only for that case.
+
+    orchestrator.negotiate_and_record() suggests an add-on for APPROVE
+    carts only, and negotiation.suggest_upsell() keeps the total strictly
+    below the confirmation threshold -- because for ACP, AP2 and x402 an
+    upsell that crossed it would turn a finished sale into one waiting on
+    a human. That rule is right for them and stays.
+
+    Under pay-first it costs this protocol every add-on on exactly the
+    orders worth the most. A Rs.450 dinner already needs her nod, gets it
+    right after payment, and refunds automatically if she declines -- so
+    the limit that actually applies to a suggestion here is her BUDGET
+    CAP, not her threshold.
+
+    The rule, stated once: an add-on may never make the order worse than
+    it already is. Already escalating -> the ceiling is the cap. Approved
+    -> the ceiling stays the threshold, because turning an auto-confirmed
+    order into one she has to look at is not an improvement for anybody.
+
+    Nothing about the DECISION changes: negotiation.py already said what
+    it said, this runs afterwards, and the same core function applies
+    affordability, category and stock to the result.
+    """
+    if not payable or detail.get("decision") != "ESCALATE":
+        return None
+    if _HUMAN_OVERRIDABLE_MARKER not in (detail.get("reason") or ""):
+        return None
+
+    import dataclasses
+
+    mandate = merchant_config.current_mandate()
+    # -1 inside suggest_upsell then keeps the new total strictly BELOW the
+    # cap, so an add-on can never be the thing that makes an order
+    # unbuyable -- the same guarantee it gives at the threshold.
+    to_the_cap = dataclasses.replace(
+        mandate, human_confirm_threshold_inr=mandate.budget_cap_inr
+    )
+    return orchestrator.suggest_addon(
+        cart, to_the_cap, merchant_config.current_menu(), db_path=audit_log.DEFAULT_DB_PATH
+    )
+
+
 def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
     """The same object every other adapter returns, differently wrapped."""
     decision = detail["decision"]
@@ -387,6 +433,11 @@ def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
         "payable": payable,
         "next_step": _PAYABLE_NEXT_STEP if payable else _UNPAYABLE_NEXT_STEP,
     }
+    suggestion = detail.get("upsell_suggestion") or _addon_for_a_payable_escalation(
+        detail, cart, payable
+    )
+    if suggestion:
+        detail = dict(detail, upsell_suggestion=suggestion)
     if detail.get("upsell_suggestion"):
         # Same data the other adapters get -- suggest_upsell() ranked by
         # audit_log.get_frequent_addons(). Surfaced under a name that
@@ -737,7 +788,11 @@ def get_catalog() -> dict:
         "customer anything about the kitchen's internal order limits or suggest "
         "they order less to stay under one. Item ids must come from get_catalog; "
         "anything the kitchen does not sell is named back to you rather than "
-        "substituted. This does not take any payment. Also pass along the context the user gave for wanting this order: "
+        "substituted. This does not take any payment. If the answer carries a "
+        "`suggested_addon`, mention it to the customer once, in a sentence, and let them "
+        "decide -- it is what goes with what they ordered, and `basis` says why. If they "
+        "want it, call propose_cart again with it included. Never add it yourself, and "
+        "never push it twice. Also pass along the context the user gave for wanting this order: "
         "the kitchen can see the cart and the price, but has no other way to know who "
         "it is for or what the occasion is. "
         "ALWAYS call this tool with whatever the user asked for. Do not decide "

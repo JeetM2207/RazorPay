@@ -932,6 +932,61 @@ Beats now demonstrable live with two people that weren't on the original list:
 - A settlement with **no card form and no OTP** at all.
 - The merchant **changing her own limits mid-demo** and the next order obeying them.
 
+## The add-on that never fired, and the one that fired wrong
+
+Two separate faults, found by ordering 2x Paneer Bhurji + 3x Tandoori Roti (Rs.450)
+through a real Claude conversation and getting no suggestion at all.
+
+**It was never computed.** `orchestrator.negotiate_and_record()` only asks for an add-on
+when the decision is APPROVE. Under pay-first a threshold escalation is a *sale* -- paid
+immediately, confirmed by Amma straight after, refunded automatically if she declines --
+so this protocol was losing the upsell on precisely its largest orders.
+
+**And it could not have fitted anyway.** `negotiation.suggest_upsell()` keeps the total
+strictly below the human-confirm **threshold**, so at Rs.450 there was no headroom at
+all. That rule is right for ACP, AP2 and x402, where crossing the threshold turns a
+finished sale into one waiting on a human, and it stays exactly as it is.
+
+`adapter_mcp._addon_for_a_payable_escalation()` asks the same core function with her
+**budget cap** as the ceiling instead, and only for a cart that is *already* escalating.
+The rule, stated once: **an add-on may never make the order worse than it already is.**
+Already over the threshold, so the cap is what binds; approved, and the threshold still
+binds, because turning an auto-confirmed order into one she has to look at is not an
+improvement for anybody. `negotiation.py` is untouched -- the ceiling arrives as a field
+on the mandate it was always given, and the `-1` inside it keeps the new total strictly
+below the cap, so an add-on can never be what makes an order unbuyable.
+
+**The second fault was worse, because it was silent.** With no history, `suggest_upsell()`
+falls back to "the most expensive item that still fits" -- so a single Rs.80 Masala Dosa
+was offered a Rs.220 Chicken Biryani. A second main course, to someone who just ordered
+dinner. Nobody accepts that, so the revenue hook earned nothing and taught customers the
+suggestions were noise.
+
+`upsell_ranking.py` supplies what was missing: candidates ordered by how well their
+*category* complements the cart, with a category already in the cart pushed to the bottom
+because a second coffee is not an upsell. It is a small table a cook could read and
+correct, deliberately not a model -- the same cart must give the same answer on different
+days. It reaches the core through the **`ranked_addons` parameter that already existed for
+history**, so it decides and filters nothing; a pairing that breaks a limit is refused
+exactly as a popular item is. A test asserts it imports nothing I/O-related, checked on
+real imports rather than string mentions.
+
+Order of preference: **history, then pairing, then best-value.** Evidence outranks
+opinion, and `basis` says which one answered -- "bought together before" / "goes well with
+this order" / "best value that fits" -- so the assistant can say *why* instead of
+presenting a hunch. This part is not MCP-specific: the cold-start fallback was bad for
+every adapter, so the fix is in `orchestrator.suggest_addon()` where all four get it.
+
+Checked against the live trail rather than asserted: Paneer Bhurji + Tandoori Roti returns
+Filter Coffee from **real** co-purchase history, and the pairing table independently ranks
+it first too. Masala Dosa still returns Chicken Biryani -- and that is correct, because
+six genuinely paid orders in this database contain both. History is *supposed* to beat the
+table when it disagrees.
+
+The tool description now tells the model to mention `suggested_addon` once and let the
+customer decide. That sentence is load-bearing for the same reason the ESCALATE wording
+was: nothing surfaces unless the description says to surface it.
+
 ## Before a demo, run the check
 
 Every bug in this project's history was invisible until a real request went through a

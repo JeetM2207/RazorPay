@@ -14,6 +14,7 @@ import merchant_config
 import negotiation
 import razorpay_client
 import trust
+import upsell_ranking
 
 
 def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int]]) -> dict:
@@ -51,26 +52,63 @@ def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int
     }
 
     if result.decision == negotiation.Decision.APPROVE:
-        # The history lookup happens HERE, not inside negotiation.py, so
-        # the decision core stays free of I/O. The core receives the
-        # ranking as plain data and still applies every mandate limit to
-        # it -- popularity reorders candidates, it never admits one.
-        ranked_addons = audit_log.get_frequent_addons(
-            [name for name, _qty in cart], db_path=db_path
-        )
-        upsell = negotiation.suggest_upsell(
-            cart, mandate=adjusted_mandate, menu=menu, ranked_addons=ranked_addons
-        )
-        if upsell:
-            response["upsell_suggestion"] = {
-                "item": upsell.name,
-                "price_inr": upsell.price_inr,
-                # Lets the merchant console say WHY this was suggested,
-                # rather than presenting it as an unexplained hunch.
-                "basis": "bought together before" if upsell.name in ranked_addons else "best value that fits",
-            }
+        suggestion = suggest_addon(cart, adjusted_mandate, menu, db_path=db_path)
+        if suggestion:
+            response["upsell_suggestion"] = suggestion
 
     return response
+
+
+def suggest_addon(
+    cart: list[tuple[str, int]],
+    mandate,
+    menu: dict,
+    db_path: str | None = None,
+) -> dict | None:
+    """One optional add-on to offer, or None. Never affects a decision.
+
+    Split out of negotiate_and_record so the MCP adapter can ask the same
+    question with its own ceiling -- see adapter_mcp. Everything that
+    decides anything still happens in negotiation.suggest_upsell(); this
+    only assembles the ranking and labels the answer.
+
+    The history lookup happens HERE, not inside negotiation.py, so the
+    decision core stays free of I/O. It receives the ranking as plain
+    data and still applies every mandate limit to it -- a ranking
+    reorders candidates, it never admits one.
+    """
+    db_path = db_path or audit_log.DEFAULT_DB_PATH
+    names = [name for name, _qty in cart]
+
+    # Evidence first: what people actually paid for alongside these items.
+    ranked_addons = audit_log.get_frequent_addons(names, db_path=db_path)
+    # Then what simply goes with it, which is what a new merchant has
+    # instead of history. Without this the core falls back to "priciest
+    # thing that fits", and offers a second main course to someone who
+    # just ordered dinner.
+    pairings = upsell_ranking.complements(cart, menu)
+    ranking = ranked_addons + [name for name in pairings if name not in ranked_addons]
+
+    upsell = negotiation.suggest_upsell(
+        cart, mandate=mandate, menu=menu, ranked_addons=ranking
+    )
+    if not upsell:
+        return None
+
+    if upsell.name in ranked_addons:
+        basis = "bought together before"
+    elif upsell.name in pairings:
+        basis = "goes well with this order"
+    else:
+        basis = "best value that fits"
+
+    return {
+        "item": upsell.name,
+        "price_inr": upsell.price_inr,
+        # Lets the merchant console and the assistant say WHY this was
+        # suggested, rather than presenting it as an unexplained hunch.
+        "basis": basis,
+    }
 
 
 def create_payment_for_cart(
