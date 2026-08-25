@@ -932,6 +932,42 @@ Beats now demonstrable live with two people that weren't on the original list:
 - A settlement with **no card form and no OTP** at all.
 - The merchant **changing her own limits mid-demo** and the next order obeying them.
 
+## Before a demo, run the check
+
+Every bug in this project's history was invisible until a real request went through a
+real service. A stale webhook secret held by a running process, a tunnel whose domain was
+not in `MCP_ALLOWED_HOSTS`, tool descriptions that contradicted the code, a lock left
+behind by a failed checkout — the unit suite was green through all of them.
+
+```
+python scripts/predemo_check.py
+```
+
+Eleven checks, each one something that has actually broken: server and tunnel up, the
+tunnel's domain actually allowed, a **signed** webhook `ping` accepted both locally and
+publicly (which is the only way to catch a running process holding a different secret
+than `.env`), Razorpay keys valid and link headroom left, a webhook registered *at the
+current tunnel*, which message transport is live, the MCP tools reachable over the public
+URL with wording that still matches the flow, no stuck checkout locks, and no paid order
+sitting undecided. It changes nothing — the `ping` is an event type the handler ignores
+before it claims anything.
+
+`scripts/unstick_checkouts.py` reports and (with `--release`) frees locks whose payment
+link was never created. Both share one detector, so the check and the fix cannot disagree
+about what counts as stuck. Writing it caught its own bug immediately: judging each audit
+row alone flagged eight healthy carts, because a cart proposed twice and bought once
+leaves sibling rows with no link of their own. A fingerprint that reached a real link is
+never stuck, and its lock must stay.
+
+**Testing burns the same quota as demoing.** Twilio's trial caps at 50 messages a day
+with no counter anywhere in its console, and 50 is about ten times what a five-minute
+pitch needs — but two evenings of iterating exhausted it and the demo silently stopped
+working. So `SMS_ENABLED=false` is the default while developing: the mock exercises the
+identical escalation logic, reply parser and routing, with the console's reply boxes
+posting to the same `/webhook/sms-reply`. Set it back to `true` for the demo, and send
+the sandbox join code first — WhatsApp's own 24-hour session window closes on you
+otherwise, and that rule follows you to any provider.
+
 ## Known gaps, stated plainly
 
 Worth being able to answer rather than being caught by:
