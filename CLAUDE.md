@@ -971,14 +971,30 @@ was offered a Rs.220 Chicken Biryani. A second main course, to someone who just 
 dinner. Nobody accepts that, so the revenue hook earned nothing and taught customers the
 suggestions were noise.
 
-`upsell_ranking.py` supplies what was missing: candidates ordered by how well their
-*category* complements the cart, with a category already in the cart pushed to the bottom
-because a second coffee is not an upsell. It is a small table a cook could read and
-correct, deliberately not a model -- the same cart must give the same answer on different
-days. It reaches the core through the **`ranked_addons` parameter that already existed for
-history**, so it decides and filters nothing; a pairing that breaks a limit is refused
-exactly as a popular item is. A test asserts it imports nothing I/O-related, checked on
-real imports rather than string mentions.
+`upsell_ranking.py` supplies what was missing, and **everything it knows it derives from
+the menu it is handed**. The first version was a table of food pairings -- meals want
+beverages, snacks want desserts. It read well and it was wrong, because the menu belongs
+to the merchant: she can rename a category, add "breads" or "tiffin" or "hampers", or run
+a shop with no beverages at all, and a hardcoded table silently stops applying to the shop
+it is meant to be selling. Nothing in that module now names a category, a dish or a price.
+Two rules, both computed live:
+
+1. **Something they have not got yet** — a category already in the cart is the one they
+   need least, because a second coffee is not an upsell.
+2. **An accompaniment, not another main** — an add-on worth more than half the order reads
+   as a second dinner. That single fraction is what keeps a Rs.30 coffee ahead of a Rs.220
+   biryani for a Rs.80 dosa, without anyone having to say so, and it holds just as well on
+   a Rs.30 order or a Rs.900 one.
+
+Within those, dearest first, then by name so the ranking is stable rather than dependent
+on dict order. It reaches the core through the **`ranked_addons` parameter that already
+existed for history**, so it decides and filters nothing; a pairing that breaks a limit is
+refused exactly as a popular item is. Tests assert it imports nothing I/O-related (on real
+imports, not string mentions) and run it against menus it has never seen: invented
+categories, a shop selling only one category, an unticked in-person-only dish, and an
+out-of-stock one. The assertions are properties -- *not the same category they ordered*,
+*at most half the order*, *under her cap* -- rather than named dishes, because a test that
+pins one of her dishes is a test that breaks the moment she edits her shop.
 
 Order of preference: **history, then pairing, then best-value.** Evidence outranks
 opinion, and `basis` says which one answered -- "bought together before" / "goes well with
@@ -995,9 +1011,12 @@ it first too. Masala Dosa still returns Chicken Biryani -- and that is correct, 
 six genuinely paid orders in this database contain both. History is *supposed* to beat the
 table when it disagrees.
 
-The tool description now tells the model to offer `suggested_addon` **every time** one
-comes back, in one sentence before checkout, and to carry on to checkout unchanged if the
-customer declines. That sentence is load-bearing for the same reason the ESCALATE wording
+The server instructions now spell out the whole sequence, because the add-on step is only
+real if it happens at the right moment: **get_catalog → propose_cart → offer the add-on →
+ask for name, phone and address → checkout.** The description tells the model to offer
+`suggested_addon` **every time** one comes back, in one sentence *before* asking for
+delivery details, and to carry on unchanged if the customer declines. It also says to
+fetch the menu rather than remember it, since the merchant changes it whenever she likes. That sentence is load-bearing for the same reason the ESCALATE wording
 was: nothing surfaces unless the description says to surface it.
 
 ## Before a demo, run the check

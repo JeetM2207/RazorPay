@@ -6,69 +6,72 @@ than opinion. But a merchant who has just opened has no history, and
 until she has some, `negotiation.suggest_upsell()` falls back to "the
 most expensive thing that still fits".
 
-That fallback produces bad suggestions. Two Paneer Bhurji and three
-Tandoori Roti, and it offers a Chicken Biryani: the priciest item that
-fits, and a second main course for people who already ordered dinner.
-Nobody says yes to that, so the revenue hook earns nothing and the
-customer learns the suggestions are noise.
+That fallback produces bad suggestions. One Rs.80 Masala Dosa, and it
+offers a Rs.220 Chicken Biryani: the priciest item that fits, and a
+second main course for somebody who already ordered dinner. Nobody says
+yes, so the revenue hook earns nothing and the customer learns the
+suggestions are noise.
 
-This module supplies the missing ordering: candidates ranked by how well
-their CATEGORY complements what is already in the cart. It decides
-nothing and filters nothing -- it hands `suggest_upsell()` a preference
-order through the `ranked_addons` parameter that already exists for
-history, and the core still applies affordability, category and stock to
-whatever comes back. A complement that breaks a limit is refused exactly
-as a popular one is.
+This module supplies the missing ordering. It decides and filters
+nothing: it hands `suggest_upsell()` a preference order through the
+`ranked_addons` parameter that already exists for history, and the core
+still applies affordability, category and stock to whatever comes back.
+A pairing that breaks a limit is refused exactly as a popular item is.
+
+Everything here is derived from the menu it is given
+-------------------------------------------------------------
+The first version of this was a table of food pairings -- meals want
+beverages, snacks want desserts, and so on. It read well and it was
+wrong, because the menu belongs to the merchant. She can rename a
+category, add "breads" or "combos" or "tiffin", or run a shop with no
+beverages at all, and a hardcoded table silently stops applying to the
+shop it is supposed to be selling. Nothing below names a category, a dish
+or a price. Two rules, both computed from the live menu and the cart:
+
+1. **Something they have not got yet.** A category already in the cart is
+   the one they need least -- a second coffee is not an upsell.
+2. **An accompaniment, not another main.** An add-on that costs a large
+   fraction of the order is a second dinner. Preferring the dearest item
+   that still sits comfortably under the order's own size is what keeps a
+   Rs.30 coffee ahead of a Rs.220 biryani for a Rs.80 dosa, without
+   anyone having to say so.
+
+Within those, dearest first -- among suggestions someone would plausibly
+accept, the merchant is offered the more valuable one -- then by name, so
+the ranking is stable rather than dependent on dict order.
 """
 
 from mandate import MenuItem
 
-# What each category in the cart makes you want next, best first.
-#
-# Deliberately a table rather than a model: it is a handful of food
-# pairings a cook could read and correct, and putting an LLM anywhere near
-# the suggestion path would make the same cart give different answers on
-# different days.
-_COMPLEMENTS: dict[str, tuple[str, ...]] = {
-    "meals": ("beverages", "desserts", "snacks"),
-    "snacks": ("beverages", "desserts", "meals"),
-    "beverages": ("snacks", "desserts", "meals"),
-    "desserts": ("beverages", "snacks", "meals"),
-}
+# An add-on worth more than this share of the order stops reading as an
+# extra and starts reading as a second meal. A fraction rather than a
+# rupee figure, because it has to hold for a Rs.30 order and a Rs.500 one
+# on a menu whose prices the merchant changes whenever she likes.
+_ACCOMPANIMENT_SHARE = 0.5
 
 
-def _cart_categories(cart: list[tuple[str, int]], menu: dict[str, MenuItem]) -> set[str]:
-    return {menu[name].category for name, _qty in cart if name in menu}
-
-
-def complements(
-    cart: list[tuple[str, int]], menu: dict[str, MenuItem]
-) -> list[str]:
+def complements(cart: list[tuple[str, int]], menu: dict[str, MenuItem]) -> list[str]:
     """Item names ordered by how well they complement this cart.
 
-    Returns every item not already in the cart, most complementary first.
-    Ties break on price descending, so among equally-fitting suggestions
-    the merchant is offered the more valuable one -- and then on name, so
-    the ranking is stable rather than dependent on dict order.
+    Returns every item on the menu that is not already in the cart, most
+    complementary first. Judging is left entirely to the caller.
     """
     if not cart:
         return []
 
-    present = _cart_categories(cart, menu)
-    scores: dict[str, int] = {}
-    for category in present:
-        for position, complement in enumerate(_COMPLEMENTS.get(category, ())):
-            # Earlier in the list is a better pairing. Summed across the
-            # cart's categories, so a mixed cart wants what suits all of it.
-            scores[complement] = scores.get(complement, 0) + (3 - position)
-
     in_cart = {name for name, _qty in cart}
+    cart_categories = {menu[name].category for name in in_cart if name in menu}
+    cart_total = sum(menu[name].price_inr * qty for name, qty in cart if name in menu)
+    accompaniment_ceiling = cart_total * _ACCOMPANIMENT_SHARE
 
-    def rank(item: MenuItem) -> tuple[int, int, str]:
-        score = scores.get(item.category, 0)
-        if item.category in present:
-            # They already have one. A second drink is not an upsell.
-            score -= 5
-        return (-score, -item.price_inr, item.name)
+    def rank(item: MenuItem) -> tuple[int, int, int, str]:
+        return (
+            # They already have this category; it is what they need least.
+            1 if item.category in cart_categories else 0,
+            # Small enough beside the order to read as an addition to it.
+            0 if item.price_inr <= accompaniment_ceiling else 1,
+            -item.price_inr,
+            item.name,
+        )
 
     return [item.name for item in sorted(menu.values(), key=rank) if item.name not in in_cart]

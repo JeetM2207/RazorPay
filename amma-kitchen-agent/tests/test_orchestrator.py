@@ -96,20 +96,25 @@ def test_create_payment_for_cart_calls_razorpay_and_attaches_link(tmp_path, monk
 
 # ------------------------------------------- what actually goes with what
 
-def test_a_cold_start_suggestion_is_a_pairing_not_the_priciest_item(tmp_path, monkeypatch):
-    """Two Paneer Bhurji and three Tandoori Roti is dinner for a few
-    people. The old fallback offered whatever cost the most and still
-    fit -- another main course. A drink is the suggestion someone might
-    actually say yes to."""
+def test_a_cold_start_suggestion_is_an_accompaniment_not_another_main(tmp_path, monkeypatch):
+    """The old fallback offered whatever cost the most and still fit,
+    which meant a second main course. Asserted as properties rather than
+    a named dish: the menu belongs to the merchant, and a test that pins
+    one of her dishes is a test that breaks when she edits her shop."""
+    import merchant_config
+
     monkeypatch.setattr(audit_log, "DEFAULT_DB_PATH", str(tmp_path / "audit.db"))
+    menu = merchant_config.current_menu()
+    cart = [("paneer_bhurji", 1), ("tandoori_roti", 3)]
 
-    detail = orchestrator.negotiate_and_record(
-        "pair-1", "acp", [("paneer_bhurji", 1), ("tandoori_roti", 3)]
-    )
+    detail = orchestrator.negotiate_and_record("pair-1", "acp", cart)
     suggestion = detail["upsell_suggestion"]
+    suggested = menu[suggestion["item"]]
 
-    assert suggestion["item"] == "filter_coffee"
     assert suggestion["basis"] == "goes well with this order"
+    ordered_categories = {menu[name].category for name, _qty in cart}
+    assert suggested.category not in ordered_categories, "offered more of what they have"
+    assert suggested.price_inr <= detail["total_inr"] / 2, "that is a second dinner"
 
 
 def test_it_never_suggests_a_second_of_what_they_already_have(tmp_path, monkeypatch):

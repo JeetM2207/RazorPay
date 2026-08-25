@@ -1036,3 +1036,104 @@ def test_the_model_is_told_to_offer_it_every_time(db):
     assert "ALWAYS offer the `suggested_addon`" in description
     assert "every time" in description
     assert "Never add it yourself" in description
+
+
+# ------------------------------------- the menu is hers, and it changes
+
+def test_the_addon_follows_a_menu_it_has_never_seen(db):
+    """The pairing logic must be derived from whatever she is selling
+    today, not from a table of categories somebody wrote once.
+
+    Nothing here appears anywhere in the source: her categories, her
+    dishes and her prices are all invented in this test, and the
+    suggestion still has to come from a category the customer has not
+    ordered and be small enough beside the order to read as an addition
+    rather than a second meal."""
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 900, "human_confirm_threshold_inr": 500},
+        menu_in=[
+            {"title": "Bisi Bele Bath", "category": "tiffin", "price_inr": 180, "stock": 10},
+            {"title": "Set Dosa", "category": "tiffin", "price_inr": 120, "stock": 10},
+            {"title": "Elaichi Chai", "category": "chai", "price_inr": 25, "stock": 40},
+            {"title": "Mysore Pak", "category": "sweets", "price_inr": 70, "stock": 20},
+            {"title": "Banana Chips", "category": "kondattam", "price_inr": 40, "stock": 30},
+        ],
+    )
+    menu = merchant_config.current_menu()
+    bath = next(i for i in menu.values() if i.price_inr == 180)
+
+    result = propose((bath.name, 2))                     # Rs.360
+    addon = result["suggested_addon"]
+    suggested = menu[addon["item_id"]]
+
+    assert suggested.category != "tiffin", "offered more of what they already ordered"
+    assert suggested.price_inr <= result["total_inr"] / 2, "that is a second meal"
+    assert result["total_inr"] + addon["price_inr"] < 900, "over her cap"
+
+
+def test_a_shop_with_one_category_still_works(db):
+    """She may sell nothing but thalis. There is then no other category
+    to move to, and the logic must degrade to a sensible answer rather
+    than crashing or offering nothing."""
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 600, "human_confirm_threshold_inr": 400},
+        menu_in=[
+            {"title": "Small Thali", "category": "thali", "price_inr": 120, "stock": 10},
+            {"title": "Large Thali", "category": "thali", "price_inr": 200, "stock": 10},
+            {"title": "Extra Roti", "category": "thali", "price_inr": 20, "stock": 50},
+        ],
+    )
+    menu = merchant_config.current_menu()
+    large = next(i for i in menu.values() if i.price_inr == 200)
+
+    result = propose((large.name, 1))
+    addon = result.get("suggested_addon")
+
+    assert addon is not None, "a single-category shop was offered nothing at all"
+    assert addon["item_id"] != large.name, "offered the same dish again"
+    assert result["total_inr"] + addon["price_inr"] < 600
+
+
+def test_a_dish_the_merchant_unticked_is_never_suggested(db):
+    """agent_orderable=false keeps a dish off the agent channel. It must
+    not come back as an add-on either -- that would sell in-person-only
+    stock through the exact door she closed."""
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 900, "human_confirm_threshold_inr": 500},
+        menu_in=[
+            {"title": "Set Dosa", "category": "tiffin", "price_inr": 120, "stock": 10},
+            {"title": "Elaichi Chai", "category": "chai", "price_inr": 25, "stock": 40},
+            {"title": "Whole Sweet Box", "category": "hampers", "price_inr": 300,
+             "stock": 5, "agent_orderable": False},
+        ],
+    )
+    menu = merchant_config.current_menu()
+    dosa = next(i for i in menu.values() if i.price_inr == 120)
+    hamper = next(i for i in menu.values() if i.price_inr == 300)
+
+    for qty in (1, 2, 3):
+        addon = propose((dosa.name, qty)).get("suggested_addon")
+        if addon:
+            assert addon["item_id"] != hamper.name
+
+
+def test_an_out_of_stock_dish_is_never_suggested(db):
+    """Stock is the merchant's too, and it changes during a day."""
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 900, "human_confirm_threshold_inr": 500},
+        menu_in=[
+            {"title": "Set Dosa", "category": "tiffin", "price_inr": 120, "stock": 10},
+            {"title": "Elaichi Chai", "category": "chai", "price_inr": 25, "stock": 0},
+            {"title": "Mysore Pak", "category": "sweets", "price_inr": 70, "stock": 20},
+        ],
+    )
+    menu = merchant_config.current_menu()
+    dosa = next(i for i in menu.values() if i.price_inr == 120)
+    chai = next(i for i in menu.values() if i.price_inr == 25)
+
+    addon = propose((dosa.name, 2))["suggested_addon"]
+    assert addon["item_id"] != chai.name
