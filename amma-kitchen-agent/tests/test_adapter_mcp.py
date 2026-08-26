@@ -141,9 +141,14 @@ def test_the_catalog_stays_compact(db):
     """Custom connector responses have a token ceiling; nothing beyond
     what a buyer agent needs to build a cart belongs in here."""
     feed = adapter_mcp.get_catalog_impl()
-    assert set(feed["items"][0]) == {
-        "id", "title", "category", "price_inr", "in_stock", "agent_orderable"
-    }
+    base = {"id", "title", "category", "price_inr", "in_stock", "agent_orderable"}
+    # The two sale keys are the only permitted extras, and only on a dish
+    # that is genuinely discounted -- `on_sale: false` on every item would
+    # be eight lines of feed saying nothing.
+    for item in feed["items"]:
+        extra = set(item) - base
+        assert extra <= {"on_sale", "usual_price_inr"}, extra
+        assert not extra or item.get("on_sale") is True
 
 
 # -------------------------------------------------- skipped the catalog

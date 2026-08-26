@@ -119,6 +119,7 @@ def current_menu() -> dict[str, MenuItem]:
 def as_dict() -> dict:
     """Everything the setup page needs to render itself."""
     mandate = current_mandate()
+    raw = _load()["menu"]
     return {
         "profile": profile(),
         "mandate": {
@@ -133,6 +134,8 @@ def as_dict() -> dict:
                 "title": item.name.replace("_", " ").title(),
                 "category": item.category,
                 "price_inr": item.price_inr,
+                "list_price_inr": raw[item.name].get("list_price_inr", item.price_inr),
+                "sale": bool(raw[item.name].get("sale", False)),
                 "stock": item.stock,
                 "agent_orderable": item.category in mandate.allowed_categories,
             }
@@ -244,11 +247,18 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict]) -> dict:
             raise ValueError(f"'{title}' can't have negative stock.")
 
         category = (row.get("category") or "").strip().lower().replace(" ", "_") or "meals"
+        # list_price_inr is what she actually charges; price_inr is what
+        # is being charged right now, which is lower while a sale is on.
+        # A row that carries neither is a row she typed by hand, so the
+        # price she typed becomes the list price and any sale ends -- see
+        # optimize_prices().
         menu[item_id] = {
             "name": item_id,
             "category": category,
             "price_inr": price,
             "stock": stock,
+            "list_price_inr": int(row.get("list_price_inr") or price),
+            "sale": bool(row.get("sale", False)),
         }
         # An item marked orderable contributes its category to the
         # allow-list; one marked otherwise is sold in person only.
@@ -276,3 +286,81 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict]) -> dict:
 
     _persist()
     return as_dict()
+
+
+# ------------------------------------------------- inventory-led pricing
+#
+# Writes ONLY to this module's live state, through save(), so every rule
+# save() already enforces still applies. negotiation.py is untouched and
+# unaware: it is handed a menu with a price on it, exactly as before, and
+# has no idea whether that price is a sale price. A discount is a fact
+# about the shop, not an input to a decision.
+
+HIGH_STOCK = 10      # more than this and it needs moving
+LOW_STOCK = 3        # fewer than this and it sells itself
+DISCOUNT_PCT = 15
+
+
+def _sale_price(list_price: int) -> int:
+    """Rounded DOWN to the rupee, and never below one.
+
+    Down rather than nearest, because the only direction that can
+    surprise a customer is upward -- Rs.127 advertised and Rs.128 charged
+    is a complaint, the reverse is not.
+    """
+    return max(1, int(list_price * (100 - DISCOUNT_PCT) // 100))
+
+
+def optimize_prices() -> dict:
+    """Discount what is piling up, restore what is running out.
+
+    Three bands, and the middle one is deliberately inert: above
+    HIGH_STOCK a dish goes on sale, below LOW_STOCK it goes back to her
+    list price, and in between whatever is already true stays true. That
+    is what lets a sale actually run -- a dish discounted at 20 portions
+    keeps its price the whole way down to 3, instead of flickering off
+    the moment it sells one.
+
+    The sale price is always derived from `list_price_inr`, NEVER from
+    the current price. Deriving it from the current price would compound:
+    two clicks of a 15% discount is 28% off, ten clicks is 80% off, and
+    nothing in the system would have flagged it. A test runs this five
+    times and asserts the price does not move after the first.
+    """
+    state = _load()
+    changed = []
+
+    rows = []
+    for item in as_dict()["menu"]:
+        row = dict(item)
+        list_price = int(row.get("list_price_inr") or row["price_inr"])
+        row["list_price_inr"] = list_price
+        was, on_sale = int(row["price_inr"]), bool(row.get("sale"))
+
+        if int(row["stock"]) > HIGH_STOCK:
+            row["price_inr"], row["sale"] = _sale_price(list_price), True
+        elif int(row["stock"]) < LOW_STOCK:
+            row["price_inr"], row["sale"] = list_price, False
+        # else: leave the dish exactly as it is.
+
+        if (row["price_inr"], row["sale"]) != (was, on_sale):
+            changed.append({
+                "id": row["id"],
+                "title": row["title"],
+                "was_inr": was,
+                "now_inr": row["price_inr"],
+                "stock": int(row["stock"]),
+                "sale": row["sale"],
+                "why": "discounted, plenty in stock" if row["sale"] else "back to list price, running low",
+            })
+        rows.append(row)
+
+    save(profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
+    return {
+        "changed": changed,
+        "discounted": sum(1 for c in changed if c["sale"]),
+        "restored": sum(1 for c in changed if not c["sale"]),
+        "discount_pct": DISCOUNT_PCT,
+        "high_stock": HIGH_STOCK,
+        "low_stock": LOW_STOCK,
+    }

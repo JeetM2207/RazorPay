@@ -37,6 +37,13 @@
     .insight-stat b { display:block; font-size:1.05rem; margin-bottom:1px; }
     .insight-stat.want { border-color:var(--warn); background:var(--warn-soft); }
     .insight-thinking { color:var(--muted, #888); font-style:italic; }
+    .yield-result { margin-top:13px; font-size:.86rem; }
+    .yield-result:empty { display:none; }
+    .yield-line { display:flex; gap:8px; padding:4px 0; border-top:1px solid var(--line); }
+    .yield-line:first-child { border-top:0; }
+    .yield-was { text-decoration:line-through; color:var(--muted, #999); }
+    .yield-now { font-weight:700; color:var(--ok); }
+    .yield-head { font-weight:600; margin-bottom:5px; }
   </style>
 </head>
 <body>
@@ -81,12 +88,16 @@
           <button class="btn btn-sm" id="insightBtn" onclick="loadInsights()">
             Read my numbers
           </button>
+          <button class="btn btn-sm btn-ghost" id="yieldBtn" onclick="optimizeYield()">
+            Optimize yield
+          </button>
         </div>
       </div>
       <div id="insightBody" class="insight-body">
         <span class="muted">Pick a window and press the button.</span>
       </div>
       <div id="insightStats" class="insight-stats"></div>
+      <div id="yieldResult" class="yield-result"></div>
     </div>
 
     <div class="mandate-strip" id="mandateStrip"></div>
@@ -514,6 +525,45 @@ async function loadInsights() {
     }
   } catch (err) {
     body.innerHTML = `<span class="muted">Couldn't reach the server: ${esc(err.message)}</span>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ------------------------------------------- Optimize yield (writes config)
+   The only button on this page that changes anything. It rewrites prices in
+   the live merchant config -- through the same save() the setup page uses, so
+   her validation still runs -- and catalog.py reads that config, so the next
+   buyer agent to fetch the menu sees the new prices.
+
+   Deliberately manual. Nothing schedules it; she presses it. */
+
+async function optimizeYield() {
+  const btn = $("yieldBtn"), out = $("yieldResult");
+  btn.disabled = true;
+  out.innerHTML = `<span class="insight-thinking">Checking what's piling up…</span>`;
+  try {
+    const res = await fetch("/api/merchant/optimize-prices", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.detail || "could not update prices");
+
+    if (!data.changed.length) {
+      out.innerHTML = `<span class="muted">Every price already suits your stock — nothing to change.</span>`;
+    } else {
+      out.innerHTML =
+        `<div class="yield-head">Repriced ${data.changed.length} ` +
+        `dish${data.changed.length === 1 ? "" : "es"} — buyer agents see this on their next fetch</div>` +
+        data.changed.map((c) => `
+          <div class="yield-line">
+            <span style="flex:1">${esc(c.title)}</span>
+            <span class="yield-was">${rupee(c.was_inr)}</span>
+            <span class="yield-now">${rupee(c.now_inr)}</span>
+            <span class="muted">${esc(c.stock)} left · ${esc(c.why)}</span>
+          </div>`).join("");
+    }
+    /* The rest of the page polls every 2s, so it catches up on its own. */
+  } catch (err) {
+    out.innerHTML = `<span class="muted">${esc(err.message)}</span>`;
   } finally {
     btn.disabled = false;
   }

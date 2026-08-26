@@ -380,3 +380,68 @@ def test_no_console_script_declares_the_same_name_twice():
                            page.read_text(encoding="utf-8"), re.MULTILINE)
         duplicates = {n for n in names if names.count(n) > 1}
         assert not duplicates, f"{page.name} declares {duplicates} more than once"
+
+
+def test_optimize_prices_endpoint_reprices_and_says_what_it_did(client):
+    import merchant_config
+
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 500, "human_confirm_threshold_inr": 400},
+        menu_in=[
+            {"title": "Veg Thali", "category": "meals", "price_inr": 200, "stock": 20},
+            {"title": "Last Laddu", "category": "desserts", "price_inr": 40, "stock": 1},
+        ],
+    )
+
+    body = client.post("/api/merchant/optimize-prices").json()
+
+    assert body["discounted"] == 1
+    assert [c["id"] for c in body["changed"]] == ["veg_thali"]
+    assert body["changed"][0]["now_inr"] == 170
+
+    # And the very next catalog fetch already carries it.
+    item = {i["id"]: i for i in client.get("/catalog").json()["items"]}["veg_thali"]
+    assert item["price"] == 170 and item["sale"] is True
+
+
+def test_optimize_prices_is_safe_to_press_twice(client):
+    import merchant_config
+
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 500, "human_confirm_threshold_inr": 400},
+        menu_in=[{"title": "Veg Thali", "category": "meals", "price_inr": 200, "stock": 20}],
+    )
+
+    assert client.post("/api/merchant/optimize-prices").json()["discounted"] == 1
+    second = client.post("/api/merchant/optimize-prices").json()
+    assert second["changed"] == [], "a second press moved a price again"
+
+
+def test_pricing_never_reaches_the_decision_core(client):
+    """The feature writes to the live config and nothing else. The core
+    is handed a menu with prices on it, exactly as it always was."""
+    import ast
+
+    import negotiation
+
+    with open(negotiation.__file__) as handle:
+        source = handle.read()
+    tree = ast.parse(source)
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported.update(a.name.split(".")[0] for a in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module.split(".")[0])
+
+    assert "merchant_config" not in imported
+    for word in ("optimize_prices", "sale", "list_price"):
+        assert word not in source, f"negotiation.py knows about {word}"
+
+
+def test_the_console_offers_the_button(client):
+    page = client.get("/merchant/orders").text
+    assert "Optimize yield" in page
+    assert "optimizeYield" in page

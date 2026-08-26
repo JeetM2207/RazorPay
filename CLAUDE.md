@@ -176,7 +176,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 380 tests; test_negotiation.py still matters most
+  tests/                  # 393 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -961,7 +961,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**380 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**393 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1117,6 +1117,48 @@ blank, while a test asserting `loadInsights` appeared in the HTML passed happily
 that a string is present cannot tell you the script parses. There is now a test that scans
 every page for a top-level name declared twice, and it was confirmed to fail with the
 duplicate put back.
+
+## Inventory-led pricing: the AI that acts, not just reads
+
+The Strategist reads her numbers. `merchant_config.optimize_prices()` is the other half —
+she presses **Optimize yield** and the shop reprices itself: anything above `HIGH_STOCK`
+(10) goes 15% off and is flagged `sale`, anything below `LOW_STOCK` (3) goes back to her
+list price. `catalog.py` reads the same live config, so a buyer agent sees the new prices
+on its very next fetch. Nothing is pushed and nothing is scheduled.
+
+**The core never learns a sale exists.** `MenuItem` carries name, category, price and
+stock — there is no room on it for a flag, and that is the right shape: a discount is a
+fact about the shop, not an input to a decision. `negotiation.py` is handed a menu with
+prices on it exactly as before and simply prices the cheaper cart. A test asserts the
+words `sale` and `list_price` do not appear in it at all. The write goes through the same
+`merchant_config.save()` the setup page uses, so every validation she is already protected
+by still runs, and a refused save leaves the shop untouched.
+
+**The one-line bug this feature is always next to.** A sale price must be derived from
+`list_price_inr`, never from the current price. Deriving it from the current price
+compounds: two presses is 28% off, ten presses is 80%, and nothing in the system would
+have flagged it — the config would still validate, the catalog would still publish, and
+the orders would still settle. A test presses it five times and asserts the price does not
+move after the first.
+
+Three smaller decisions worth keeping:
+
+- **The middle band is inert on purpose.** Between 3 and 10 portions, whatever is already
+  true stays true. That is what lets a sale actually *run* — a dish discounted at 20
+  portions keeps its price the whole way down to 3, instead of flickering off the moment
+  one sells.
+- **Rounded down, never below a rupee.** The only direction that can surprise a customer
+  is upward: Rs.127 advertised and Rs.128 charged is a complaint, the reverse is not.
+- **Typing a price by hand ends the sale.** Her shop page shows the effective price, so
+  saving it would otherwise bake a discount in as her new list price and ratchet it down
+  every time she edited anything. Instead the number she typed becomes the list price and
+  the sale clears — and the shop page says *"on sale — you usually charge Rs.150"* so she
+  is never reading a number she did not type without knowing why.
+
+The MCP feed carries `on_sale` and `usual_price_inr` **only on a dish that is actually
+discounted**. `on_sale: false` on every item is eight lines of a token-capped response
+saying nothing, while on the one reduced dish the old price is exactly the reason to order
+it today.
 
 ## Before a demo, run the check
 

@@ -18,6 +18,10 @@ router = APIRouter()
 
 @router.get("/catalog")
 def get_catalog() -> dict:
+    # Sale state lives in the config rather than on MenuItem, because
+    # MenuItem is what negotiation.py is handed and the core has no
+    # business knowing whether a price is a sale price.
+    sale_state = {row["id"]: row for row in merchant_config.as_dict()["menu"]}
     return {
         "merchant": {"name": merchant_config.profile()["shop_name"], "currency": "INR"},
         "items": [
@@ -33,6 +37,10 @@ def get_catalog() -> dict:
                 # sells are still not orderable by an autonomous agent.
                 # Saying so here saves the agent a wasted round-trip.
                 "agent_orderable": item.category in _m().allowed_categories,
+                # Published so a buyer agent can see value rather than
+                # just a number. list_price is what it normally costs.
+                "sale": bool(sale_state.get(item.name, {}).get("sale")),
+                "list_price": sale_state.get(item.name, {}).get("list_price_inr", item.price_inr),
             }
             for item in merchant_config.current_menu().values()
         ],

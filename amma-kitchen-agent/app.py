@@ -383,6 +383,27 @@ def unmatched_demand() -> dict:
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
 
 
+@app.post("/api/merchant/optimize-prices")
+def optimize_prices() -> dict:
+    """Discount what is piling up; restore what is running out.
+
+    Writes only to the live merchant config, through the same
+    merchant_config.save() the setup page uses -- so every validation
+    rule she is already protected by still runs. negotiation.py is
+    untouched and unaware: it receives a menu with prices on it, exactly
+    as before, and a sale price is just a price.
+
+    Because catalog.py reads that config, a buyer agent sees the new
+    prices on its very next fetch. Nothing is scheduled -- she presses
+    the button.
+    """
+    try:
+        return merchant_config.optimize_prices()
+    except ValueError as exc:
+        # save() refused. Her shop is untouched, and she gets the reason.
+        raise HTTPException(400, str(exc))
+
+
 @app.get("/api/insights")
 def growth_insights(hours: int = 24) -> dict:
     """Read-only growth insights: her own numbers, plus two sentences of

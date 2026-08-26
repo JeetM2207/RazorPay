@@ -464,6 +464,30 @@ def _decision_response(detail: dict, cart: list[tuple[str, int]]) -> dict:
 # Kept as plain functions so they are directly testable without standing
 # up a transport. The MCP registrations below are thin wrappers.
 
+def _catalog_item(item: dict) -> dict:
+    """One dish, as small as it can honestly be.
+
+    The sale keys are added ONLY when a dish is actually discounted. A
+    custom connector response has a token ceiling, and `on_sale: false`
+    on every dish is eight lines saying nothing -- while on the one dish
+    that is reduced, the old price is exactly the reason to order it.
+    """
+    row = {
+        "id": item["id"],
+        "title": item["title"],
+        "category": item["category"],
+        "price_inr": item["price"],
+        "in_stock": item["availability"] == "in_stock",
+        "agent_orderable": item["agent_orderable"],
+    }
+    if item.get("sale"):
+        # A discount is a fact about the dish, not one of her limits, so
+        # it is safe to say out loud -- and worth saying.
+        row["on_sale"] = True
+        row["usual_price_inr"] = item["list_price"]
+    return row
+
+
 def get_catalog_impl() -> dict:
     """Wraps catalog.py rather than re-deriving the feed, and trims the
     per-item currency repetition -- custom connector responses have a
@@ -480,17 +504,7 @@ def get_catalog_impl() -> dict:
     feed = catalog.get_catalog()
     return {
         "merchant": feed["merchant"],
-        "items": [
-            {
-                "id": item["id"],
-                "title": item["title"],
-                "category": item["category"],
-                "price_inr": item["price"],
-                "in_stock": item["availability"] == "in_stock",
-                "agent_orderable": item["agent_orderable"],
-            }
-            for item in feed["items"]
-        ],
+        "items": [_catalog_item(item) for item in feed["items"]],
         "note": (
             "Items with agent_orderable=false are sold in person only and will be "
             "refused if ordered. Call propose_cart to find out whether a particular "

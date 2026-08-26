@@ -64,7 +64,10 @@
     font-size: 12.5px; color: #14486f; line-height: 1.5; margin-bottom: 18px;
   }
   .live-note b { color: #0b3a5c; }
-</style>
+
+    .dish-sale { grid-column: 1 / -1; font-size:.76rem; color:var(--warn);
+                 margin:-4px 0 2px 2px; }
+  </style>
 </head>
 <body>
   <div class="topbar">
@@ -182,7 +185,14 @@ function dishRow(item = {}) {
       <input type="checkbox" class="d-agent" ${item.agent_orderable !== false ? "checked" : ""}>
       agents may order
     </label>
-    <button class="icon-btn" title="Remove">&times;</button>`;
+    <button class="icon-btn" title="Remove">&times;</button>` +
+    /* A dish on an inventory sale shows the reduced price in the box, so
+       say why -- otherwise she reads a number she never typed. Saving
+       this form is her overruling it: whatever is in the box becomes the
+       new list price and the sale ends. */
+    (item.sale
+      ? `<div class="dish-sale">on sale &mdash; you usually charge ${esc(item.list_price_inr)}</div>`
+      : "");
   row.dataset.id = item.id || "";
   row.querySelector(".icon-btn").addEventListener("click", () => {
     if ($("dishes").children.length === 1) return toast("Keep at least one dish.", true);

@@ -185,3 +185,143 @@ def test_setup_and_orders_are_separate_pages(client):
     assert "Today's menu" in setup
     assert "Orders needing your decision" in orders
     assert "Today's menu" not in orders
+
+
+# --------------------------------------------- inventory-led pricing
+
+def _set_shop(*dishes):
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 500, "human_confirm_threshold_inr": 400},
+        menu_in=[
+            {"title": t, "category": c, "price_inr": p, "stock": s}
+            for t, c, p, s in dishes
+        ],
+    )
+    return {row["id"]: row for row in merchant_config.as_dict()["menu"]}
+
+
+def test_a_dish_piling_up_goes_on_sale():
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    merchant_config.optimize_prices()
+
+    thali = {r["id"]: r for r in merchant_config.as_dict()["menu"]}["veg_thali"]
+    assert thali["sale"] is True
+    assert thali["price_inr"] == 170          # 15% off, rounded down
+    assert thali["list_price_inr"] == 200     # what she actually charges
+
+
+def test_running_the_optimiser_again_does_not_discount_the_discount():
+    """The trap this feature is one line away from. Deriving the sale
+    price from the CURRENT price compounds: two clicks is 28% off, ten is
+    80%, and nothing in the system would have flagged it."""
+    _set_shop(("Veg Thali", "meals", 200, 20))
+
+    prices = []
+    for _ in range(5):
+        merchant_config.optimize_prices()
+        prices.append({r["id"]: r for r in merchant_config.as_dict()["menu"]}["veg_thali"]["price_inr"])
+
+    assert prices == [170] * 5, prices
+
+
+def test_a_dish_running_out_goes_back_to_her_price():
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    merchant_config.optimize_prices()
+
+    _restock("veg_thali", 1)
+    merchant_config.optimize_prices()
+
+    thali = {r["id"]: r for r in merchant_config.as_dict()["menu"]}["veg_thali"]
+    assert thali["sale"] is False
+    assert thali["price_inr"] == 200
+
+
+def _restock(item_id, stock):
+    rows = merchant_config.as_dict()["menu"]
+    for row in rows:
+        if row["id"] == item_id:
+            row["stock"] = stock
+    state = merchant_config.as_dict()
+    merchant_config.save(profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
+
+
+def test_a_sale_keeps_running_while_the_dish_sells_down():
+    """The middle band is inert on purpose. A dish discounted at 20
+    portions keeps its price the whole way down to 3, instead of the sale
+    flickering off the moment one is sold."""
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    merchant_config.optimize_prices()
+
+    for stock in (9, 6, 3):
+        _restock("veg_thali", stock)
+        merchant_config.optimize_prices()
+        thali = {r["id"]: r for r in merchant_config.as_dict()["menu"]}["veg_thali"]
+        assert thali["price_inr"] == 170, stock
+        assert thali["sale"] is True, stock
+
+
+def test_a_price_she_types_by_hand_ends_the_sale():
+    """Editing the menu is her overruling the optimiser, and the price
+    she typed becomes the new list price. Anything else would mean her
+    shop page showing one number while the catalog published another."""
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    merchant_config.optimize_prices()
+
+    _set_shop(("Veg Thali", "meals", 120, 20))       # she retypes it
+
+    thali = {r["id"]: r for r in merchant_config.as_dict()["menu"]}["veg_thali"]
+    assert thali["price_inr"] == 120
+    assert thali["list_price_inr"] == 120
+    assert thali["sale"] is False
+
+
+def test_a_discount_can_never_take_a_price_below_a_rupee():
+    _set_shop(("Papad", "snacks", 1, 40))
+    merchant_config.optimize_prices()
+
+    assert {r["id"]: r for r in merchant_config.as_dict()["menu"]}["papad"]["price_inr"] >= 1
+
+
+def test_the_optimiser_reports_exactly_what_it_changed():
+    _set_shop(("Veg Thali", "meals", 200, 20), ("Party Tray", "meals", 300, 5))
+    result = merchant_config.optimize_prices()
+
+    assert result["discounted"] == 1
+    assert result["restored"] == 0
+    assert [c["id"] for c in result["changed"]] == ["veg_thali"]
+    assert result["changed"][0]["was_inr"] == 200
+    assert result["changed"][0]["now_inr"] == 170
+
+
+def test_the_negotiation_core_is_handed_a_price_and_nothing_else():
+    """A sale is a fact about the shop, not an input to a decision.
+    MenuItem carries no sale flag, so negotiation.py cannot see one even
+    if it wanted to -- it just prices the cheaper cart."""
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    import negotiation
+
+    before = negotiation.evaluate([("veg_thali", 2)], menu=merchant_config.current_menu(),
+                                  mandate=merchant_config.current_mandate())
+    merchant_config.optimize_prices()
+    after = negotiation.evaluate([("veg_thali", 2)], menu=merchant_config.current_menu(),
+                                 mandate=merchant_config.current_mandate())
+
+    assert before.total_inr == 400
+    assert after.total_inr == 340
+    assert not hasattr(merchant_config.current_menu()["veg_thali"], "sale")
+
+
+def test_a_buyer_agent_sees_the_new_price_on_its_next_fetch():
+    """The whole point: nothing is pushed, but catalog.py reads the same
+    live config, so the next fetch is already the sale price."""
+    import catalog
+
+    _set_shop(("Veg Thali", "meals", 200, 20))
+    assert catalog.get_catalog()["items"][0]["price"] == 200
+
+    merchant_config.optimize_prices()
+    item = catalog.get_catalog()["items"][0]
+    assert item["price"] == 170
+    assert item["sale"] is True
+    assert item["list_price"] == 200
