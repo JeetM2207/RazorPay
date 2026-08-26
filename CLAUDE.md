@@ -140,6 +140,7 @@ amma-kitchen-agent/
   mandate.py              # MERCHANT's DEFAULT rules + starting menu (plain data)
   merchant_config.py      # what Amma actually configured; what the core decides against
   negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
+  upsell_ranking.py       # which add-on suits this cart; pure, derived from her menu
   trust.py                # per-agent trust tier from audit history; widens margin only
   orchestrator.py         # shared plumbing: trust -> core -> audit -> Razorpay
 
@@ -154,7 +155,7 @@ amma-kitchen-agent/
 
   razorpay_client.py      # test-mode orders / payment links / payments
   autonomous_payment.py   # no-browser settlement; UPI collect -> card S2S -> labelled sim
-  webhook_handler.py      # idempotent payment_link.paid / expired / cancelled
+  webhook_handler.py      # idempotent payment_link.* and refund.processed / failed
   idempotency.py          # the claim ledger the webhook, reconciler and x402 share
   reconcile_payments.py   # safety net for webhooks that never arrived
   audit_log.py            # append-only log, queries, co-purchase history
@@ -170,8 +171,11 @@ amma-kitchen-agent/
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
-  scripts/                # early plumbing probes, kept for reference
-  tests/                  # 309 tests; test_negotiation.py still matters most
+  scripts/predemo_check.py        # 12 checks, each one something that has broken
+  scripts/unstick_checkouts.py    # free locks whose payment link never got made
+  scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
+  scripts/                # plus early plumbing probes, kept for reference
+  tests/                  # 365 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -956,7 +960,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**309 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**365 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1095,6 +1099,14 @@ about what counts as stuck. Writing it caught its own bug immediately: judging e
 row alone flagged eight healthy carts, because a cart proposed twice and bought once
 leaves sibling rows with no link of their own. A fingerprint that reached a real link is
 never stuck, and its lock must stay.
+
+**Two demo scripts pointed at ports nothing listens on.** `buyer_agent_b.py` defaulted to
+`127.0.0.1:8001` and `simulate_webhook_delivery.py` to `:8002` -- correct back when each
+adapter ran its own process, and dead since `app.py` started mounting all of them on 8000.
+So `python buyer_agent_b.py` on a fresh clone died with a connection error, and the AP2 half
+of "two protocols, one brain" could not be shown at all. Nothing caught it because the
+tests drive the adapters in-process and never go over HTTP. Both now default to 8000, with
+the env override kept.
 
 **Testing burns the same quota as demoing.** Twilio's trial caps at 50 messages a day
 with no counter anywhere in its console, and 50 is about ten times what a five-minute
