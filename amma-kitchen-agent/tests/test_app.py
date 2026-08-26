@@ -271,3 +271,112 @@ def test_parse_cart_reports_clearly_when_no_model_key_is_set(client, monkeypatch
     resp = client.post("/api/parse-cart", json={"text": "two biryanis"})
     assert resp.status_code == 503
     assert "menu picker" in resp.json()["detail"]
+
+
+# ------------------------------------------- the AI Strategist is read-only
+
+def test_insights_returns_the_numbers_even_with_no_model_key(client, monkeypatch):
+    """The figures are the useful part; the prose is a convenience on top.
+    A missing key must degrade to a dashboard, not an error page."""
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
+
+    body = client.get("/api/insights").json()
+
+    assert body["insight"] is None
+    assert "OPENROUTER_API_KEY" in body["note"]
+    assert body["stats"]["window_hours"] == 24
+    assert body["stats"]["revenue_inr"] == 0
+
+
+def test_insights_survives_the_model_failing(client, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    import llm_client
+
+    monkeypatch.setattr(llm_client, "generate_merchant_insights",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("provider down")))
+
+    body = client.get("/api/insights").json()
+    assert body["insight"] is None
+    assert "provider down" in body["note"]
+    assert "stats" in body
+
+
+def test_insights_renders_the_model_answer(client, monkeypatch):
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-key")
+    import llm_client
+
+    monkeypatch.setattr(
+        llm_client, "generate_merchant_insights",
+        lambda stats, hours=24: {"observation": "Three people wanted pizza.",
+                                 "action": "Put a pizza on the menu."},
+    )
+
+    body = client.get("/api/insights?hours=168").json()
+    assert body["insight"]["action"] == "Put a pizza on the menu."
+    assert body["stats"]["window_hours"] == 168
+
+
+def test_the_insight_window_cannot_be_pushed_anywhere_silly(client):
+    assert client.get("/api/insights?hours=0").json()["stats"]["window_hours"] == 1
+    assert client.get("/api/insights?hours=99999").json()["stats"]["window_hours"] == 720
+
+
+def test_growth_insights_never_reach_the_decision_path(client):
+    """The whole feature is additive. If it vanished tomorrow, no order
+    would come out differently -- so nothing in the decision or money path
+    is allowed to import it."""
+    import ast
+
+    import negotiation
+    import orchestrator
+
+    for module in (negotiation, orchestrator):
+        with open(module.__file__) as handle:
+            source = handle.read()
+        tree = ast.parse(source)
+        imported = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imported.add(node.module.split(".")[0])
+        assert "llm_client" not in imported, f"{module.__name__} reaches a model"
+        assert "growth_stats" not in source, f"{module.__name__} reads the insights"
+        assert "generate_merchant_insights" not in source
+
+
+def test_the_merchant_console_shows_the_panel(client):
+    page = client.get("/merchant/orders").text
+    assert "AI Strategist" in page
+    assert "loadInsights" in page
+
+
+def test_customer_written_demand_is_escaped_before_it_is_rendered(client):
+    """unmatched_demand is free text typed by customers and relayed by
+    somebody else's model, and so is the model's own prose. Both are
+    rendered, so both go through esc()."""
+    page = client.get("/merchant/orders").text
+    assert "esc(d.requested)" in page or "esc(big)" in page
+    assert "esc(data.insight.observation)" in page
+    assert "esc(data.insight.action)" in page
+
+
+def test_no_console_script_declares_the_same_name_twice():
+    """A duplicate top-level `const` is a SyntaxError, and a SyntaxError
+    kills the WHOLE script block -- so one careless redeclaration blanks
+    every table on the page, not just the new feature.
+
+    This exists because it happened: adding a second `rupee` helper to the
+    merchant console left the page silently empty, while a test asserting
+    the new function's name appeared in the HTML passed happily. Checking
+    that a string is present cannot tell you the script parses.
+    """
+    import pathlib
+    import re
+
+    web = pathlib.Path(__file__).resolve().parent.parent / "web"
+    for page in web.glob("*.html"):
+        names = re.findall(r"^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=",
+                           page.read_text(encoding="utf-8"), re.MULTILINE)
+        duplicates = {n for n in names if names.count(n) > 1}
+        assert not duplicates, f"{page.name} declares {duplicates} more than once"

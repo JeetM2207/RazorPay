@@ -7,7 +7,7 @@ Webhook idempotency (step 6) will also key off payment_id in this table.
 
 import json
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 DEFAULT_DB_PATH = str(Path(__file__).resolve().parent / "audit.db")
@@ -361,3 +361,118 @@ def get_all_events(db_path: str = DEFAULT_DB_PATH, limit: int = 200) -> list[dic
             "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(row) for row in rows]
+
+
+# --------------------------------------------------- growth insights (read-only)
+#
+# Everything below only READS. It is deliberately additive: no lifecycle
+# code calls it, nothing it returns feeds a decision, and removing the
+# whole block would change no order's outcome.
+
+_SETTLED_ELSEWHERE = ("REFUNDED", "REFUND_FAILED", "MERCHANT_REJECTED",
+                      "MERCHANT_TIMEOUT_REFUNDED")
+
+
+def _cart_set(row: dict) -> frozenset:
+    try:
+        return frozenset(
+            (line["item"], line["qty"]) for line in json.loads(row["cart_json"])
+        )
+    except (json.JSONDecodeError, TypeError, KeyError):
+        return frozenset()
+
+
+def _accepted_addons(rows: list[dict], paid: list[dict]) -> list[str]:
+    """Add-ons a customer actually said yes to, inferred from the trail.
+
+    Inferred rather than recorded, and worth being honest about why: the
+    suggestion is computed at propose time and returned to the caller,
+    but nothing writes it into the audit row -- and recording it would
+    mean editing the orchestrator, which this feature is not allowed to
+    touch. So it is reconstructed instead.
+
+    The signal is a real one. A customer who accepts an add-on causes the
+    cart to be proposed a SECOND time, identical but for one extra line,
+    and that second cart is the one that gets paid for. An earlier cart
+    from the same agent that is a strict subset differing by exactly one
+    item is therefore the same order before the add-on went in, and the
+    extra item is what they agreed to.
+
+    It can undercount -- a customer who accepts before the first proposal
+    leaves no pair to match -- so it is reported as "at least".
+    """
+    by_agent: dict[str, list[frozenset]] = {}
+    for row in rows:
+        by_agent.setdefault(row["agent_id"], []).append(_cart_set(row))
+
+    accepted = []
+    for order in paid:
+        final = _cart_set(order)
+        if len(final) < 2:
+            continue
+        for earlier in by_agent.get(order["agent_id"], []):
+            if earlier and earlier < final and len(final - earlier) == 1:
+                accepted.append(next(iter(final - earlier))[0])
+                break
+    return accepted
+
+
+def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH) -> dict:
+    """A small factual summary of the last `hours`. Read-only.
+
+    Simulated settlements are excluded from revenue for the same reason
+    the dashboard excludes them: a `sim_` reference is an assertion of
+    ours, not money that moved.
+    """
+    init_db(db_path)
+    since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM audit_events WHERE ts >= ? ORDER BY id ASC", (since,)
+        )]
+
+    # An order that was refunded or declined is not revenue. Keyed on
+    # order_ref, which lifecycle rows carry back to the decision row.
+    undone = {
+        row["order_ref"] for row in rows
+        if row["decision"] in _SETTLED_ELSEWHERE and row.get("order_ref")
+    }
+
+    paid = [
+        row for row in rows
+        # `pay_` and not `sim_`: a real Razorpay capture, not our own note
+        # that we would have taken the money if we could.
+        if (row["payment_id"] or "").startswith("pay_") and row["id"] not in undone
+    ]
+
+    demand: dict[str, int] = {}
+    for row in rows:
+        if row["decision"] == UNMATCHED_DEMAND:
+            key = (row["reason"] or "").strip().lower()
+            if key:
+                demand[key] = demand.get(key, 0) + 1
+
+    addons = _accepted_addons(rows, paid)
+    addon_counts: dict[str, int] = {}
+    for name in addons:
+        addon_counts[name] = addon_counts.get(name, 0) + 1
+
+    refunded = [r for r in rows if r["decision"] == "REFUNDED"]
+
+    return {
+        "window_hours": hours,
+        "orders_paid": len(paid),
+        "revenue_inr": sum(row["total_inr"] for row in paid),
+        "escalated_to_merchant": sum(1 for r in rows if r["decision"] == "ESCALATE"),
+        "refunded_orders": len(refunded),
+        "refunded_inr": sum(r["total_inr"] for r in refunded),
+        "addons_accepted": len(addons),
+        "top_addon": max(addon_counts, key=lambda k: (addon_counts[k], k)) if addon_counts else None,
+        "unmatched_demand": [
+            {"requested": name, "times": times}
+            for name, times in sorted(demand.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        ],
+        "total_decisions": len(rows),
+    }

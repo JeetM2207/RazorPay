@@ -383,6 +383,34 @@ def unmatched_demand() -> dict:
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
 
 
+@app.get("/api/insights")
+def growth_insights(hours: int = 24) -> dict:
+    """Read-only growth insights: her own numbers, plus two sentences of
+    advice drawn from them.
+
+    Isolated on purpose. It reads the audit log and calls a model, and
+    that is all -- nothing here can reach an order, a price or a
+    decision, and no other code reads its output back.
+
+    The numbers are returned whether or not the model answers. They are
+    the useful part; the prose is a convenience on top, and a missing API
+    key or a slow provider should degrade to a dashboard rather than to
+    an error page.
+    """
+    hours = max(1, min(int(hours), 24 * 30))
+    stats = audit_log.growth_stats(hours, db_path=audit_log.DEFAULT_DB_PATH)
+
+    if not os.environ.get("OPENROUTER_API_KEY"):
+        return {"stats": stats, "insight": None,
+                "note": "OPENROUTER_API_KEY not configured; showing the numbers only"}
+    try:
+        from llm_client import generate_merchant_insights
+
+        return {"stats": stats, "insight": generate_merchant_insights(stats, hours)}
+    except Exception as exc:
+        return {"stats": stats, "insight": None, "note": f"insight unavailable: {exc}"}
+
+
 @app.get("/api/sms")
 def sms_state() -> dict:
     """What the merchant console shows in place of a real phone: the

@@ -160,6 +160,7 @@ amma-kitchen-agent/
   reconcile_payments.py   # safety net for webhooks that never arrived
   audit_log.py            # append-only log, queries, co-purchase history
   catalog.py              # agent-readable product feed (ACP-style)
+  llm_client.py stays the only model caller: NL->cart, and merchant insights
   dashboard.py            # audit trail as HTML
 
   notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
@@ -175,7 +176,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 365 tests; test_negotiation.py still matters most
+  tests/                  # 380 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -960,7 +961,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**365 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**380 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1072,6 +1073,50 @@ ask for name, phone and address → checkout.** The description tells the model 
 delivery details, and to carry on unchanged if the customer declines. It also says to
 fetch the menu rather than remember it, since the merchant changes it whenever she likes. That sentence is load-bearing for the same reason the ESCALATE wording
 was: nothing surfaces unless the description says to surface it.
+
+## The AI Strategist: her own numbers, read back to her
+
+The brief's first half is "grow the merchant's revenue", and until now the answer was all
+mechanism — the add-on, the trust tier, the demand log. Each of those *acts*; none of them
+ever *tells her anything*. `GET /api/insights` closes that: `audit_log.growth_stats()`
+summarises a window of her own trail, `llm_client.generate_merchant_insights()` turns it
+into one observation and one action, and the merchant console renders both above the
+queue.
+
+**It is read-only in the strongest sense available.** It reads the audit log and returns
+prose. Nothing in the system reads that prose back, and a test asserts on real imports
+that neither `negotiation.py` nor `orchestrator.py` can reach `llm_client`,
+`growth_stats` or `generate_merchant_insights`. If the whole feature vanished tomorrow, no
+order would come out differently — which is exactly the property that lets a model near a
+commerce system at all.
+
+What the numbers are careful about:
+
+- **Simulated settlements are not revenue.** Only a `pay_` capture counts; `sim_` is an
+  assertion of ours. Same rule the dashboard already applied.
+- **A refunded order is not revenue either.** Excluded via `order_ref`, so the pay-first
+  flow cannot inflate her takings with money she gave back.
+- **Accepted add-ons are inferred, not recorded**, and the docstring says so. The
+  suggestion is computed at propose time and returned to the caller; nothing writes it to
+  the audit row, and writing it would mean editing the orchestrator, which this feature is
+  not allowed to touch. So it is reconstructed from the shape of the trail: a customer who
+  says yes causes the same cart to be proposed a second time with exactly one extra line,
+  and that second cart is the one that gets paid for. It can undercount, and is reported
+  as a floor rather than a count.
+
+**Two injection surfaces, both handled.** `unmatched_demand` is free text typed by
+customers and relayed by somebody else's model, and it goes into a prompt — so the brief
+names it as data and tells the model to treat those strings only as product names. The
+model's own output is then rendered in her browser, so it goes through `esc()` like every
+other untrusted string on that page.
+
+**A browser found what the tests could not.** The panel shipped with a second
+`const rupee` helper in a script that already had one. That is a SyntaxError, and a
+SyntaxError kills the *entire* script block — so the console rendered with every table
+blank, while a test asserting `loadInsights` appeared in the HTML passed happily. Checking
+that a string is present cannot tell you the script parses. There is now a test that scans
+every page for a top-level name declared twice, and it was confirmed to fail with the
+duplicate put back.
 
 ## Before a demo, run the check
 

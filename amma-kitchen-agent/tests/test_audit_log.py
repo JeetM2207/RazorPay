@@ -189,3 +189,101 @@ def test_events_are_isolated_per_agent(tmp_path):
     assert len(audit_log.get_events_for_agent("agent-a", db_path=db_path)) == 1
     assert len(audit_log.get_events_for_agent("agent-b", db_path=db_path)) == 1
     assert len(audit_log.get_all_events(db_path=db_path)) == 2
+
+
+# ------------------------------------- growth insights: read-only, additive
+
+def _paid(db_path, agent, cart, total, payment_id, decision="APPROVE"):
+    event_id = audit_log.record_event(
+        agent_id=agent, protocol="mcp", cart=cart, decision=decision,
+        reason="within budget", total_inr=total, db_path=db_path,
+    )
+    if payment_id:
+        audit_log.mark_paid(event_id, payment_id, db_path=db_path)
+    return event_id
+
+
+def test_growth_stats_counts_only_money_that_actually_settled(tmp_path):
+    db_path = str(tmp_path / "audit.db")
+    _paid(db_path, "a1", [{"item": "veg_thali", "qty": 1}], 150, "pay_real")
+    # A simulated settlement is an assertion of ours, not money that moved.
+    _paid(db_path, "a2", [{"item": "veg_thali", "qty": 1}], 150, "sim_notreal")
+    # And an approved order nobody ever paid for is not revenue either.
+    _paid(db_path, "a3", [{"item": "veg_thali", "qty": 1}], 150, None)
+
+    stats = audit_log.growth_stats(24, db_path=db_path)
+    assert stats["revenue_inr"] == 150
+    assert stats["orders_paid"] == 1
+
+
+def test_growth_stats_does_not_count_a_refunded_order_as_revenue(tmp_path):
+    db_path = str(tmp_path / "audit.db")
+    order = _paid(db_path, "a1", [{"item": "veg_thali", "qty": 3}], 450, "pay_x",
+                  decision="ESCALATE")
+    audit_log.record_event(
+        agent_id="a1", protocol="mcp", cart=[{"item": "veg_thali", "qty": 3}],
+        decision="REFUNDED", reason="merchant declined", total_inr=450,
+        db_path=db_path, order_ref=order,
+    )
+
+    stats = audit_log.growth_stats(24, db_path=db_path)
+    assert stats["revenue_inr"] == 0, "money she gave back is not money she made"
+    assert stats["refunded_orders"] == 1
+    assert stats["refunded_inr"] == 450
+
+
+def test_growth_stats_ranks_the_top_three_things_she_does_not_sell(tmp_path):
+    db_path = str(tmp_path / "audit.db")
+    for _ in range(3):
+        audit_log.record_unmatched_demand("a1", "mcp", "2 pizzas", db_path=db_path)
+    for _ in range(2):
+        audit_log.record_unmatched_demand("a1", "mcp", "Tiramisu", db_path=db_path)
+    audit_log.record_unmatched_demand("a1", "mcp", "burger", db_path=db_path)
+    audit_log.record_unmatched_demand("a1", "mcp", "sushi", db_path=db_path)
+
+    demand = audit_log.growth_stats(24, db_path=db_path)["unmatched_demand"]
+    assert [d["requested"] for d in demand] == ["2 pizzas", "tiramisu", "burger"]
+    assert demand[0]["times"] == 3
+
+
+def test_growth_stats_infers_an_accepted_addon_from_the_trail(tmp_path):
+    """A customer who says yes to an add-on causes the same cart to be
+    proposed again with exactly one more line, and it is the second one
+    that gets paid for. Inferred rather than recorded, because recording
+    it would mean editing the orchestrator."""
+    db_path = str(tmp_path / "audit.db")
+    base = [{"item": "paneer_bhurji", "qty": 2}, {"item": "tandoori_roti", "qty": 3}]
+    _paid(db_path, "buyer", base, 450, None)                       # first proposal
+    _paid(db_path, "buyer", base + [{"item": "filter_coffee", "qty": 1}], 480, "pay_up")
+
+    stats = audit_log.growth_stats(24, db_path=db_path)
+    assert stats["addons_accepted"] == 1
+    assert stats["top_addon"] == "filter_coffee"
+
+
+def test_growth_stats_does_not_invent_an_addon_for_a_one_shot_order(tmp_path):
+    db_path = str(tmp_path / "audit.db")
+    _paid(db_path, "buyer", [{"item": "veg_thali", "qty": 1},
+                             {"item": "filter_coffee", "qty": 1}], 180, "pay_one")
+
+    assert audit_log.growth_stats(24, db_path=db_path)["addons_accepted"] == 0
+
+
+def test_growth_stats_respects_its_window(tmp_path):
+    db_path = str(tmp_path / "audit.db")
+    _paid(db_path, "a1", [{"item": "veg_thali", "qty": 1}], 150, "pay_now")
+
+    assert audit_log.growth_stats(24, db_path=db_path)["orders_paid"] == 1
+    # A window that ended before anything happened reports zero rather
+    # than reaching for whatever it can find.
+    import sqlite3
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE audit_events SET ts = '2020-01-01T00:00:00+00:00'")
+    assert audit_log.growth_stats(24, db_path=db_path)["orders_paid"] == 0
+
+
+def test_growth_stats_is_empty_not_broken_on_a_fresh_shop(tmp_path):
+    stats = audit_log.growth_stats(24, db_path=str(tmp_path / "audit.db"))
+    assert stats["revenue_inr"] == 0
+    assert stats["unmatched_demand"] == []
+    assert stats["top_addon"] is None
