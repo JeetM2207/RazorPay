@@ -30,6 +30,7 @@ reply webhook. No parallel machinery.
 """
 
 import json
+from datetime import datetime, timedelta, timezone
 
 import audit_log
 import notification_service
@@ -401,3 +402,53 @@ def pending_orders() -> list[dict]:
     return audit_log.get_orders_with_status(
         PENDING_MERCHANT_APPROVAL, db_path=_db(), protocol=PROTOCOL
     )
+
+
+# ------------------------------------------- outcomes, for the buyer's screen
+#
+# Read-only. Nothing below writes, decides or sends anything -- it exists
+# so a screen can show what already happened.
+
+# The states an order stops at. A customer needs to hear about each of
+# these; everything before them is in-flight and not worth interrupting
+# anyone over.
+TERMINAL = {
+    AUTO_CONFIRMED: "confirmed",
+    MERCHANT_ACCEPTED: "confirmed",
+    REFUNDED: "refunded",
+    "REFUND_FAILED": "refund_failed",
+}
+
+
+def recent_outcomes(minutes: int = 30) -> list[dict]:
+    """Orders that reached a terminal state in the last `minutes`.
+
+    Read straight off the audit trail rather than held in memory, so it
+    survives a restart and agrees with what the trail says -- the same
+    reason the merchant's queue is rebuilt rather than cached.
+
+    Note honestly what this is NOT: there is no per-customer identity
+    anywhere in this project (the buyer profile lives in the browser's
+    own localStorage), so this returns recent outcomes for the shop, not
+    for one customer. That is fine for a demo where the same person is
+    both parties, and it is the same assumption the merchant console
+    already makes. Real multi-tenancy would need authentication, which
+    nothing here has.
+    """
+    since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    out = []
+    for status, kind in TERMINAL.items():
+        for order in audit_log.get_orders_with_status(status, db_path=_db(), protocol=PROTOCOL):
+            rows = audit_log.get_order_rows(order["id"], db_path=_db())
+            last = rows[-1]
+            if last["ts"] < since:
+                continue
+            out.append({
+                "order_ref": order["id"],
+                "status": status,
+                "kind": kind,
+                "total_inr": order["total_inr"],
+                "at": last["ts"],
+                "reason": last["reason"],
+            })
+    return sorted(out, key=lambda o: o["at"], reverse=True)

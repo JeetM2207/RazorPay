@@ -445,3 +445,32 @@ def test_the_console_offers_the_button(client):
     page = client.get("/merchant/orders").text
     assert "Optimize yield" in page
     assert "optimizeYield" in page
+
+
+def test_order_outcomes_endpoint_is_bounded(client):
+    assert client.get("/api/order-outcomes?minutes=0").status_code == 200
+    assert client.get("/api/order-outcomes?minutes=999999").status_code == 200
+    assert client.get("/api/order-outcomes").json()["outcomes"] == []
+
+
+def test_the_terminal_marks_the_merchants_hard_limits(client):
+    """The terminal is where a viewer either believes the limits are real
+    arithmetic or does not, so the lines that quote one are marked."""
+    page = client.get("/buyer/order").text
+
+    assert "markLimits" in page
+    for phrase in ("budget cap", "human confirm", "mandate"):
+        assert phrase in page, phrase
+    # Colour comes from the line's own kind, which the caller set from the
+    # server's verdict -- the page must not be deciding pass/fail itself.
+    assert "FAIL_KINDS" in page and "PASS_KINDS" in page
+
+
+def test_the_buyer_screen_watches_for_a_refund(client):
+    page = client.get("/buyer/order").text
+
+    assert "refundToast" in page
+    assert "/api/order-outcomes" in page
+    assert "automatically refunded via the Razorpay API" in page
+    # A reload must not replay the day's outcomes as if they just happened.
+    assert "seenOutcomes" in page

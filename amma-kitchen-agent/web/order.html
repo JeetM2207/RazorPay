@@ -87,6 +87,46 @@
   .ln.head .m  { color: #d2a8ff; font-weight: 600; }
   .ln .m b     { color: #fff; font-weight: 600; }
 
+  /* A line quoting one of the merchant's hard limits is a line where
+     plain Python overruled everything else. Marked so a viewer can see
+     the boundary rather than take it on trust. */
+  .ln.rule { border-left: 2px solid #58506b; padding-left: 8px; margin-left: -10px; }
+  .ln .lim {
+    color: #b6a6e0; border-bottom: 1px dotted #6b5f8c;
+    text-transform: lowercase; letter-spacing: .2px;
+  }
+  .ln .num { font-weight: 800; }
+  .ln .num.pass { color: #3fb950; text-shadow: 0 0 12px rgba(63,185,80,.5); }
+  .ln .num.fail { color: #ff7b72; text-shadow: 0 0 12px rgba(255,123,114,.5); }
+  .ln .num.calc { color: #e6edf3; }
+
+  /* The refund toast. Bigger than the ordinary one because it is the
+     answer to "you took money for an order she might refuse". */
+  .refund-toast {
+    position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%);
+    z-index: 60; max-width: min(560px, 92vw);
+    display: flex; gap: 13px; align-items: flex-start;
+    padding: 15px 19px; border-radius: 13px;
+    background: #1b1420; border: 1px solid #7d3b46;
+    box-shadow: 0 18px 44px rgba(0,0,0,.45), 0 0 0 1px rgba(255,123,114,.14);
+    color: #ffd9d5; font-size: 14px; line-height: 1.5;
+    animation: refundIn .32s cubic-bezier(.2,.9,.3,1.2);
+  }
+  .refund-toast .rt-mark {
+    flex: none; width: 30px; height: 30px; border-radius: 50%;
+    background: rgba(255,123,114,.16); color: #ff7b72;
+    display: grid; place-items: center; font-size: 16px; font-weight: 700;
+  }
+  .refund-toast b { color: #fff; }
+  .refund-toast .rt-sub { display: block; margin-top: 3px; color: #b9a4a4; font-size: 12.5px; }
+  .refund-toast.ok { background: #131e18; border-color: #2f6b45; color: #c7f0d6; }
+  .refund-toast.ok .rt-mark { background: rgba(63,185,80,.16); color: #3fb950; }
+  .refund-toast.ok .rt-sub { color: #8fb69f; }
+  @keyframes refundIn {
+    from { opacity: 0; transform: translate(-50%, 14px) scale(.97); }
+    to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
+  }
+
   .cursor {
     display: inline-block; width: 7px; height: 14px; background: #56d364;
     vertical-align: -2px; animation: blink 1.05s step-end infinite;
@@ -230,10 +270,37 @@ function toast(msg, isErr) {
 
 const stamp = () => new Date().toLocaleTimeString("en-GB", { hour12: false });
 
+/* Every rule in this system is plain Python, and the terminal is where a
+   viewer either believes that or does not. So a line that quotes one of
+   the merchant's limits is marked as such, and the amounts in it are
+   coloured by what the arithmetic decided -- green where it cleared, red
+   where it did not. The colour is taken from the line's own kind, which
+   the caller already set from the server's verdict, so nothing here is
+   re-deciding anything; it is only showing the decision. */
+
+const LIMIT_PHRASE =
+  /(budget cap|human confirm(?:ation)? threshold|mandate|hard cap|soft cap|flexible margin)/gi;
+const MONEY = /(?:₹|Rs\.?)\s?\d[\d,]*/g;
+const FAIL_KINDS = new Set(["err", "warn"]);
+const PASS_KINDS = new Set(["ok"]);
+
+function markLimits(message, kind) {
+  const tone = FAIL_KINDS.has(kind) ? "fail" : PASS_KINDS.has(kind) ? "pass" : "calc";
+  LIMIT_PHRASE.lastIndex = 0;
+  const quotesARule = LIMIT_PHRASE.test(message);
+  LIMIT_PHRASE.lastIndex = 0;
+
+  const html = message
+    .replace(LIMIT_PHRASE, (m) => `<span class="lim">${m}</span>`)
+    .replace(MONEY, (m) => `<span class="num ${tone}">${m}</span>`);
+  return { html, quotesARule };
+}
+
 function log(message, kind = "info") {
   const line = document.createElement("div");
-  line.className = "ln " + kind;
-  line.innerHTML = `<span class="t">${stamp()}</span><span class="m">${message}</span>`;
+  const { html, quotesARule } = markLimits(message, kind);
+  line.className = "ln " + kind + (quotesARule ? " rule" : "");
+  line.innerHTML = `<span class="t">${stamp()}</span><span class="m">${html}</span>`;
   $("term").appendChild(line);
   $("term").scrollTop = $("term").scrollHeight;
   return line;
@@ -761,6 +828,84 @@ async function settle(mandate, hardCap) {
   log("&gt; No human touched a card form. My work here is done.", "ok");
   setState("COMPLETE", "#56d364");
 }
+
+/* ------------------------------------------ how an order actually ended
+
+   Under pay-first, an order Claude placed is decided by Amma AFTER the
+   money has moved. Her "no" refunds automatically in the same call --
+   but until now the only place that showed up was the audit trail and a
+   WhatsApp message. The customer's own screen said nothing, which is the
+   bug this project keeps rediscovering: recorded correctly, reaching
+   nobody.
+
+   So this polls for orders that reached a terminal state and says so.
+   Purely a reader; the refund already happened server-side before any of
+   this ran. Seen order refs live in localStorage so a reload does not
+   replay the news. */
+
+const SEEN_OUTCOMES = "amma.seenOutcomes";
+
+function seenOutcomes() {
+  try { return new Set(JSON.parse(localStorage.getItem(SEEN_OUTCOMES) || "[]")); }
+  catch { return new Set(); }
+}
+
+function rememberOutcome(ref) {
+  const seen = seenOutcomes();
+  seen.add(ref);
+  // Keep the list short; anything older is long since shown.
+  try { localStorage.setItem(SEEN_OUTCOMES, JSON.stringify([...seen].slice(-60))); }
+  catch { /* a private window is not a reason to break the page */ }
+}
+
+function refundToast(outcome) {
+  const el = document.createElement("div");
+  const refunded = outcome.kind === "refunded";
+  el.className = "refund-toast" + (refunded ? "" : " ok");
+  el.innerHTML = refunded
+    ? `<span class="rt-mark">↺</span><div>
+         <b>Order #${outcome.order_ref} rejected by the kitchen.</b>
+         ${rupee(outcome.total_inr)} automatically refunded via the Razorpay API.
+         <span class="rt-sub">No one had to chase it — the refund was issued in the
+         same call that recorded her answer.</span>
+       </div>`
+    : `<span class="rt-mark">✓</span><div>
+         <b>Order #${outcome.order_ref} confirmed by the kitchen.</b>
+         ${rupee(outcome.total_inr)} — it is being cooked.
+       </div>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 11000);
+  el.addEventListener("click", () => el.remove());
+
+  log(
+    refunded
+      ? `&gt; Order #${outcome.order_ref}: kitchen declined. ${rupee(outcome.total_inr)} refunded automatically.`
+      : `&gt; Order #${outcome.order_ref}: kitchen confirmed. ${rupee(outcome.total_inr)}.`,
+    refunded ? "err" : "ok",
+  );
+}
+
+async function watchOutcomes() {
+  try {
+    const { outcomes } = await api("/api/order-outcomes?minutes=30");
+    const seen = seenOutcomes();
+    for (const outcome of outcomes.slice().reverse()) {
+      if (seen.has(outcome.order_ref)) continue;
+      rememberOutcome(outcome.order_ref);
+      refundToast(outcome);
+    }
+  } catch { /* the page is useful without this; never let it break ordering */ }
+}
+
+/* First pass silently marks what is already finished, so opening the page
+   does not replay every outcome of the day as if it just happened. */
+(async () => {
+  try {
+    const { outcomes } = await api("/api/order-outcomes?minutes=30");
+    outcomes.forEach((o) => rememberOutcome(o.order_ref));
+  } catch { /* ignore */ }
+  setInterval(watchOutcomes, 3000);
+})();
 
 $("deployBtn").addEventListener("click", deploy);
 boot();

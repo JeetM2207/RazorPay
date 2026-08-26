@@ -509,3 +509,73 @@ def test_an_accepted_order_cannot_then_be_refunded(env):
     with pytest.raises(ValueError, match="not awaiting a decision"):
         mcp_orders.reject(placed["order_id"])
     assert env["refunds"] == []
+
+
+# --------------------------------- telling the customer how it ended
+
+def test_a_rejected_order_shows_up_as_a_refund_outcome(env):
+    """Under pay-first Amma decides AFTER the money moved, so the
+    customer's own screen has no other way to learn she declined and the
+    refund has already gone back."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_out1")
+    mcp_orders.reject(placed["order_id"])
+
+    outcomes = mcp_orders.recent_outcomes(30)
+    mine = [o for o in outcomes if o["order_ref"] == placed["order_id"]]
+
+    assert len(mine) == 1
+    assert mine[0]["status"] == mcp_orders.REFUNDED
+    assert mine[0]["kind"] == "refunded"
+    assert mine[0]["total_inr"] == 440
+
+
+def test_an_accepted_order_shows_up_too(env):
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_out2")
+    mcp_orders.accept(placed["order_id"])
+
+    mine = [o for o in mcp_orders.recent_outcomes(30) if o["order_ref"] == placed["order_id"]]
+    assert mine and mine[0]["kind"] == "confirmed"
+
+
+def test_an_order_still_in_flight_is_not_an_outcome(env):
+    """Nobody should be interrupted about an order that has not finished."""
+    placed = checkout(("chicken_biryani", 2))
+    assert mcp_orders.recent_outcomes(30) == []
+
+    pay(env, placed["payment_link_id"], payment_id="pay_out3")
+    # Paid and sitting with Amma is not terminal either.
+    assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.PENDING_MERCHANT_APPROVAL
+    assert mcp_orders.recent_outcomes(30) == []
+
+
+def test_a_failed_refund_is_an_outcome_of_its_own(env):
+    """REFUND_FAILED must not read as REFUNDED. The customer is owed
+    money and the screen has to say something different."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_out4")
+    mcp_orders.reject(placed["order_id"])
+    refund_webhook(env, "refund.failed", "rfnd_out4", "pay_out4", 44000)
+
+    mine = [o for o in mcp_orders.recent_outcomes(30) if o["order_ref"] == placed["order_id"]]
+    assert mine and mine[0]["kind"] == "refund_failed"
+
+
+def test_outcomes_are_read_only(env):
+    """It exists so a screen can show what already happened. Calling it
+    must not move an order, refund anything or send a message."""
+    placed = checkout(("chicken_biryani", 2))
+    pay(env, placed["payment_link_id"], payment_id="pay_out5")
+    mcp_orders.reject(placed["order_id"])
+
+    refunds_before = len(env["refunds"])
+    notification_service.clear_outbox()
+    rows_before = len(audit_log.get_order_rows(placed["order_id"], db_path=env["db"]))
+
+    for _ in range(3):
+        mcp_orders.recent_outcomes(30)
+
+    assert len(env["refunds"]) == refunds_before
+    assert notification_service.outbox() == []
+    assert len(audit_log.get_order_rows(placed["order_id"], db_path=env["db"])) == rows_before

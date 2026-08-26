@@ -383,6 +383,21 @@ def unmatched_demand() -> dict:
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
 
 
+@app.get("/api/order-outcomes")
+def order_outcomes(minutes: int = 30) -> dict:
+    """Orders that finished recently, so a screen can say so.
+
+    Read-only, and the buyer console is the caller: under pay-first an
+    MCP order is decided by Amma AFTER the money has moved, so the
+    customer's own screen has no other way to learn that she declined and
+    the refund has already gone back.
+    """
+    import mcp_orders
+
+    minutes = max(1, min(int(minutes), 60 * 24))
+    return {"outcomes": mcp_orders.recent_outcomes(minutes)}
+
+
 @app.post("/api/merchant/optimize-prices")
 def optimize_prices() -> dict:
     """Discount what is piling up; restore what is running out.

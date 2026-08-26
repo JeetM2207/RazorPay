@@ -176,7 +176,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 393 tests; test_negotiation.py still matters most
+  tests/                  # 401 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -961,7 +961,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**393 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**401 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1159,6 +1159,43 @@ The MCP feed carries `on_sale` and `usual_price_inr` **only on a dish that is ac
 discounted**. `on_sale: false` on every item is eight lines of a token-capped response
 saying nothing, while on the one reduced dish the old price is exactly the reason to order
 it today.
+
+## Showing the boundary, not describing it
+
+Two pieces of polish on the buyer console, both aimed at the same thing: a viewer either
+believes the limits are arithmetic or they do not, and prose in a pitch will not settle it.
+
+**The terminal marks the lines where plain Python overruled everything else.** Any line
+quoting `budget cap`, `human confirmation threshold`, `mandate`, a hard or soft cap or the
+flexible margin gets a left rule and the phrase underlined; the amounts in it turn green
+where the arithmetic cleared and red where it did not. So
+*"total Rs.450 at/above human confirmation threshold Rs.400"* reads at a glance as two red
+numbers either side of a named rule.
+
+The colour is taken from the line's **existing** `kind`, which the caller already set from
+the server's verdict. The page is not re-deciding anything — a UI that computed pass/fail
+for itself would be a second opinion about money, and the whole point is that there is only
+one. `markLimits()` is a renderer.
+
+**The refund toast closes the last silent gap in the pay-first flow.** Amma's "no" refunds
+automatically in the same call that records it — but until now that only showed up in the
+audit trail and a WhatsApp message. The customer's own screen said nothing, which is the
+bug this project keeps rediscovering: recorded correctly, reaching nobody. `mcp_orders
+.recent_outcomes()` reads terminal states off the trail, `GET /api/order-outcomes` serves
+them, and the console toasts *"Order #N rejected by the kitchen. Rs.480 automatically
+refunded via the Razorpay API."*
+
+Worth stating plainly about that endpoint: **it reports outcomes for the shop, not for one
+customer.** There is no per-customer identity anywhere in this project — the buyer profile
+lives in the browser's own localStorage — so filtering by customer is not something the
+server could do. That is fine where the same person is both parties, and it is the same
+assumption the merchant console already makes, but real multi-tenancy would need
+authentication that nothing here has. `REFUND_FAILED` is deliberately a separate outcome
+from `REFUNDED`: the customer is owed money and the screen must not say otherwise.
+
+Seen order refs live in `localStorage`, so reloading the page does not replay the day's
+outcomes as if they had just happened, and a first pass marks what is already finished
+before the poll starts.
 
 ## Before a demo, run the check
 
