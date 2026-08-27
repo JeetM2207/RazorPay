@@ -111,10 +111,20 @@
   .bubble-meta { display: flex; justify-content: space-between; gap: 9px; align-items: center; margin-top: 6px; }
   .bubble-to { font-family: var(--mono); font-size: 10px; color: #64748b; }
   .bubble-fail { color: #fda4af; font-size: 10.5px; margin-top: 5px; }
+  /* A message written for the customer, shown here because in a demo the
+     two people are usually the same phone. Tinted and labelled so it is
+     never mistaken for something Amma is being asked. */
+  .bubble.to-customer { background: #16233a; border: 1px dashed #33507a; }
+  .bubble-tag {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: #7dd3fc; margin-bottom: 6px; display: block;
+  }
+  .bubble.to-customer .bubble-tag { color: #7dd3fc; }
+  .qr-hint { font-size: 10.5px; color: #64748b; margin: 0 0 8px; text-align: center; }
   .bubble .badge { font-size: 9.5px; padding: 1px 7px; }
   .phone-empty { color: #64748b; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
   .phone-input { border-top: 1px solid var(--dark-line); background: #111c2e; padding: 11px; }
-  .quick-replies { display: flex; gap: 7px; margin-bottom: 9px; }
+  .quick-replies { display: flex; flex-direction: column; margin-bottom: 9px; }
   .quick-replies button {
     flex: 1; appearance: none; cursor: pointer; font-family: inherit;
     font-size: 12px; font-weight: 650; padding: 8px; border-radius: 9px;
@@ -257,10 +267,7 @@
               </div>
               <div class="phone-feed" id="smsOutbox"></div>
               <div class="phone-input">
-                <div class="quick-replies">
-                  <button class="qr-yes" onclick="quickReply('1')">1 · Approve</button>
-                  <button class="qr-no" onclick="quickReply('2')">2 · Reject</button>
-                </div>
+                <div class="quick-replies" id="quickReplies"></div>
                 <div class="phone-row">
                   <input type="text" id="smsReply" placeholder="Reply as Amma: 1, 2, or 1 #42" autocomplete="off">
                   <button class="phone-send" id="smsSendBtn">Send</button>
@@ -482,25 +489,71 @@ async function renderSms() {
 
   $("smsOutbox").innerHTML = body.outbox.length
     ? body.outbox.slice().reverse().map((m) => {
-        const answered = body.escalations.find(
+        const forCustomer = m.audience === "customer";
+        // "awaiting reply" is only claimed where it can be checked: a
+        // merchant escalation is tracked by order id. Nothing in this
+        // payload knows whether the CUSTOMER has answered yet, so the
+        // console does not pretend to -- it says who the message was for
+        // and stops there.
+        const answered = forCustomer ? null : body.escalations.find(
           (e) => m.body.includes(`Order #${e.order_id}`) && e.answered
         );
         return `
-          <div class="bubble">
+          <div class="bubble ${forCustomer ? "to-customer" : ""}">
+            <span class="bubble-tag">${forCustomer ? "→ to the customer" : "→ to Amma"}</span>
             ${esc(m.body)}
             <div class="bubble-meta">
               <span class="bubble-to">to ${esc(m.to)}</span>
-              ${answered
-                ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
-                : `<span class="badge badge-warn">awaiting reply</span>`}
+              ${forCustomer
+                ? `<span class="badge badge-info">answer in the buyer console</span>`
+                : answered
+                  ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
+                  : `<span class="badge badge-warn">awaiting reply</span>`}
             </div>
             ${m.error ? `<div class="bubble-fail">delivery failed: ${esc(m.error)}</div>` : ""}
           </div>`;
       }).join("")
     : `<div class="phone-empty">No alerts yet.<br>An escalation texts Amma automatically.</div>`;
 
+  renderQuickReplies(body);
   $("smsOutbox").scrollTop = $("smsOutbox").scrollHeight;
 }
+
+/* The two sides answer in deliberately different vocabularies -- 1/2 for
+   the merchant, YES/NO for the customer -- which is what stops a reply
+   being misrouted when both are the same phone. So the buttons have to
+   follow the question that was actually asked, not be fixed to one side:
+   offering "1 / 2" under a message that says "reply YES or NO" produces a
+   reply that answers nobody and silently does nothing. */
+function renderQuickReplies(body) {
+  const newest = body.outbox[0];
+  const el = $("quickReplies");
+
+  if (newest && newest.audience === "customer") {
+    el.innerHTML =
+      `<p class="qr-hint">The last message asked the CUSTOMER — they answer YES or NO.</p>` +
+      `<div style="display:flex; gap:7px; width:100%">
+         <button class="qr-yes" data-reply="YES">YES</button>
+         <button class="qr-no" data-reply="NO">NO</button>
+       </div>`;
+    return;
+  }
+
+  const waiting = (body.escalations || []).filter((e) => !e.answered).length;
+  el.innerHTML =
+    `<p class="qr-hint">${waiting
+      ? `Amma has ${waiting} order${waiting === 1 ? "" : "s"} to answer — 1 or 2.`
+      : "Nothing outstanding. 1 approves, 2 declines."}</p>` +
+    `<div style="display:flex; gap:7px; width:100%">
+       <button class="qr-yes" data-reply="1">1 · Approve</button>
+       <button class="qr-no" data-reply="2">2 · Reject</button>
+     </div>`;
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest("#quickReplies button[data-reply]");
+  if (btn) quickReply(btn.dataset.reply);
+});
 
 function quickReply(digit) {
   $("smsReply").value = digit;

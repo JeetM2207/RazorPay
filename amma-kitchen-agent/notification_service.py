@@ -40,6 +40,13 @@ class SentMessage:
     transport: str          # "twilio" | "mock"
     sent_at: str
     error: str | None = None
+    # Who the message was written FOR. The two sides are asked different
+    # questions in deliberately different vocabularies -- 1/2 for the
+    # merchant, YES/NO for the customer -- and in a demo they are often
+    # the same phone number, so the recipient cannot tell them apart. A
+    # console that shows one side's message next to the other side's
+    # buttons invites a reply that answers nothing.
+    audience: str = "merchant"
 
 
 _OUTBOX: list[SentMessage] = []
@@ -55,6 +62,7 @@ def outbox(limit: int = 20) -> list[dict]:
             "transport": m.transport,
             "sent_at": m.sent_at,
             "error": m.error,
+            "audience": m.audience,
         }
         for m in list(reversed(_OUTBOX))[:limit]
     ]
@@ -91,12 +99,17 @@ def _match_channel(recipient: str) -> str:
     return recipient
 
 
-def send_sms(body: str, to: str | None = None) -> SentMessage:
+def send_sms(body: str, to: str | None = None, audience: str = "merchant") -> SentMessage:
+    """`audience` is "merchant" or "customer": who this text is asking.
+
+    Defaults to the merchant because the default recipient is hers -- a
+    send with no `to` goes to MERCHANT_PHONE.
+    """
     recipient = to or MERCHANT_PHONE or "+91-merchant-mock"
     now = datetime.now(timezone.utc).isoformat()
 
     if not TWILIO_CONFIGURED:
-        message = SentMessage(recipient, body, "mock", now)
+        message = SentMessage(recipient, body, "mock", now, audience=audience)
         _OUTBOX.append(message)
         return message
 
@@ -106,9 +119,9 @@ def send_sms(body: str, to: str | None = None) -> SentMessage:
         Client(_ACCOUNT_SID, _AUTH_TOKEN).messages.create(
             body=body, from_=_FROM, to=_match_channel(recipient)
         )
-        message = SentMessage(recipient, body, "twilio", now)
+        message = SentMessage(recipient, body, "twilio", now, audience=audience)
     except Exception as exc:  # a transport failure must not break an order
-        message = SentMessage(recipient, body, "twilio", now, error=str(exc))
+        message = SentMessage(recipient, body, "twilio", now, error=str(exc), audience=audience)
 
     _OUTBOX.append(message)
     return message

@@ -6,6 +6,7 @@ import adapter_ap2
 import adapter_x402
 import app as unified
 import audit_log
+import buyer_sms
 import escalations
 import notification_service
 
@@ -258,3 +259,56 @@ def test_a_transport_failure_never_breaks_the_order(client, monkeypatch):
 
     body = _escalate(client, agent_id="resilient")
     assert body["status"] == "requires_human", "the order must still be recorded and resolvable"
+
+
+# ------------------------- who a message was written for, and its buttons
+
+def test_the_outbox_records_which_side_each_message_asks(monkeypatch):
+    """In a demo both parties are usually the same phone number, so the
+    recipient cannot tell an escalation from a customer question. The two
+    are asked in deliberately different vocabularies -- 1/2 for the
+    merchant, YES/NO for the customer -- and a console that shows one
+    side's message beside the other side's buttons invites a reply that
+    answers nobody."""
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+
+    escalations.notify("acp", "s1", {
+        "event_id": 42, "agent_id": "agent-x", "total_inr": 440,
+        "reason": "total Rs.440 at/above human confirmation threshold Rs.400",
+    }, [("chicken_biryani", 2)])
+    buyer_sms.ask_approval(agent_id="agent-x", phone="8306610707",
+                           cart_label="2x Paneer Bhurji", total_inr=300, soft_cap_inr=300)
+
+    outbox = notification_service.outbox()
+    assert [m["audience"] for m in outbox] == ["customer", "merchant"]
+    # Same number on both, which is exactly why the label is needed.
+    assert outbox[0]["to"].endswith("8306610707")
+    assert outbox[1]["to"].endswith("8306610707")
+
+
+def test_an_unlabelled_send_is_treated_as_the_merchants(monkeypatch):
+    """The default recipient is hers -- a send with no `to` goes to
+    MERCHANT_PHONE -- so the default audience matches."""
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+
+    notification_service.send_sms("kitchen, an order needs you")
+    assert notification_service.outbox()[0]["audience"] == "merchant"
+
+
+def test_an_order_under_her_threshold_never_asks_the_merchant(monkeypatch):
+    """The bug this came from: a Rs.300 order sat under her Rs.400
+    threshold, so only the CUSTOMER was ever asked. The merchant console
+    showed that message on 'Amma's phone' and offered her 1/2 buttons for
+    a question nobody had asked her."""
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+
+    buyer_sms.ask_approval(agent_id="agent-x", phone="8306610707",
+                           cart_label="2x Paneer Bhurji", total_inr=300, soft_cap_inr=300)
+
+    assert escalations.pending() == [], "the merchant was never asked"
+    assert [m["audience"] for m in notification_service.outbox()] == ["customer"]

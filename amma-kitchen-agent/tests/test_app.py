@@ -474,3 +474,31 @@ def test_the_buyer_screen_watches_for_a_refund(client):
     assert "automatically refunded via the Razorpay API" in page
     # A reload must not replay the day's outcomes as if they just happened.
     assert "seenOutcomes" in page
+
+
+def test_the_sms_feed_says_who_each_message_was_for(client, monkeypatch):
+    import buyer_sms
+    import escalations
+    import notification_service
+
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    notification_service.clear_outbox()
+    escalations.reset()
+    buyer_sms.ask_approval(agent_id="a", phone="8306610707",
+                           cart_label="2x Paneer Bhurji", total_inr=300, soft_cap_inr=300)
+
+    body = client.get("/api/sms").json()
+    assert body["outbox"][0]["audience"] == "customer"
+    assert body["escalations"] == [], "nothing was ever asked of the merchant"
+
+
+def test_the_phone_labels_each_message_and_matches_its_buttons(client):
+    """A message that asks the customer for YES/NO must not be shown with
+    the merchant's 1/2 buttons under it -- that was the bug."""
+    page = client.get("/merchant/orders").text
+
+    assert "renderQuickReplies" in page
+    assert "to the customer" in page and "to Amma" in page
+    # The vocabularies are chosen per message, not hardcoded in the markup.
+    assert 'data-reply="YES"' in page and 'data-reply="1"' in page
+    assert "answer in the buyer console" in page

@@ -377,13 +377,18 @@ system will not let it be approved here and that this is deliberate.
 *Right, "Amma's phone":* an actual phone mock-up — rounded dark bezel, dark screen, a
 WhatsApp-style header with an `AK` avatar reading *"Amma's Kitchen bot · WhatsApp · mock
 transport"* (or *"live via Twilio"*). Messages render as chat bubbles newest-last, each
-with the recipient in monospace and a pill showing **APPROVED** / **REJECTED** or
-**AWAITING REPLY**; a send that failed shows *"delivery failed: …"* in rose inside the
-bubble. At the bottom, two **quick-reply buttons** — a green **1 · Approve** and a rose
-**2 · Reject** — that fire the reply in one click, plus a free-text box for anything else
-(`1 #42`). The note underneath says plainly that this posts to the same
-`/webhook/sms-reply` Twilio calls, so the loop on screen is the real one, and that replies
-are parsed by a regex rather than a model.
+opening with who it was written for — **→ TO AMMA** or **→ TO THE CUSTOMER**, the latter
+tinted and dashed — the recipient in monospace, and a pill: **APPROVED** / **REJECTED** /
+**AWAITING REPLY** for hers, or *"answer in the buyer console"* for the customer's. A send
+that failed shows *"delivery failed: …"* in rose inside the bubble.
+
+At the bottom, **quick-reply buttons that follow the question actually asked**: a green
+**1 · Approve** and a rose **2 · Reject** under a merchant escalation, or **YES / NO**
+under a customer question, with a line above saying which side is being asked and how many
+of her orders are outstanding. Plus a free-text box for anything else (`1 #42`). The note
+underneath says plainly that this posts to the same `/webhook/sms-reply` Twilio calls, so
+the loop on screen is the real one, and that replies are parsed by a regex rather than a
+model.
 
 **Tab 2 — AI growth & yield.** Three cards. The **AI Strategist** with an indigo left edge,
 a window dropdown (last 24 hours / 7 days / 30 days) and **Read my numbers**; the answer
@@ -1049,6 +1054,23 @@ Plausibility and recency only apply when there is something to choose between; i
 merchant has nothing outstanding, the customer is the only one who could be replying.
 The two sides also use deliberately different vocabularies — 1/2 for the merchant, YES/NO
 for the customer — which makes a collision much less likely in the first place.
+
+**The console has to say which side it is showing.** Both parties reach the same outbox,
+and in a demo they are usually the same phone number, so a merchant console that renders
+every message identically will show a customer's question on *Amma's* phone. That happened:
+a Rs.300 order sat under her Rs.400 threshold, so she was never asked anything — but the
+customer's *"Reply YES to go ahead"* appeared on her screen under buttons reading **1** and
+**2**, with a badge stuck on "awaiting reply" forever because nothing tracks the customer's
+answer the way `escalations` tracks hers.
+
+Nothing was wrong below the surface: the router accepts `1` for a customer approval as
+readily as `YES`, so the reply resolved correctly, and the order then completed without
+entering her queue because it never belonged there. The whole fault was that the screen
+described a conversation that was not happening. `SentMessage` now records an `audience`
+— "merchant" or "customer", defaulting to the merchant because the default recipient is
+hers — and the console labels every bubble with it and renders the matching vocabulary
+beneath. A test asserts both messages carry the same phone number, which is exactly why
+the label has to exist.
 
 Other properties worth keeping:
 

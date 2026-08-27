@@ -115,7 +115,7 @@ def _tell(phone: str | None, message: str) -> None:
         import buyer_sms
 
         recipient = buyer_sms.normalise_phone(phone) or phone
-        notification_service.send_sms(message, to=recipient)
+        notification_service.send_sms(message, to=recipient, audience="customer")
     except Exception:
         pass
 

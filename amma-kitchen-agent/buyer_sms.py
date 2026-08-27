@@ -144,7 +144,7 @@ def ask(
         raise ValueError("No usable phone number on file for this customer.")
 
     body = _compose(unmatched, available, shop_name)
-    sent = notification_service.send_sms(body, to=normalised)
+    sent = notification_service.send_sms(body, to=normalised, audience="customer")
 
     conversation = Conversation(
         agent_id=agent_id,
@@ -181,7 +181,7 @@ def ask_approval(
         f"That's above the Rs.{soft_cap_inr} you asked to be checked on.\n\n"
         "Reply YES to go ahead, or NO to cancel."
     )
-    sent = notification_service.send_sms(body, to=normalised)
+    sent = notification_service.send_sms(body, to=normalised, audience="customer")
 
     conversation = Conversation(
         agent_id=agent_id,
