@@ -687,15 +687,29 @@ untouched; x402 and ACP still finish at capture.
 what happened is that payment was taken first, which is a different fact, and the trail
 says that instead of inventing a yes. A test asserts no "human override" row appears.
 
-**What the buyer console cannot honestly claim.** It settles autonomously, which on this
-account means a `sim_` reference with no Razorpay payment behind it — asking to refund one
-is rejected as *"not a valid id"*, which was checked rather than assumed. So a declined
-order there is still reversed, still closed, and still tells the customer — but it says
-*"reversed — the settlement was simulated, so nothing was ever charged"*, not "refunded to
-your card". The MCP path takes real money through a payment link and gets the real refund
-sentence. One env change (S2S enablement) makes both real; until then the screens say which
-is which, because printing a false statement about money is the one thing this project
-will not do.
+**And the console now takes real money, for one reason.** It used to settle autonomously —
+no browser, no card form — falling back to a capture labelled `sim_` because S2S is not
+enabled on this account. That was honest, and it stayed honest right up to the point where
+the kitchen declined an order: a `sim_` reference has no Razorpay payment behind it, so
+asking to refund one comes back *"not a valid id"* (checked, not assumed). The customer got
+a truthful message about the reversal of money that had never moved, which is a strange
+thing for a payments demo to be proud of.
+
+So the console does what the Claude path does: `cart-mandate` → `payment-mandate` issues a
+**real Razorpay link**, the customer pays it themselves, and the agent's job ends there. The
+OTP, UPI PIN or CVV is typed by the human on Razorpay's own page — the console structurally
+cannot do that step, which is the same boundary the MCP adapter has. From capture on it is
+the shared lifecycle, and a decline issues a **real refund to the original payment method**.
+
+`autonomous_payment.py` and AP2's `execute-payment` route are untouched and still
+demonstrable through `buyer_agent_b.py` — the no-browser settlement is a real capability,
+and the `sim_` labelling is still the honest thing to do when S2S is off. It just should not
+have been the path a customer's refund depended on.
+
+**`follow_up_after_capture` is now gated on the lifecycle, not the protocol.** It fires for
+any order that entered via `open_order()` and no-ops for anything that finishes at capture,
+so both doors that take payment first get the same after-payment handling without the
+webhook having to know which one was used.
 
 The decision is *not* re-derived after payment. `negotiation.py` already said APPROVE or
 ESCALATE when the cart was proposed; that verdict is carried on the order and simply

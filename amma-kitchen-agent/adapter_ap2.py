@@ -382,12 +382,27 @@ def create_payment_mandate(cart_mandate_id: str) -> dict:
         raise HTTPException(403, "cart mandate expired")
 
     cart_mandate["used"] = True
+    intent = _INTENT_MANDATES.get(cart_mandate["intent_mandate_id"], {})
     link = orchestrator.create_payment_for_cart(
         cart_mandate["agent_id"],
         cart_mandate["event_id"],
         cart_mandate["cart"],
-        skip_reevaluation=cart_mandate["human_overridden"],
+        # A cart taken pay-first carries a verdict of ESCALATE that was
+        # already made and already actioned by taking the money; re-running
+        # the check here would escalate it again forever.
+        skip_reevaluation=cart_mandate["human_overridden"] or bool(intent.get("pay_first_pending")),
     )
+
+    # From here the order is in the shared lifecycle: the webhook marks it
+    # paid, then it either auto-confirms or goes to Amma, and a decline
+    # refunds. Entered HERE rather than by the caller for the same reason
+    # MCP's checkout does it -- a console that forgets cannot skip it.
+    import mcp_orders
+
+    try:
+        mcp_orders.open_order(cart_mandate["event_id"])
+    except Exception:
+        pass
 
     # A simplified stand-in for AP2's real cryptographic mandate binding:
     # a hash tying this payment to the exact intent+cart it was matched

@@ -188,11 +188,15 @@ def follow_up_after_capture(event: dict, payment_id: str) -> None:
     heard nothing and Amma never saw it: correct in the trail, invisible
     everywhere else.
 
-    A no-op for ACP, AP2 and x402, which finish at capture. Both callers
-    have already claimed the payment through the shared idempotency
-    ledger, so this runs once per payment.
+    Gated on whether the order is IN this lifecycle -- i.e. whether
+    open_order() was called for it -- rather than on which protocol it
+    arrived over. Both doors that take payment first now go through here,
+    and an order that finishes at capture (a scripted agent, x402) never
+    entered, so it is left alone. Both callers have already claimed the
+    payment through the shared idempotency ledger, so this runs once per
+    payment.
     """
-    if event.get("protocol") != PROTOCOL:
+    if status_of(event["id"]) != AWAITING_PAYMENT:
         return
     try:
         on_payment_captured(dict(event, payment_id=payment_id), payment_id)

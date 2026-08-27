@@ -1063,31 +1063,80 @@ async function settle(mandate, hardCap) {
   await step(`Authorised by you up to ${rupee(hardCap)}; this is ${rupee(total)}.`, "step", 500);
   setStep(4);
   setState("SETTLING", "#e3b341");
-  await step("Executing Razorpay UPI Collect request…", "step", 380);
-  await step(`Pinging VPA: <b>success@razorpay</b> (test mode auto-approve).`, "step", 380);
 
+  /* A real Razorpay payment link, and the customer pays it themselves.
+     The agent's job ends here, exactly as Claude's does on the MCP path.
+
+     This replaced an autonomous UPI/S2S settlement that fell back to a
+     capture we labelled `sim_` ourselves. That was honest, but it had one
+     consequence that could not be papered over: a `sim_` reference has no
+     Razorpay payment behind it, so an order the kitchen later declined
+     could not actually be refunded -- the customer got a truthful message
+     about a reversal of money that had never moved. Taking a real payment
+     is what makes the refund real. */
   const working = cursor();
-  const pm = (await api(`/ap2/cart-mandates/${cart.id}/execute-payment`, { method: "POST" })).payment_mandate;
+  const pm = (await api(`/ap2/cart-mandates/${cart.id}/payment-mandate`, { method: "POST" })).payment_mandate;
   working.remove();
 
-  log(`&gt; Razorpay order <b>${pm.order_id}</b> created.`, "quiet");
+  log(`&gt; Payment link issued. Mandate hash <b>${pm.matched_mandate_hash.slice(0, 16)}…</b> binds it to this exact cart.`, "quiet");
+  log(`&gt; I cannot pay for you: the OTP, UPI PIN or CVV is entered by you, on Razorpay's own page.`, "quiet");
+  showPaymentLink(pm.payment_link_url, total);
+  setState("AWAITING PAYMENT", "#e3b341");
 
-  if (pm.simulated) {
-    // Say plainly what did and didn't happen. Claiming a UPI capture
-    // that Razorpay never made would put a false record in the very
-    // audit trail this system asks people to trust.
-    log(`&gt; UPI collect declined: ${pm.method}.`, "warn");
-    log(`&gt; Falling back to a simulated capture: <b>${pm.payment_id}</b>.`, "warn");
-    log(`&gt; Marked <b>sim_</b> in the audit trail, never <b>pay_</b>, so it can't be`, "warn");
-    log(`&gt; mistaken for money that moved.`, "warn");
-  } else {
-    log(`&gt; Success: real payment ID <b>${pm.payment_id}</b> confirmed via UPI.`, "ok");
+  const paid = await waitForPayment(pm.payment_link_id);
+  hidePaymentLink();
+  if (!paid) {
+    log("&gt; Payment link is still unpaid. Nothing has been charged.", "warn");
+    setState("UNPAID", "#e3b341");
+    return;
   }
 
-  log("&gt; Transaction complete. Amma's Kitchen has been notified.", "ok");
-  log("&gt; No human touched a card form. My work here is done.", "ok");
+  log("&gt; Razorpay confirms the payment captured.", "ok");
+  log("&gt; Amma has been notified. If she cannot make it, the refund is automatic.", "ok");
+  log("&gt; Watch this screen — you will be told either way.", "quiet");
   setState("COMPLETE", "#56d364");
   stepsDone();
+}
+
+/* The link, put where the customer cannot miss it. Deliberately a real
+   anchor they click rather than anything this page can submit for them. */
+function showPaymentLink(url, total) {
+  $("termAsk").innerHTML = `
+    <p>Your order is ready. Pay ${rupee(total)} on Razorpay's own page.</p>
+    <div class="btn-row">
+      <a class="btn btn-ok btn-sm" href="${escHtml(url)}" target="_blank" rel="noopener">Pay ${rupee(total)}</a>
+      <button class="btn btn-ghost btn-sm" id="payCancel">Not now</button>
+    </div>`;
+  $("termAsk").style.display = "";
+  $("payCancel").addEventListener("click", hidePaymentLink);
+}
+
+function hidePaymentLink() {
+  $("termAsk").style.display = "none";
+  $("termAsk").innerHTML = ASK_TEMPLATE;
+}
+
+/* Asks Razorpay whether the link was paid, rather than trusting anything
+   this page believes. Gives up after five minutes rather than spinning
+   forever -- the order is not lost, it is simply still unpaid, and the
+   webhook will pick it up whenever the customer gets round to it. */
+function waitForPayment(paymentLinkId) {
+  return new Promise((resolve) => {
+    const started = Date.now();
+    const poll = setInterval(async () => {
+      if (Date.now() - started > 300000) {
+        clearInterval(poll);
+        return resolve(false);
+      }
+      try {
+        const { status } = await api("/api/payment-status/" + paymentLinkId);
+        if (status === "paid") {
+          clearInterval(poll);
+          resolve(true);
+        }
+      } catch (_) { /* keep waiting */ }
+    }, 2500);
+  });
 }
 
 /* ------------------------------------------ how an order actually ended
