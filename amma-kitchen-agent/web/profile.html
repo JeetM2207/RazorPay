@@ -6,7 +6,7 @@
 <title>Set up your account — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
 <style>
-  .wrap { max-width: 560px; margin: 0 auto; }
+  .wrap { max-width: 620px; margin: 0 auto; }
   .steps { display: flex; gap: 8px; margin-bottom: 26px; }
   .pip { flex: 1; height: 3px; border-radius: 2px; background: var(--line-strong); }
   .pip.on { background: var(--accent); }
@@ -17,42 +17,50 @@
   .hint { font-size: 12px; color: var(--ink-3); margin-top: 5px; }
 
   .section-head {
-    font-size: 12px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
-    color: var(--ink-3); margin: 26px 0 14px; padding-top: 20px;
+    font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--ink-3); margin: 28px 0 15px; padding-top: 22px;
     border-top: 1px solid var(--line);
   }
   .section-head:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
 
   .cardface {
-    background: linear-gradient(135deg, #2a2724, #443c33);
-    border-radius: 12px; padding: 17px; color: #fff; margin-bottom: 15px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 60%, #312e81 100%);
+    border-radius: 14px; padding: 19px; color: #fff; margin-bottom: 16px;
+    box-shadow: 0 12px 30px -14px rgba(15, 23, 42, .6);
+    position: relative; overflow: hidden;
+  }
+  .cardface::after {
+    content: ""; position: absolute; right: -40px; top: -60px;
+    width: 170px; height: 170px; border-radius: 50%;
+    background: rgba(99, 102, 241, .18);
   }
   .cardface .chip {
-    width: 34px; height: 24px; border-radius: 4px; margin-bottom: 16px;
-    background: linear-gradient(135deg, #e8c37a, #b98f3f);
+    width: 36px; height: 26px; border-radius: 5px; margin-bottom: 18px;
+    background: linear-gradient(135deg, #fcd34d, #b45309);
   }
   .cardface .num {
     font-family: ui-monospace, Menlo, Consolas, monospace;
     font-size: 17px; letter-spacing: 1.5px;
   }
   .cardface .meta {
-    display: flex; justify-content: space-between; margin-top: 12px;
-    font-size: 11px; color: #b8b0a4; text-transform: uppercase; letter-spacing: .5px;
+    display: flex; justify-content: space-between; margin-top: 13px;
+    font-size: 10.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em;
   }
 
   .safety {
-    display: flex; gap: 10px; padding: 12px 14px; border-radius: 9px;
-    background: var(--info-soft); border: 1px solid #cfe2f2;
-    font-size: 12.5px; color: #14486f; line-height: 1.5; margin-bottom: 17px;
+    display: flex; gap: 10px; padding: 13px 15px; border-radius: 11px;
+    background: var(--info-soft); border: 1px solid var(--info-line);
+    font-size: 12.5px; color: #075985; line-height: 1.5; margin-bottom: 17px;
   }
-  .safety b { color: #0b3a5c; }
+  .safety b { color: #0c4a6e; }
 
   .saved-banner {
     display: flex; align-items: center; gap: 12px; justify-content: space-between;
-    padding: 14px 16px; border-radius: 10px; margin-bottom: 20px;
-    background: var(--ok-soft); border: 1px solid #bfe3cd; color: var(--ok);
-    font-size: 13.5px;
+    padding: 14px 17px; border-radius: 12px; margin-bottom: 20px;
+    background: var(--ok-soft); border: 1px solid var(--ok-line); color: var(--ok);
+    font-size: 13.5px; font-weight: 550;
   }
+  .pip { transition: background .25s ease; }
 </style>
 </head>
 <body>

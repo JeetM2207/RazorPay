@@ -214,64 +214,90 @@ except the Razorpay keys degrades to a working offline path.
 
 Written out because a reader should not have to run the thing to know what a judge sees.
 Everything is vanilla HTML/CSS/JS on `shared.css` — no build step, no framework, no CDN
-and no web fonts, so it renders identically offline and on camera. The palette is warm
-because it is a home kitchen and sober because it is payments: sand background `#f7f6f3`,
-white cards, burnt-orange accent `#c2410c`, and a fixed semantic set used the same way on
-every page — green `#0b6b3a` for cleared, amber `#8a5a00` for waiting on a human, red
-`#9d1c2e` for refused, blue `#0b5f9a` for informational.
+and no web fonts, so it renders identically offline and on camera. The palette is a
+payments palette: near-white `#f8fafc` ground, white cards on `#e2e8f0` hairlines, slate
+ink, a single indigo accent `#4f46e5` reserved for primary actions, and dark slate
+`#0f172a`/`#1e293b` wherever the machine is speaking rather than the product — the
+terminal, the phone, the card face. Four semantics are used the same way on every surface:
+**emerald `#059669`** cleared / paid, **amber `#b45309`** waiting on a human, **rose
+`#e11d48`** refused by a hard rule, **sky `#0284c7`** informational. Badges are rounded
+pills, cards lift on hover, the page is a 1400px responsive grid.
 
 Every console page carries the same topbar: **Amma's Kitchen** wordmark, a role chip
 reading **Buyer** or **Merchant**, and links across to the other side, the audit trail and
-home. The merchant pages add a pulsing green **live** dot.
+home.
 
 ### `/` — the landing page
 
 Title, one line of what this is, then two large "door" cards: **Buyer console** ("Order as
 a customer's AI shopping assistant would") and **Merchant console** ("Sit where Amma sits:
-decide the orders the system refuses to decide alone"), each with four bullets of what you
-can do there. Below them three plain links — the audit trail, the agent-readable catalog
-as raw JSON, and the protocol API reference. Then a short section on the two-party mandate
-idea, and **Running the two-person demo**: a six-step numbered script (order 3 biryanis and
-watch your own agent refuse it; drop to 2 and get asked; watch it reach Amma; pay; then try
-the catering tray) with the Razorpay test card `4100 2800 0000 1007` in monospace.
+decide the orders the system refuses to decide alone"), each with four bullets. Below them
+three plain links — the audit trail, the agent-readable catalog as raw JSON, and the
+protocol API reference. Then a short section on the two-party mandate idea, and **Running
+the two-person demo**: a six-step numbered script (order 3 biryanis and watch your own
+agent refuse it; drop to 2 and get asked; watch it reach Amma; pay; then try the catering
+tray) with the Razorpay test card `4100 2800 0000 1007` in monospace.
 
 ### `/buyer` — the customer's one-time setup
 
-Heading **"Set up your account"**, and if a profile already exists in this browser a green
-banner appears at the top: *"You've already set this up."* with a **Go to ordering** button.
-Three sections:
+A single narrow column with a two-pip progress bar at the top. Heading **"Set up your
+account"**, and if a profile already exists in this browser a green banner appears:
+*"You've already set this up."* with a **Go to ordering** button. Three sections:
 
 - **Who you are** — full name, delivery address (textarea), WhatsApp number. The hint under
   the phone field says what that number is actually for: *"If something you ask for isn't on
   the menu, your agent messages you here to ask what you'd like instead."*
-- **Card on file** — a drawn credit-card graphic with a padlock, a masked number that
-  updates as you type, the cardholder name and MM/YY. Below it the real inputs: card
-  number, expiry, CVV, pre-filled with the Razorpay test card so nobody types a real one by
-  reflex. **On save the number and CVV fields are wiped and only the last four survive** —
-  see "Card details never reach the server".
+- **Card on file** — a dark indigo-slate card face with a gold chip, a masked number that
+  updates as you type, cardholder and MM/YY. Below it the real inputs: card number, expiry,
+  CVV, pre-filled with the Razorpay test card so nobody types a real one by reflex. **On
+  save the number and CVV fields are wiped and only the last four survive** — see "Card
+  details never reach the server".
 - **What your agent may spend** — **Hard cap** (*"Never exceed this on one order, ever."*)
-  and **Soft cap** (*"Above this, the agent asks you first."*). These are the customer's
-  own limits, not Amma's.
+  and **Soft cap** (*"Above this, the agent asks you first."*). The customer's own limits,
+  not Amma's.
 
 One **Save and continue** button.
 
-### `/buyer/order` — the ordering screen, and the one a judge watches
+### `/buyer/order` — the buyer studio, and the screen a judge watches
 
-Two panes side by side, numbered 1 and 2.
+Two columns: a 420px control rail on the left, the agent's work on the right.
 
-**Pane 1, "Your order"** — a small profile card showing the avatar initial, name, address,
-`Paying with •••• 1007`, `Agent may spend up to ₹600`, `Asks you above ₹300`. Then one
-textarea, pre-filled with *"Order 1 paneer bhurji and 4 tandoori roti"*, and a **Deploy
-Agent** button. The note under it sets the expectation: the agent negotiates on its own and
-comes back only if something needs a person.
+**Left, "Your order"** — a mandate card. Avatar, name, address, then a dark **card-on-file**
+strip showing `•••• 1007` beside a gold chip and a green `TOKENISED` pill. Under it the two
+limits are drawn as meters rather than written as numbers: a rose **hard cap** bar at full
+width labelled *"never exceeded"*, and an amber **soft cap** bar labelled *"asks you
+first"*, with the note *"Anything above the soft cap comes back to you before it is
+bought."* Then the order textarea, pre-filled with *"Order 1 paneer bhurji and 4 tandoori
+roti"*, and a full-width **Deploy Agent** button.
 
-**Pane 2, "Your buying agent"** — a dark terminal styled like a mac window: three
-red/amber/green dots, the agent's id as its name, and a state chip on the right that
-changes text and colour as it goes: `IDLE` → `WAKING` → `RUNNING`, then `ASKING YOU` in
-amber while it waits on the customer, `WAITING ON MERCHANT` while it waits on Amma,
-`SETTLING`, and `COMPLETE` in green. A run that ends badly parks on the reason rather than
-a generic failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`,
-`NOTHING TO ORDER` or `ERROR`. Inside, timestamped lines in a fixed grammar:
+Below that, a second card: **"On the menu today"**, with a badge reading `7 of 8
+orderable`, and a two-column **dish grid** straight from her live menu. Each tile shows the
+dish name, its category in small caps, the price, and a **+ Add** button that appends to
+the order box, so two taps build a two-item order. A dish she has unticked is dimmed and
+its button reads **in person** — visible, but not orderable, which is exactly what the
+catalog publishes. A discounted dish shows its old price struck through beside the new one
+and adds *· on sale* to the category line.
+
+**Right, "Your buying agent"** — a four-step progress stepper above a dark glass terminal.
+The steps are in the order they really run, which is the two-party story in one glance:
+
+```
+ (1) Discover        (2) Your limits      (3) Negotiate       (4) Settle
+     her catalog         bounded check        her limits          Razorpay
+```
+
+A finished phase turns emerald, the running one indigo with a halo, and a phase that fails
+turns rose **while the ones before it stay green** — the point is showing how far it got.
+The stepper is a renderer like `markLimits`: it reports which phase the agent is in and
+decides nothing.
+
+The terminal itself is a mac-style window with a translucent blurred title bar over a
+slate gradient: three red/amber/green dots, the agent's id as its name, and a state chip on
+the right that moves `IDLE` → `WAKING` → `RUNNING`, then `ASKING YOU` in amber while it
+waits on the customer, `WAITING ON MERCHANT` while it waits on Amma, `SETTLING`, and
+`COMPLETE` in green. A run that ends badly parks on the reason rather than a generic
+failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`, `NOTHING TO ORDER` or
+`ERROR`. Inside, timestamped lines in a fixed grammar:
 
 | kind | colour | used for |
 | --- | --- | --- |
@@ -291,22 +317,17 @@ amount in that line rendered bold with a coloured glow: green where the arithmet
 red where it did not. See "Showing the boundary, not describing it".
 
 Below the terminal an **ask panel** slides in whenever the agent needs its own human, with
-the question in amber. It is rebuilt per question rather than reused blindly: a soft-cap
-confirmation shows **YES / NO** against the amount, while an off-menu miss shows a free-text
-box placeholdered *"e.g. one masala dosa and a coffee"* with **Send / Cancel**. When Twilio
-is configured the same panel reads *"Waiting for your WhatsApp reply…"* and either channel
-resolves it — answering on screen posts through the real `/webhook/sms-reply`, so the
-offline path exercises the live one.
+the question in amber. It is rebuilt per question: a soft-cap confirmation shows
+**YES / NO** against the amount, while an off-menu miss shows a free-text box placeholdered
+*"e.g. one masala dosa and a coffee"* with **Send / Cancel**. When Twilio is configured the
+same panel reads *"Waiting for your WhatsApp reply…"* and either channel resolves it —
+answering on screen posts through the real `/webhook/sms-reply`, so the offline path
+exercises the live one.
 
-Back on pane 1, under the textarea, sit **quick-pick chips** — the first four dishes an
-agent may order, each showing its live price (`Veg Thali ₹150`), which fill the box when
-clicked so a demo does not depend on typing.
-
-Bottom-centre, a **refund toast** appears when an order the kitchen was deciding reaches a
-terminal state: a dark maroon card with a `↺` mark reading *"Order #N rejected by the
-kitchen. ₹480 automatically refunded via the Razorpay API."*, or a green `✓` version when
-she accepts. It also writes the same fact into the terminal, so a video catches it either
-way.
+Bottom-centre, a **refund toast**: a dark maroon card with a `↺` mark reading *"Order #N
+rejected by the kitchen. ₹480 automatically refunded via the Razorpay API."*, or a green
+`✓` version when she accepts. It also writes the same fact into the terminal, so a video
+catches it either way.
 
 ### `/merchant` — the shop's one-time setup
 
@@ -327,39 +348,62 @@ is set up."* → **Go to orders**). Three sections:
 **Save and continue** validates before saving; a refused save shows the reason as a toast
 and leaves the previous shop untouched.
 
-### `/merchant/orders` — where Amma actually sits
+### `/merchant/orders` — the cockpit
 
-Top to bottom:
+A **sticky command bar** sits under the topbar and stays there as she scrolls: a pulsing
+green **live** pill on the left, and three KPIs on the right — **Today's revenue** in
+emerald (real `pay_` captures only, dated today, refunds excluded), **Active agents**, and
+**Interventions** in amber (escalations raised today). Below it her mandate strip, then
+three tabs. The first carries a count badge that turns amber when anything is waiting.
 
-1. **AI Strategist** — a card with an accent left border. A window dropdown (last 24 hours
-   / 7 days / 30 days) and two buttons: **Read my numbers** and **Optimize yield**. The
-   answer renders as two lines, the observation in body text and the action beneath it in
-   accent-coloured bold. Under that a row of small stat tiles — revenue settled, orders
-   needing her confirmation, orders declined after payment, add-ons taken — plus an
-   amber-bordered tile for each thing customers asked for that she does not sell. Pressing
-   **Optimize yield** lists each repriced dish as *Veg Thali · ₹150 struck through · **₹127**
-   · 20 left, discounted, plenty in stock*.
-2. **Mandate strip** — one line restating her own limits: budget cap, the amount she is
-   asked from, and the categories agents may order.
-3. **Four stat tiles** — recent decisions, escalated to you, stopped before Razorpay,
-   captured (recent).
-4. **The queue** — one card per order waiting on her, refreshed every two seconds. Each
-   carries a status badge (**NEEDS YOUR OK** in amber, or **REFUSED BY RULE** in red with a
-   red card border), the protocol in caps, the agent id in monospace, its trust tier, the
-   cart and total, and the reason in the core's own words. An ordinary escalation offers
-   **Approve as asked** / **Decline** / **Counter with less** — the last expands a per-dish
-   stepper (− qty +) and a **Send this smaller order back** button. A hard-rule refusal
-   offers only **Decline and close**, above a note explaining that the system will not let
-   it be approved here and that this is deliberate.
-5. **Alerts to Amma's phone** — a badge showing which transport is live (`mock` or
-   `twilio`), the outbox rendered as messages, and a reply box placeholdered
-   *"Reply as Amma: 1, 2, or 1 #42"* with **Send reply**. The note underneath says plainly
-   that this posts to the same `/webhook/sms-reply` Twilio calls, so the loop on screen is
-   the real one. A send that failed shows *"delivery failed: …"* in red under the message.
-6. **Asked for, but not on your menu** — table of what they asked for, how many times, and
-   when it was last asked.
-7. **Buyer agents & earned trust** — agent, trust tier, completed orders.
-8. **Recent decisions** — # · agent · protocol · cart · total · decision · payment.
+**Tab 1 — Live ops & escalations.** Two columns.
+
+*Left, "Waiting on you":* one card per order, refreshed every two seconds, with a coloured
+left edge — amber for a threshold escalation, rose for a hard-rule refusal. Each carries a
+status badge (**NEEDS YOUR OK** / **REFUSED BY RULE**), the protocol pill, the agent id in
+monospace, its trust tier, the cart and total, and the reason in the core's own words.
+
+Under that is the **threshold bar**: her two limits drawn to scale on one track, with this
+order's total filling it — green below her confirmation threshold, amber above it, rose for
+a hard-rule refusal — and two tick marks showing exactly where *asked from* and *cap* fall.
+The legend reads `this order ₹440 · asked from ₹400 · cap ₹500`. Every number in it comes
+from the server; the colour follows the decision the core already made.
+
+An ordinary escalation offers **Approve as asked** / **Decline** / **Counter with less** —
+the last expands a per-dish stepper (`− 2 +`) and a **Send this smaller order back** button.
+A hard-rule refusal offers only **Decline and close**, above a note explaining that the
+system will not let it be approved here and that this is deliberate.
+
+*Right, "Amma's phone":* an actual phone mock-up — rounded dark bezel, dark screen, a
+WhatsApp-style header with an `AK` avatar reading *"Amma's Kitchen bot · WhatsApp · mock
+transport"* (or *"live via Twilio"*). Messages render as chat bubbles newest-last, each
+with the recipient in monospace and a pill showing **APPROVED** / **REJECTED** or
+**AWAITING REPLY**; a send that failed shows *"delivery failed: …"* in rose inside the
+bubble. At the bottom, two **quick-reply buttons** — a green **1 · Approve** and a rose
+**2 · Reject** — that fire the reply in one click, plus a free-text box for anything else
+(`1 #42`). The note underneath says plainly that this posts to the same
+`/webhook/sms-reply` Twilio calls, so the loop on screen is the real one, and that replies
+are parsed by a regex rather than a model.
+
+**Tab 2 — AI growth & yield.** Three cards. The **AI Strategist** with an indigo left edge,
+a window dropdown (last 24 hours / 7 days / 30 days) and **Read my numbers**; the answer
+renders as two lines, the observation in body text and the action beneath it in indigo
+bold, over a row of stat tiles (revenue settled, orders needing confirmation, declined
+after payment, add-ons taken) with amber tiles for anything customers asked for that she
+does not sell. Then **Dynamic yield** with its **Optimize yield** button, whose result is a
+list of before/after price tags — `Veg Thali  ₹150  →  ₹127  · 20 left, discounted, plenty
+in stock` — the old price struck through in grey, the new one in an emerald pill. Then
+**Asked for, but not on your menu**, rendered as amber demand chips with a count badge
+(`2 pizzas ③`) rather than a table, because there are usually only a handful.
+
+**Tab 3 — Trust & audit ledger.** A stat row (recent decisions · escalated to you · stopped
+before Razorpay · captured), the **Buyer agents & earned trust** table (agent · tier ·
+completed orders), and the **decision ledger**: a search box that filters by agent, dish or
+decision, a three-way segmented control (**All / Settled / Stopped by a rule**), and the
+table itself — # · agent · protocol · cart · total · decision · **settlement**. The
+settlement column is the one to look at: an emerald **PAID** pill for a real capture, an
+amber **SIMULATED** pill for a `sim_` reference, a sky **REFUNDED** pill, and a rose
+**NO RAZORPAY CALL** pill for anything the rules stopped.
 
 ### `/audit` — the full trail
 
@@ -371,11 +415,11 @@ logged · approved · escalated to human · rejected by human · payments captur
 captured), the per-agent trust table, and the decision log: **# · Time (UTC) · Agent ·
 Protocol · Cart · Total · Decision · Reason · Payment**.
 
-The Payment column is the one to look at. It reads `PAID` for a real capture, **`SIMULATED`
-for a `sim_` reference**, and for anything the rules stopped it says, in red,
-**"no Razorpay call made"** — so the claim that refused orders never touch money is
-something a viewer can check rather than take on trust. An MCP row also renders the
-customer's own words beside the system's reason as *"customer wanted: …"*.
+The Payment column reads `PAID` for a real capture, **`SIMULATED` for a `sim_` reference**,
+and for anything the rules stopped it says, in red, **"no Razorpay call made"** — so the
+claim that refused orders never touch money is something a viewer can check rather than
+take on trust. An MCP row also renders the customer's own words beside the system's reason
+as *"customer wanted: …"*.
 
 ### `/catalog` and `/docs`
 

@@ -6,59 +6,120 @@
 <title>Order — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
 <style>
-  .split { display: grid; grid-template-columns: minmax(330px, 400px) 1fr; gap: 20px; align-items: start; }
-  @media (max-width: 940px) { .split { grid-template-columns: 1fr; } }
+  .split { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 22px; align-items: start; }
+  @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
 
-  .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 12px; }
+  .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
   .pane-num {
-    width: 22px; height: 22px; border-radius: 6px; flex: none;
-    background: var(--ink); color: #fff; font-size: 12px; font-weight: 700;
+    width: 22px; height: 22px; border-radius: 7px; flex: none;
+    background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
     display: grid; place-items: center;
   }
-  .pane-title { font-size: 13px; font-weight: 700; letter-spacing: .4px; text-transform: uppercase; }
-  .pane-sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 14px; }
+  .pane-title { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
+  .pane-sub { font-size: 12.5px; color: var(--ink-3); margin: 0 0 13px; }
 
-  .who { display: flex; align-items: start; gap: 12px; margin-bottom: 4px; }
+  /* ---- the customer's mandate card ---- */
+  .who { display: flex; align-items: center; gap: 12px; }
   .avatar {
-    width: 38px; height: 38px; border-radius: 50%; flex: none;
-    background: var(--accent-soft); color: var(--accent);
-    display: grid; place-items: center; font-weight: 700; font-size: 15px;
-    border: 1px solid var(--accent-line);
+    width: 40px; height: 40px; border-radius: 12px; flex: none;
+    background: var(--accent); color: #fff;
+    display: grid; place-items: center; font-weight: 700; font-size: 16px;
   }
-  .who-name { font-weight: 650; }
+  .who-name { font-weight: 650; letter-spacing: -.01em; }
   .who-line { font-size: 12.5px; color: var(--ink-3); line-height: 1.45; }
 
-  .profile-row {
-    display: flex; justify-content: space-between; align-items: center; gap: 10px;
-    padding: 9px 0; border-top: 1px solid var(--line); font-size: 13px;
-  }
-  .profile-row .k { color: var(--ink-3); }
-  .profile-row .v { font-weight: 620; }
-  .mini-card {
-    display: inline-flex; align-items: center; gap: 7px;
-    font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12.5px;
+  .card-on-file {
+    display: flex; align-items: center; gap: 11px; margin-top: 15px;
+    padding: 12px 14px; border-radius: 11px;
+    background: linear-gradient(135deg, #1e293b, #0f172a); color: #e2e8f0;
   }
   .mini-chip {
-    width: 20px; height: 14px; border-radius: 3px;
-    background: linear-gradient(135deg, #e8c37a, #b98f3f);
+    width: 26px; height: 19px; border-radius: 4px; flex: none;
+    background: linear-gradient(135deg, #fcd34d, #b45309);
   }
+  .card-on-file .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+  .card-on-file .num { font-family: var(--mono); font-size: 13.5px; letter-spacing: .06em; }
 
-  .quick { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 9px; }
-  .quick button {
-    border: 1px solid var(--line-strong); background: var(--surface);
-    border-radius: 20px; padding: 6px 12px; font: inherit; font-size: 12.5px;
-    color: var(--ink-2); cursor: pointer;
+  /* two caps, drawn so you can see how much room is left */
+  .cap { margin-top: 15px; }
+  .cap-top { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 5px; }
+  .cap-top .k { color: var(--ink-3); }
+  .cap-top .v { font-weight: 650; }
+  .cap-track { height: 7px; border-radius: 999px; background: var(--surface-3); position: relative; overflow: hidden; }
+  .cap-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
+  .cap-soft .cap-fill { background: var(--warn); }
+  .cap-hard .cap-fill { background: var(--stop); }
+  .cap-note { font-size: 11.5px; color: var(--ink-3); margin-top: 5px; }
+
+  /* ---- dish grid ---- */
+  .dish-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 4px; }
+  @media (max-width: 460px) { .dish-grid { grid-template-columns: 1fr; } }
+  .dish {
+    border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px;
+    background: var(--surface); display: flex; flex-direction: column; gap: 7px;
+    transition: border-color .15s ease, box-shadow .15s ease;
   }
-  .quick button:hover { border-color: var(--accent); color: var(--ink); }
+  .dish:hover { border-color: var(--accent-line); box-shadow: var(--shadow-sm); }
+  .dish.off { opacity: .5; }
+  .dish-name { font-size: 13.5px; font-weight: 620; line-height: 1.3; }
+  .dish-cat {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--ink-3);
+  }
+  .dish-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
+  .dish-price { font-weight: 700; font-size: 14px; }
+  .dish-was { font-size: 11px; color: var(--ink-3); text-decoration: line-through; margin-right: 4px; font-weight: 500; }
+  .dish-add {
+    appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650;
+    color: var(--accent); background: var(--accent-soft);
+    border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 10px;
+  }
+  .dish-add:hover { background: var(--accent); color: #fff; }
+  .dish-add:disabled { opacity: .5; cursor: default; background: var(--surface-3); color: var(--ink-3); border-color: var(--line); }
+
+  /* ---- the 4-step progress stepper ---- */
+  .steps { display: flex; align-items: flex-start; gap: 0; margin-bottom: 14px; }
+  .stp { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
+  .stp::before {
+    content: ""; position: absolute; top: 13px; left: -50%; width: 100%; height: 2px;
+    background: var(--line); z-index: 0;
+  }
+  .stp:first-child::before { display: none; }
+  .stp.done::before, .stp.on::before { background: var(--accent); }
+  .stp-dot {
+    width: 27px; height: 27px; border-radius: 50%; z-index: 1;
+    display: grid; place-items: center; font-size: 12px; font-weight: 700;
+    background: var(--surface); color: var(--ink-3);
+    border: 2px solid var(--line); transition: all .25s ease;
+  }
+  .stp.on .stp-dot {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 0 0 5px rgba(79, 70, 229, .15);
+  }
+  .stp.done .stp-dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .stp.fail .stp-dot { background: var(--stop); border-color: var(--stop); color: #fff; }
+  .stp-label {
+    font-size: 11px; font-weight: 620; color: var(--ink-3); text-align: center;
+    letter-spacing: -.005em; line-height: 1.3;
+  }
+  .stp.on .stp-label { color: var(--accent); }
+  .stp.done .stp-label { color: var(--ink-2); }
+  .stp.fail .stp-label { color: var(--stop); }
 
   /* ---- terminal ---- */
   .terminal {
-    background: #0d0f12; border: 1px solid #23272e; border-radius: var(--radius);
+    background: linear-gradient(160deg, #111827 0%, #0b1220 60%, #0f172a 100%);
+    border: 1px solid rgba(148, 163, 184, .18); border-radius: var(--radius-lg);
     overflow: hidden; display: flex; flex-direction: column; height: 620px;
+    box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .55),
+                inset 0 1px 0 rgba(255, 255, 255, .05);
   }
   .term-bar {
     display: flex; align-items: center; gap: 8px;
-    padding: 10px 14px; background: #14181d; border-bottom: 1px solid #23272e;
+    padding: 11px 15px;
+    background: rgba(30, 41, 59, .55);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(148, 163, 184, .14);
   }
   .term-dot { width: 10px; height: 10px; border-radius: 50%; }
   .term-name {
@@ -72,7 +133,7 @@
     font-size: 12.5px; line-height: 1.75; color: #c9d1d9;
   }
   .term-body::-webkit-scrollbar { width: 9px; }
-  .term-body::-webkit-scrollbar-thumb { background: #2b3138; border-radius: 5px; }
+  .term-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
 
   .ln { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
   .ln + .ln { margin-top: 3px; }
@@ -179,30 +240,54 @@
             </div>
           </div>
 
-          <div class="profile-row" style="margin-top:14px">
-            <span class="k">Paying with</span>
-            <span class="v mini-card"><span class="mini-chip"></span><span id="whoCard">••••</span></span>
-          </div>
-          <div class="profile-row">
-            <span class="k">Agent may spend up to</span>
-            <span class="v" id="whoHard">—</span>
-          </div>
-          <div class="profile-row">
-            <span class="k">Asks you above</span>
-            <span class="v" id="whoSoft">—</span>
+          <div class="card-on-file">
+            <span class="mini-chip"></span>
+            <div style="flex:1">
+              <div class="lbl">Card on file</div>
+              <div class="num" id="whoCard">••••</div>
+            </div>
+            <span class="badge badge-ok">tokenised</span>
           </div>
 
-          <div style="margin-top:18px">
+          <div class="cap cap-hard">
+            <div class="cap-top">
+              <span class="k">Hard cap — never exceeded</span>
+              <span class="v" id="whoHard">—</span>
+            </div>
+            <div class="cap-track"><div class="cap-fill" style="width:100%"></div></div>
+          </div>
+
+          <div class="cap cap-soft">
+            <div class="cap-top">
+              <span class="k">Soft cap — asks you first</span>
+              <span class="v" id="whoSoft">—</span>
+            </div>
+            <div class="cap-track"><div class="cap-fill" id="softFill" style="width:50%"></div></div>
+            <div class="cap-note" id="capNote">Anything above the soft cap comes back to you before it is bought.</div>
+          </div>
+
+          <div style="margin-top:20px">
             <label for="command">What do you want your AI to buy?</label>
             <textarea id="command" rows="3">Order 1 paneer bhurji and 4 tandoori roti</textarea>
-            <div class="quick" id="quick"></div>
           </div>
 
-          <button class="btn" id="deployBtn" style="width:100%; margin-top:15px">Deploy Agent</button>
+          <button class="btn" id="deployBtn" style="width:100%; margin-top:14px">Deploy Agent</button>
           <p class="note">
             The agent negotiates on its own and pays with your saved card. It comes
             back to you only if something crosses your soft cap.
           </p>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
+            <h2 class="card-title">On the menu today</h2>
+            <span class="badge badge-mute" id="dishCount">—</span>
+          </div>
+          <p class="note" style="margin:0 0 12px">
+            Live from her catalog. Tap <b>+ Add</b> to put a dish in the box, or just
+            type what you want in your own words.
+          </p>
+          <div class="dish-grid" id="dishGrid"></div>
         </div>
       </div>
 
@@ -213,6 +298,16 @@
           <span class="pane-title">Your buying agent</span>
         </div>
         <p class="pane-sub">Everything it thinks and does, as it happens.</p>
+
+        <!-- Four phases, in the order they actually run. The buyer's own
+             mandate is checked BEFORE the merchant is contacted, which is
+             the whole two-party point, so the stepper says so. -->
+        <div class="steps" id="steps">
+          <div class="stp" data-step="1"><div class="stp-dot">1</div><div class="stp-label">Discover<br>her catalog</div></div>
+          <div class="stp" data-step="2"><div class="stp-dot">2</div><div class="stp-label">Your limits<br>bounded check</div></div>
+          <div class="stp" data-step="3"><div class="stp-dot">3</div><div class="stp-label">Negotiate<br>her limits</div></div>
+          <div class="stp" data-step="4"><div class="stp-dot">4</div><div class="stp-label">Settle<br>Razorpay</div></div>
+        </div>
 
         <div class="terminal">
           <div class="term-bar">
@@ -312,7 +407,43 @@ async function step(message, kind = "step", pause = 520) {
   return line;
 }
 
+/* Dish names are free text the merchant typed. They go into innerHTML,
+   so they get escaped -- and the Add button carries the name in a data
+   attribute with a delegated listener rather than an inline onclick, so
+   there is no attribute context to escape for at all. */
+const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
 const setState = (t, c) => { $("termState").textContent = t; $("termState").style.color = c; };
+
+/* The stepper is a renderer, like markLimits: it reports which phase the
+   agent is in, and never decides anything. Phases are in the order they
+   really run -- the customer's own mandate is checked BEFORE any merchant
+   is contacted, which is the point worth showing. */
+let currentStep = 0;
+
+function setStep(n, state) {
+  currentStep = n;
+  for (const el of document.querySelectorAll(".stp")) {
+    const i = Number(el.dataset.step);
+    // A phase that already finished stays finished, even when a later
+    // one fails -- the point is to show HOW FAR it got.
+    el.classList.toggle("done", i < n);
+    el.classList.toggle("on", state !== "fail" && i === n);
+    el.classList.toggle("fail", state === "fail" && i === n);
+  }
+}
+
+function stepsDone() {
+  for (const el of document.querySelectorAll(".stp")) {
+    el.classList.remove("on", "fail");
+    el.classList.add("done");
+  }
+}
+
+function stepFailed() {
+  setStep(currentStep || 1, "fail");
+}
 const cursor = () => log('<span class="cursor"></span>', "quiet");
 
 // The terminal's ask panel is reused for two different questions -- the
@@ -366,15 +497,48 @@ async function boot() {
   $("termName").textContent = PROFILE.agent_id;
 
   MENU = (await api("/api/menu")).items;
+  renderDishes();
+}
 
-  const orderable = MENU.filter((m) => m.agent_orderable).slice(0, 4);
-  $("quick").innerHTML = orderable
-    .map((m) => `<button data-say="Order 1 ${m.title.toLowerCase()}">${m.title} ${rupee(m.price_inr)}</button>`)
-    .join("");
-  $("quick").addEventListener("click", (e) => {
-    const btn = e.target.closest("button");
-    if (btn) $("command").value = btn.dataset.say;
-  });
+/* Her live menu, straight from /api/menu. An item she has unticked is
+   shown but not addable -- the agent would be refused, and saying so here
+   saves a wasted round trip without hiding that she sells it. */
+function renderDishes() {
+  const orderable = MENU.filter((m) => m.agent_orderable);
+  $("dishCount").textContent = `${orderable.length} of ${MENU.length} orderable`;
+
+  $("dishGrid").innerHTML = MENU.map((m) => {
+    const onSale = m.sale && m.list_price_inr && m.list_price_inr > m.price_inr;
+    return `
+      <div class="dish ${m.agent_orderable ? "" : "off"}">
+        <div>
+          <div class="dish-name">${escHtml(m.title)}</div>
+          <div class="dish-cat">${escHtml(m.category)}${onSale ? " · on sale" : ""}</div>
+        </div>
+        <div class="dish-foot">
+          <span class="dish-price">
+            ${onSale ? `<span class="dish-was">${rupee(m.list_price_inr)}</span>` : ""}${rupee(m.price_inr)}
+          </span>
+          ${m.agent_orderable
+            ? `<button class="dish-add" data-dish="${escHtml(m.title)}">+ Add</button>`
+            : `<button class="dish-add" disabled title="in-person orders only">in person</button>`}
+        </div>
+      </div>`;
+  }).join("");
+}
+
+$("dishGrid").addEventListener("click", (e) => {
+  const btn = e.target.closest(".dish-add[data-dish]");
+  if (btn) addDish(btn.dataset.dish);
+});
+
+/* Appends to whatever is already in the box rather than replacing it, so
+   two taps build a two-item order. */
+function addDish(title) {
+  const box = $("command");
+  const existing = box.value.trim();
+  box.value = existing ? `${existing}, 1 ${title.toLowerCase()}` : `Order 1 ${title.toLowerCase()}`;
+  box.focus();
 }
 
 /* ------------------------------------------------------- the agent run */
@@ -386,6 +550,7 @@ async function deploy() {
   $("deployBtn").textContent = "Agent running…";
   $("term").innerHTML = "";
   $("termAsk").style.display = "none";
+  setStep(0);
   setState("WAKING", "#e3b341");
 
   const hardCap = PROFILE.hard_cap_inr;
@@ -403,6 +568,7 @@ async function deploy() {
     await step(`Reading request: "${prompt}"`, "info", 600);
 
     // ---- read the merchant's published catalog BEFORE drafting -------
+    setStep(1);
     await step("Fetching Amma's Kitchen catalog…", "step", 380);
     const catalog = await api("/catalog");
     CATALOG = catalog.items;
@@ -438,7 +604,7 @@ async function deploy() {
       thinking.remove();
       log("&gt; Claude unavailable: " + err.message, "err");
       log("&gt; Cannot draft a cart without interpreting the request. Stopping.", "err");
-      setState("STOPPED", "#f85149");
+      setState("STOPPED", "#f85149"); stepFailed();
       return;
     }
     thinking.remove();
@@ -471,7 +637,7 @@ async function deploy() {
       items = retry.items || [];
       if (!items.length) {
         log("&gt; Still nothing on the menu. Stopping rather than guessing.", "err");
-        setState("NOTHING TO ORDER", "#f85149");
+        setState("NOTHING TO ORDER", "#f85149"); stepFailed();
         return;
       }
     }
@@ -490,6 +656,7 @@ async function deploy() {
     await step(`Draft cart: <b>${cartLabel(items)}</b>. Estimated <b>${rupee(total)}</b>.`, "info", 600);
 
     await step("Checking against my own mandate before contacting any merchant…", "step", 460);
+    setStep(2);
     const gate = await api("/api/buyer-check", {
       method: "POST",
       body: JSON.stringify({ items, spend_cap_inr: hardCap, confirm_above_inr: softCap }),
@@ -498,7 +665,7 @@ async function deploy() {
     if (gate.decision === "REFUSE") {
       log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks the mandate: ${gate.reason}.`, "err");
       log("&gt; Amma's Kitchen was never contacted. This was not her decision to make.", "err");
-      setState("REFUSED", "#f85149");
+      setState("REFUSED", "#f85149"); stepFailed();
       return;
     }
 
@@ -507,12 +674,12 @@ async function deploy() {
       const ok = await askApprovalOverWhatsApp(cartLabel(items), gate.total_inr, softCap);
       if (ok === null) {
         log("&gt; No answer. Stopping — nothing was sent to Amma's Kitchen.", "err");
-        setState("NO ANSWER", "#f85149");
+        setState("NO ANSWER", "#f85149"); stepFailed();
         return;
       }
       if (!ok) {
         log("&gt; You said no. Nothing was sent to Amma's Kitchen.", "err");
-        setState("CANCELLED", "#f85149");
+        setState("CANCELLED", "#f85149"); stepFailed();
         return;
       }
       log("&gt; You approved. Proceeding.", "ok");
@@ -523,6 +690,7 @@ async function deploy() {
     await step("Selecting <b>AP2</b> — its mandate chain matches a pre-authorised card-on-file flow.", "step", 600);
     await step("Initiating contact with Amma's Kitchen AI…", "step", 460);
 
+    setStep(3);
     let mandate = (await api("/ap2/intent-mandates", {
       method: "POST",
       body: JSON.stringify({
@@ -538,7 +706,7 @@ async function deploy() {
     await settle(mandate, hardCap);
   } catch (err) {
     log("&gt; " + err.message, "err");
-    setState("ERROR", "#f85149");
+    setState("ERROR", "#f85149"); stepFailed();
   } finally {
     running = false;
     $("deployBtn").disabled = false;
@@ -558,7 +726,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   if (!PROFILE.phone) {
     log("&gt; No phone number on your account, so I can't ask what you'd like instead.", "err");
     log("&gt; Add one in Account settings and I'll be able to check next time.", "quiet");
-    setState("NOTHING TO ORDER", "#f85149");
+    setState("NOTHING TO ORDER", "#f85149"); stepFailed();
     return null;
   }
 
@@ -575,7 +743,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
     });
   } catch (err) {
     log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
-    setState("NOTHING TO ORDER", "#f85149");
+    setState("NOTHING TO ORDER", "#f85149"); stepFailed();
     return null;
   }
 
@@ -595,7 +763,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   const reply = await waitForWhatsAppReply(live);
   if (!reply) {
     log("&gt; No answer yet. Stopping — deploy me again when you've decided.", "err");
-    setState("NO ANSWER", "#f85149");
+    setState("NO ANSWER", "#f85149"); stepFailed();
     return null;
   }
 
@@ -768,7 +936,7 @@ async function handleMerchantResponse(mandate, hardCap) {
     }
     if (mandate.status === "rejected") {
       log("&gt; Amma declined the order. Closing out — no payment was attempted.", "err");
-      setState("DECLINED", "#f85149");
+      setState("DECLINED", "#f85149"); stepFailed();
       return null;
     }
     log("&gt; Amma approved it.", "ok");
@@ -802,6 +970,7 @@ async function settle(mandate, hardCap) {
   const cart = (await api(`/ap2/intent-mandates/${mandate.id}/cart-mandate`, { method: "POST" })).cart_mandate;
 
   await step(`Authorised by you up to ${rupee(hardCap)}; this is ${rupee(total)}.`, "step", 500);
+  setStep(4);
   setState("SETTLING", "#e3b341");
   await step("Executing Razorpay UPI Collect request…", "step", 380);
   await step(`Pinging VPA: <b>success@razorpay</b> (test mode auto-approve).`, "step", 380);
@@ -827,6 +996,7 @@ async function settle(mandate, hardCap) {
   log("&gt; Transaction complete. Amma's Kitchen has been notified.", "ok");
   log("&gt; No human touched a card form. My work here is done.", "ok");
   setState("COMPLETE", "#56d364");
+  stepsDone();
 }
 
 /* ------------------------------------------ how an order actually ended

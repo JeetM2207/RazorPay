@@ -6,58 +6,215 @@
 <title>Merchant console — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
 <style>
-  .queue-card { border-left: 3px solid var(--warn); }
-  .queue-card.hard { border-left-color: var(--stop); }
-  .queue-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-  .queue-cart { font-size: 15px; font-weight: 620; margin-bottom: 4px; }
-  .reduce { margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line-strong); }
-  .reduce-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .reduce-row .name { flex: 1; font-size: 14px; }
-  .stat-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 22px; }
-  .stat {
-    flex: 1 1 140px; background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius); padding: 15px 17px;
+  /* ---- sticky command bar: identity, live dot, and the three numbers
+         Amma actually cares about while she is working ---- */
+  .cockpit {
+    position: sticky; top: 0; z-index: 45;
+    background: var(--surface); border-bottom: 1px solid var(--line);
   }
-  .stat .n { font-size: 23px; font-weight: 680; letter-spacing: -.5px; }
-  .stat .l { font-size: 12px; color: var(--ink-3); margin-top: 1px; }
+  .cockpit-inner {
+    max-width: 1400px; margin: 0 auto; padding: 12px 24px;
+    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
+  }
+  .kpis { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpi {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 6px 15px; border-left: 1px solid var(--line);
+  }
+  .kpi:first-child { border-left: 0; }
+  .kpi .n { font-size: 18px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+  .kpi .l { font-size: 10.5px; font-weight: 650; letter-spacing: .05em;
+            text-transform: uppercase; color: var(--ink-3); }
+  .kpi.rev .n { color: var(--ok); }
+  .kpi.act .n { color: var(--warn); }
 
-    /* AI Strategist -- read-only growth panel */
-    .insight-card { border-left: 3px solid var(--accent); margin-bottom: 18px; }
-    .insight-head { display:flex; justify-content:space-between; align-items:flex-start;
-                    gap:14px; flex-wrap:wrap; }
-    .insight-title { margin:0; font-size:1.05rem; letter-spacing:.01em; }
-    .insight-window { padding:6px 9px; border:1px solid var(--line); border-radius:8px;
-                      background:var(--surface); color:var(--ink); font-size:.85rem; }
-    .insight-body { margin-top:14px; font-size:1rem; line-height:1.55; min-height:2.4em; }
-    .insight-body .observation { display:block; }
-    .insight-body .action { display:block; margin-top:7px; color:var(--accent); font-weight:600; }
-    .insight-stats { display:flex; flex-wrap:wrap; gap:8px; margin-top:15px; }
-    .insight-stat { border:1px solid var(--line); border-radius:9px; padding:7px 11px;
-                    background:var(--bg); font-size:.8rem; }
-    .insight-stat b { display:block; font-size:1.05rem; margin-bottom:1px; }
-    .insight-stat.want { border-color:var(--warn); background:var(--warn-soft); }
-    .insight-thinking { color:var(--muted, #888); font-style:italic; }
-    .yield-result { margin-top:13px; font-size:.86rem; }
-    .yield-result:empty { display:none; }
-    .yield-line { display:flex; gap:8px; padding:4px 0; border-top:1px solid var(--line); }
-    .yield-line:first-child { border-top:0; }
-    .yield-was { text-decoration:line-through; color:var(--muted, #999); }
-    .yield-now { font-weight:700; color:var(--ok); }
-    .yield-head { font-weight:600; margin-bottom:5px; }
-  </style>
+  /* ---- tabs ---- */
+  .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .tabs button {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font-family: inherit; font-size: 14px; font-weight: 600; color: var(--ink-3);
+    padding: 11px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tabs button:hover { color: var(--ink-2); }
+  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-count {
+    font-size: 10.5px; font-weight: 700; min-width: 18px; padding: 1px 6px;
+    border-radius: 999px; background: var(--surface-3); color: var(--ink-2);
+  }
+  .tabs button.on .tab-count { background: var(--accent-soft); color: var(--accent); }
+  .tab-count.hot { background: var(--warn-soft); color: var(--warn); }
+  .panel { display: none; }
+  .panel.on { display: block; animation: fade .2s ease; }
+  @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
+
+  /* ---- tab 1: two columns, queue beside the phone ---- */
+  .ops { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr); gap: 20px; align-items: start; }
+  @media (max-width: 1020px) { .ops { grid-template-columns: 1fr; } }
+
+  .queue-card { margin-bottom: 14px; border-left: 3px solid var(--warn); }
+  .queue-card.hard { border-left-color: var(--stop); }
+  .queue-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
+  .queue-cart { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+
+  /* the threshold bar: her two limits drawn to scale, with this order on them */
+  .thresh { margin: 14px 0 4px; }
+  .thresh-track {
+    position: relative; height: 8px; border-radius: 999px;
+    background: var(--surface-3); overflow: visible;
+  }
+  .thresh-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--ok); }
+  .thresh-fill.over { background: var(--warn); }
+  .thresh-fill.hard { background: var(--stop); }
+  .thresh-mark { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--ink-3); border-radius: 1px; }
+  .thresh-legend {
+    display: flex; justify-content: space-between; gap: 10px;
+    font-size: 11px; color: var(--ink-3); margin-top: 7px;
+  }
+  .thresh-legend b { color: var(--ink-2); font-weight: 650; }
+
+  .reduce { margin-top: 13px; padding-top: 13px; border-top: 1px dashed var(--line-strong); }
+  .reduce-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 0; }
+  .reduce-row .name { font-size: 13.5px; }
+  .reduce .qty { min-width: 24px; text-align: center; font-weight: 650; font-size: 13.5px; }
+
+  /* ---- the phone ---- */
+  .phone {
+    position: sticky; top: 130px;
+    background: var(--dark); border-radius: 26px; padding: 11px;
+    box-shadow: var(--shadow-lg); border: 1px solid var(--dark-line);
+  }
+  .phone-screen {
+    background: #0b1220; border-radius: 18px; overflow: hidden;
+    display: flex; flex-direction: column; height: 505px;
+  }
+  .phone-top {
+    padding: 11px 15px; background: #111c2e; border-bottom: 1px solid var(--dark-line);
+    display: flex; align-items: center; gap: 9px;
+  }
+  .phone-av {
+    width: 30px; height: 30px; border-radius: 50%; flex: none;
+    background: #1f7a4d; color: #fff; display: grid; place-items: center;
+    font-size: 13px; font-weight: 700;
+  }
+  .phone-who { font-size: 13px; font-weight: 620; color: #e2e8f0; line-height: 1.2; }
+  .phone-sub { font-size: 10.5px; color: #64748b; }
+  .phone-feed { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+  .phone-feed::-webkit-scrollbar { width: 6px; }
+  .phone-feed::-webkit-scrollbar-thumb { background: #26364d; border-radius: 4px; }
+  .bubble {
+    max-width: 88%; align-self: flex-start;
+    background: #1c2b41; color: #e2e8f0; border-radius: 13px 13px 13px 4px;
+    padding: 9px 12px; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap;
+  }
+  .bubble-meta { display: flex; justify-content: space-between; gap: 9px; align-items: center; margin-top: 6px; }
+  .bubble-to { font-family: var(--mono); font-size: 10px; color: #64748b; }
+  .bubble-fail { color: #fda4af; font-size: 10.5px; margin-top: 5px; }
+  .bubble .badge { font-size: 9.5px; padding: 1px 7px; }
+  .phone-empty { color: #64748b; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
+  .phone-input { border-top: 1px solid var(--dark-line); background: #111c2e; padding: 11px; }
+  .quick-replies { display: flex; gap: 7px; margin-bottom: 9px; }
+  .quick-replies button {
+    flex: 1; appearance: none; cursor: pointer; font-family: inherit;
+    font-size: 12px; font-weight: 650; padding: 8px; border-radius: 9px;
+    border: 1px solid transparent; transition: filter .14s ease;
+  }
+  .quick-replies button:hover { filter: brightness(1.12); }
+  .qr-yes { background: rgba(5,150,105,.17); color: #34d399; border-color: rgba(5,150,105,.4); }
+  .qr-no  { background: rgba(225,29,72,.15); color: #fda4af; border-color: rgba(225,29,72,.4); }
+  .phone-row { display: flex; gap: 7px; }
+  .phone-row input {
+    flex: 1; background: #0b1220; border: 1px solid var(--dark-line); color: #e2e8f0;
+    border-radius: 9px; padding: 8px 11px; font-size: 12.5px;
+  }
+  .phone-row input:focus { border-color: #475569; box-shadow: none; }
+  .phone-row input::placeholder { color: #475569; }
+  .phone-send {
+    appearance: none; cursor: pointer; border: 0; background: var(--accent); color: #fff;
+    border-radius: 9px; padding: 0 14px; font-size: 12.5px; font-weight: 650; font-family: inherit;
+  }
+
+  /* ---- tab 2: AI Strategist + yield ---- */
+  .insight-card { border-left: 3px solid var(--accent); }
+  .insight-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+  .insight-title { margin: 0; font-size: 16px; letter-spacing: -.015em; }
+  .insight-window {
+    width: auto; padding: 7px 10px; font-size: 13px; font-weight: 550;
+    border-radius: 8px; background: var(--surface);
+  }
+  .insight-body { margin-top: 16px; font-size: 15.5px; line-height: 1.55; min-height: 2.4em; }
+  .insight-body .observation { display: block; }
+  .insight-body .action { display: block; margin-top: 8px; color: var(--accent); font-weight: 650; }
+  .insight-stats { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 17px; }
+  .insight-stat {
+    border: 1px solid var(--line); border-radius: 11px; padding: 9px 13px;
+    background: var(--surface-2); font-size: 12px; color: var(--ink-2);
+  }
+  .insight-stat b { display: block; font-size: 17px; font-weight: 700; color: var(--ink); margin-bottom: 1px; letter-spacing: -.02em; }
+  .insight-stat.want { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn); }
+  .insight-stat.want b { color: var(--warn); }
+  .insight-thinking { color: var(--ink-3); font-style: italic; }
+
+  .yield-result { margin-top: 15px; }
+  .yield-result:empty { display: none; }
+  .yield-head { font-size: 13px; font-weight: 650; margin-bottom: 10px; color: var(--ink-2); }
+  .yield-line {
+    display: flex; align-items: center; gap: 11px; flex-wrap: wrap;
+    padding: 10px 13px; border: 1px solid var(--line); border-radius: 11px;
+    background: var(--surface-2); margin-bottom: 7px; font-size: 13.5px;
+  }
+  .yield-was {
+    text-decoration: line-through; color: var(--ink-3); font-weight: 550;
+    background: var(--surface-3); border-radius: 6px; padding: 1px 8px;
+  }
+  .yield-now {
+    font-weight: 700; color: var(--ok); background: var(--ok-soft);
+    border: 1px solid var(--ok-line); border-radius: 6px; padding: 1px 8px;
+  }
+  .yield-arrow { color: var(--ink-3); }
+
+  .demand-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .demand-chip {
+    display: inline-flex; align-items: center; gap: 8px;
+    border: 1px solid var(--warn-line); background: var(--warn-soft); color: var(--warn);
+    border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px; font-weight: 600;
+  }
+  .demand-chip .n {
+    background: var(--warn); color: #fff; border-radius: 999px;
+    font-size: 11px; font-weight: 700; padding: 1px 8px;
+  }
+
+  /* ---- tab 3 ---- */
+  .filters { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  .filters input { max-width: 260px; }
+  .settle { font-size: 10.5px; }
+</style>
 </head>
 <body>
+
   <div class="topbar">
     <div class="brand">
       <span class="brand-mark">Amma's Kitchen</span>
       <span class="brand-role">Merchant</span>
     </div>
     <div class="topbar-links">
-      <span class="live"><span class="dot"></span> live</span>
       <a href="/merchant">Shop settings</a>
       <a href="/buyer/order">Buyer console</a>
       <a href="/audit">Full audit trail</a>
       <a href="/">Home</a>
+    </div>
+  </div>
+
+  <!-- Sticky cockpit: the three numbers worth watching while working. -->
+  <div class="cockpit">
+    <div class="cockpit-inner">
+      <span class="live"><span class="dot"></span> live</span>
+      <div class="kpis">
+        <div class="kpi rev"><span class="n" id="kpiRevenue">₹0</span><span class="l">Today's revenue</span></div>
+        <div class="kpi"><span class="n" id="kpiAgents">0</span><span class="l">Active agents</span></div>
+        <div class="kpi act"><span class="n" id="kpiInterventions">0</span><span class="l">Interventions</span></div>
+      </div>
     </div>
   </div>
 
@@ -69,105 +226,154 @@
       never reached Razorpay at all.
     </p>
 
-    <!-- Read-only. Reads the audit log, shows numbers, and asks a model to
-         say what they mean. Nothing here can reach an order or a price. -->
-    <div class="card insight-card">
-      <div class="insight-head">
+    <div class="mandate-strip" id="mandateStrip"></div>
+
+    <div class="tabs">
+      <button id="tab-ops" class="on" onclick="showTab('ops')">
+        Live ops &amp; escalations <span class="tab-count" id="opsCount">0</span>
+      </button>
+      <button id="tab-growth" onclick="showTab('growth')">AI growth &amp; yield</button>
+      <button id="tab-ledger" onclick="showTab('ledger')">Trust &amp; audit ledger</button>
+    </div>
+
+    <!-- ══════════════════ TAB 1 ══════════════════ -->
+    <section class="panel on" id="panel-ops">
+      <div class="ops">
         <div>
-          <h2 class="insight-title">AI Strategist</h2>
-          <p class="note" style="margin:2px 0 0">
-            Your own order log, read back to you as two sentences.
+          <h2>Waiting on you</h2>
+          <div id="queue"></div>
+        </div>
+
+        <div>
+          <h2>Amma's phone <span class="badge badge-mute" id="smsTransport">mock</span></h2>
+          <div class="phone">
+            <div class="phone-screen">
+              <div class="phone-top">
+                <div class="phone-av">AK</div>
+                <div>
+                  <div class="phone-who">Amma's Kitchen bot</div>
+                  <div class="phone-sub" id="phoneSub">WhatsApp · mock transport</div>
+                </div>
+              </div>
+              <div class="phone-feed" id="smsOutbox"></div>
+              <div class="phone-input">
+                <div class="quick-replies">
+                  <button class="qr-yes" onclick="quickReply('1')">1 · Approve</button>
+                  <button class="qr-no" onclick="quickReply('2')">2 · Reject</button>
+                </div>
+                <div class="phone-row">
+                  <input type="text" id="smsReply" placeholder="Reply as Amma: 1, 2, or 1 #42" autocomplete="off">
+                  <button class="phone-send" id="smsSendBtn">Send</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="note">
+            This posts to the same <span class="mono">/webhook/sms-reply</span> endpoint Twilio
+            calls, so the loop you see here is the real one — no phone required. Replies are
+            parsed by a regex, never a model: the answer is one digit, and a wrong guess would
+            move somebody's money.
           </p>
         </div>
-        <div class="btn-row" style="margin:0">
-          <select id="insightWindow" class="insight-window">
-            <option value="24">last 24 hours</option>
-            <option value="168">last 7 days</option>
-            <option value="720" selected>last 30 days</option>
-          </select>
-          <button class="btn btn-sm" id="insightBtn" onclick="loadInsights()">
-            Read my numbers
-          </button>
-          <button class="btn btn-sm btn-ghost" id="yieldBtn" onclick="optimizeYield()">
-            Optimize yield
-          </button>
+      </div>
+    </section>
+
+    <!-- ══════════════════ TAB 2 ══════════════════ -->
+    <section class="panel" id="panel-growth">
+      <div class="card insight-card">
+        <div class="insight-head">
+          <div>
+            <h2 class="insight-title">AI Strategist</h2>
+            <p class="note" style="margin:2px 0 0">Your own order log, read back to you as two sentences.</p>
+          </div>
+          <div class="btn-row" style="margin:0">
+            <select id="insightWindow" class="insight-window">
+              <option value="24">last 24 hours</option>
+              <option value="168">last 7 days</option>
+              <option value="720" selected>last 30 days</option>
+            </select>
+            <button class="btn btn-sm" id="insightBtn" onclick="loadInsights()">Read my numbers</button>
+          </div>
         </div>
+        <div id="insightBody" class="insight-body">
+          <span class="muted">Pick a window and press the button.</span>
+        </div>
+        <div id="insightStats" class="insight-stats"></div>
       </div>
-      <div id="insightBody" class="insight-body">
-        <span class="muted">Pick a window and press the button.</span>
+
+      <div class="card" style="margin-top:16px">
+        <div class="insight-head">
+          <div>
+            <h2 class="insight-title">Dynamic yield</h2>
+            <p class="note" style="margin:2px 0 0">
+              Discount what is piling up, restore what is running out. Buyer agents see the
+              new prices on their next fetch.
+            </p>
+          </div>
+          <button class="btn btn-sm btn-ghost" id="yieldBtn" onclick="optimizeYield()">Optimize yield</button>
+        </div>
+        <div id="yieldResult" class="yield-result"></div>
       </div>
-      <div id="insightStats" class="insight-stats"></div>
-      <div id="yieldResult" class="yield-result"></div>
-    </div>
 
-    <div class="mandate-strip" id="mandateStrip"></div>
-    <div class="stat-row" id="stats"></div>
+      <div class="card" style="margin-top:16px">
+        <h2 class="insight-title" style="margin-bottom:4px">Asked for, but not on your menu</h2>
+        <p class="note" style="margin:0 0 14px">
+          Requests an AI agent brought you that you don't currently sell. Nothing was charged
+          for these — they're here because what people keep trying to buy is worth knowing
+          before you decide what to cook next.
+        </p>
+        <div class="demand-chips" id="demandRows"></div>
+      </div>
+    </section>
 
-    <div id="queue"></div>
+    <!-- ══════════════════ TAB 3 ══════════════════ -->
+    <section class="panel" id="panel-ledger">
+      <div class="stat-row" id="stats" style="display:flex; gap:11px; flex-wrap:wrap; margin-bottom:20px"></div>
 
-    <h2 style="margin-top:34px">
-      Alerts to Amma's phone <span id="smsTransport" class="badge badge-mute">mock</span>
-    </h2>
-    <div class="card">
-      <div id="smsOutbox"></div>
-      <div style="display:flex; gap:9px; margin-top:14px; flex-wrap:wrap">
-        <input type="text" id="smsReply" placeholder="Reply as Amma: 1, 2, or 1 #42"
-               style="flex:1 1 240px" autocomplete="off">
-        <button class="btn btn-sm" id="smsSendBtn">Send reply</button>
+      <h2>Buyer agents &amp; earned trust</h2>
+      <div class="card card-flush">
+        <table>
+          <thead><tr><th>Agent</th><th>Trust tier</th><th class="right">Completed orders</th></tr></thead>
+          <tbody id="agentRows"></tbody>
+        </table>
       </div>
       <p class="note">
-        This posts to the same <span class="mono">/webhook/sms-reply</span> endpoint Twilio
-        calls, so the loop you see here is the real one &mdash; no phone required.
-        Replies are parsed by a regex, never a model: the answer is one digit, and a wrong
-        guess would move somebody's money.
+        Trust comes from this system's own record of each agent, never from what the agent
+        claims. A higher tier widens only how far the negotiation will bend — your budget
+        cap and confirmation threshold never move.
       </p>
-    </div>
 
-    <h2 style="margin-top:34px">Asked for, but not on your menu</h2>
-    <div class="card card-flush">
-      <table>
-        <thead><tr><th>What they asked for</th><th class="right">Times</th><th>Last asked</th></tr></thead>
-        <tbody id="demandRows"></tbody>
-      </table>
-    </div>
-    <p class="note">
-      Requests an AI agent brought you that you don't currently sell. Nothing was
-      charged for these &mdash; they're here because what people keep trying to buy is
-      worth knowing before you decide what to cook next.
-    </p>
-
-    <h2 style="margin-top:34px">Buyer agents &amp; earned trust</h2>
-    <div class="card card-flush">
-      <table>
-        <thead><tr><th>Agent</th><th>Trust tier</th><th class="right">Completed orders</th></tr></thead>
-        <tbody id="agentRows"></tbody>
-      </table>
-    </div>
-    <p class="note">
-      Trust comes from this system's own record of each agent, never from what the agent
-      claims. A higher tier widens only how far the negotiation will bend — your budget
-      cap and confirmation threshold never move.
-    </p>
-
-    <h2 style="margin-top:34px">Recent decisions</h2>
-    <div class="card card-flush">
-      <table>
-        <thead>
-          <tr><th>#</th><th>Agent</th><th>Protocol</th><th>Cart</th>
-              <th class="right">Total</th><th>Decision</th><th>Payment</th></tr>
-        </thead>
-        <tbody id="eventRows"></tbody>
-      </table>
-    </div>
+      <h2 style="margin-top:30px">Decision ledger</h2>
+      <div class="filters">
+        <input type="text" id="ledgerSearch" placeholder="Filter by agent, dish or decision…"
+               autocomplete="off" oninput="renderEvents(true)">
+        <div class="seg" id="ledgerSeg">
+          <button class="on" onclick="setLedgerFilter('all', this)">All</button>
+          <button onclick="setLedgerFilter('paid', this)">Settled</button>
+          <button onclick="setLedgerFilter('gated', this)">Stopped by a rule</button>
+        </div>
+      </div>
+      <div class="card card-flush">
+        <table>
+          <thead>
+            <tr><th>#</th><th>Agent</th><th>Protocol</th><th>Cart</th>
+                <th class="right">Total</th><th>Decision</th><th>Settlement</th></tr>
+          </thead>
+          <tbody id="eventRows"></tbody>
+        </table>
+      </div>
+    </section>
   </div>
 
 <script>
 const $ = (id) => document.getElementById(id);
-const rupee = (n) => "₹" + n;
+const rupee = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 const HARD_RULE = (reason) => !reason.includes("human confirmation threshold");
 
 let MANDATE = null;
 let reduceState = {};   // session_id -> { item_id: qty }
+let ALL_EVENTS = [];    // newest first, kept so the ledger can filter without refetching
+let ledgerFilter = "all";
 
 /* These panels refresh every couple of seconds. Re-rendering them
    unconditionally would replace the DOM under the merchant's cursor --
@@ -214,6 +420,15 @@ const DECISION_PATH = {
   mcp:  (id, action) => `/mcp-orders/${id}/human_${action}`,
 };
 
+/* ----------------------------------------------------------------- tabs */
+
+function showTab(name) {
+  for (const id of ["ops", "growth", "ledger"]) {
+    $("panel-" + id).classList.toggle("on", id === name);
+    $("tab-" + id).classList.toggle("on", id === name);
+  }
+}
+
 /* ---------------------------------------------------------------- boot */
 
 async function boot() {
@@ -248,12 +463,9 @@ async function renderDemand() {
 
   $("demandRows").innerHTML = demand.length
     ? demand.map((d) => `
-        <tr>
-          <td>${esc(d.requested)}</td>
-          <td class="right">${d.times}</td>
-          <td class="mono muted nowrap">${esc((d.last_asked || "").slice(0, 10))}</td>
-        </tr>`).join("")
-    : `<tr><td colspan="3" class="empty">Nothing yet &mdash; every request so far was something you sell.</td></tr>`;
+        <span class="demand-chip">${esc(d.requested)}<span class="n">${d.times}</span></span>
+      `).join("")
+    : `<span class="muted" style="font-size:13.5px">Nothing yet &mdash; every request so far was something you sell.</span>`;
 }
 
 /* ----------------------------------------------------------------- sms */
@@ -262,29 +474,37 @@ async function renderSms() {
   const body = await api("/api/sms");
   if (!changed("sms", body)) return;
 
+  const live = body.transport === "twilio";
   const badge = $("smsTransport");
-  badge.textContent = body.transport === "twilio" ? "live via Twilio" : "mock outbox";
-  badge.className = "badge " + (body.transport === "twilio" ? "badge-ok" : "badge-mute");
+  badge.textContent = live ? "live via Twilio" : "mock outbox";
+  badge.className = "badge " + (live ? "badge-ok" : "badge-mute");
+  $("phoneSub").textContent = live ? "WhatsApp · live via Twilio" : "WhatsApp · mock transport";
 
   $("smsOutbox").innerHTML = body.outbox.length
-    ? body.outbox.map((m) => {
+    ? body.outbox.slice().reverse().map((m) => {
         const answered = body.escalations.find(
           (e) => m.body.includes(`Order #${e.order_id}`) && e.answered
         );
         return `
-          <div style="border:1px solid var(--line); border-radius:9px; padding:12px 14px;
-                      background:var(--surface-2); margin-bottom:9px">
-            <div style="display:flex; justify-content:space-between; gap:10px; margin-bottom:6px">
-              <span class="mono muted">to ${m.to}</span>
+          <div class="bubble">
+            ${esc(m.body)}
+            <div class="bubble-meta">
+              <span class="bubble-to">to ${esc(m.to)}</span>
               ${answered
-                ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${answered.outcome}</span>`
+                ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
                 : `<span class="badge badge-warn">awaiting reply</span>`}
             </div>
-            <div class="mono" style="white-space:pre-wrap; font-size:12px">${m.body}</div>
-            ${m.error ? `<div class="note" style="color:var(--stop)">delivery failed: ${m.error}</div>` : ""}
+            ${m.error ? `<div class="bubble-fail">delivery failed: ${esc(m.error)}</div>` : ""}
           </div>`;
       }).join("")
-    : `<div class="empty">No alerts yet. An escalation texts Amma automatically.</div>`;
+    : `<div class="phone-empty">No alerts yet.<br>An escalation texts Amma automatically.</div>`;
+
+  $("smsOutbox").scrollTop = $("smsOutbox").scrollHeight;
+}
+
+function quickReply(digit) {
+  $("smsReply").value = digit;
+  sendSmsReply();
 }
 
 async function sendSmsReply() {
@@ -303,8 +523,35 @@ async function sendSmsReply() {
 
 /* --------------------------------------------------------------- queue */
 
+/* Her two limits, drawn to scale, with this order's total sitting on
+   them. The bar is a renderer: every number in it comes from the server,
+   and the colour follows the decision the core already made. */
+function thresholdBar(total, hard) {
+  if (!MANDATE) return "";
+  const cap = MANDATE.budget_cap_inr;
+  const ask = MANDATE.human_confirm_threshold_inr;
+  const scale = Math.max(cap, total) * 1.06;
+  const pct = (n) => Math.min(100, (n / scale) * 100).toFixed(1);
+  const tone = hard ? "hard" : total >= ask ? "over" : "";
+  return `
+    <div class="thresh">
+      <div class="thresh-track">
+        <div class="thresh-fill ${tone}" style="width:${pct(total)}%"></div>
+        <div class="thresh-mark" style="left:${pct(ask)}%" title="you are asked from ${rupee(ask)}"></div>
+        <div class="thresh-mark" style="left:${pct(cap)}%; background:var(--stop)" title="budget cap ${rupee(cap)}"></div>
+      </div>
+      <div class="thresh-legend">
+        <span>this order <b>${rupee(total)}</b></span>
+        <span>asked from <b>${rupee(ask)}</b> · cap <b>${rupee(cap)}</b></span>
+      </div>
+    </div>`;
+}
+
 async function renderQueue() {
   const { pending } = await api("/api/pending");
+  const count = $("opsCount");
+  count.textContent = pending.length;
+  count.className = "tab-count" + (pending.length ? " hot" : "");
   if (!changed("queue", [pending, reduceState])) return;
 
   if (!pending.length) {
@@ -337,12 +584,14 @@ async function renderQueue() {
         <div class="queue-head">
           <span class="badge ${hard ? "badge-stop" : "badge-warn"}">${hard ? "REFUSED BY RULE" : "NEEDS YOUR OK"}</span>
           <span class="proto">${p.protocol.toUpperCase()}</span>
-          <span class="mono muted">${p.agent_id}</span>
-          <span class="badge badge-mute">${d.trust_tier}</span>
+          <span class="mono muted">${esc(p.agent_id)}</span>
+          <span class="badge badge-mute">${esc(d.trust_tier)}</span>
         </div>
 
         <div class="queue-cart">${cartLabel} &mdash; ${rupee(d.total_inr)}</div>
-        <div class="muted" style="font-size:13.5px">${d.reason}</div>
+        <div class="muted" style="font-size:13.5px">${esc(d.reason)}</div>
+
+        ${thresholdBar(d.total_inr, hard)}
 
         ${hard ? `
           <p class="note" style="color:var(--stop)">
@@ -360,7 +609,7 @@ async function renderQueue() {
           </div>
           <div class="reduce" id="reduce-${p.session_id}" style="display:${reduceState[p.session_id] ? "" : "none"}">
             ${reduceRows}
-            <button class="btn btn-sm" onclick="sendReduced('${p.session_id}','${p.protocol}')">Send this smaller order back</button>
+            <button class="btn btn-sm" style="margin-top:10px" onclick="sendReduced('${p.session_id}','${p.protocol}')">Send this smaller order back</button>
             <p class="note">
               A smaller cart is not an override — it goes through the same check as any other
               order, and is only approved if it genuinely passes on its own.
@@ -419,26 +668,66 @@ async function sendReduced(sessionId, protocol) {
 
 async function renderAgents() {
   const { agents } = await api("/api/agents");
+  $("kpiAgents").textContent = agents.length;
   if (!changed("agents", agents)) return;
   $("agentRows").innerHTML = agents.length
     ? agents.map((a) => `
         <tr>
-          <td class="mono">${a.agent_id}</td>
-          <td><span class="badge ${a.tier === "TRUSTED" ? "badge-ok" : a.tier === "STANDARD" ? "badge-info" : "badge-mute"}">${a.tier}</span></td>
+          <td class="mono">${esc(a.agent_id)}</td>
+          <td><span class="badge ${a.tier === "TRUSTED" ? "badge-ok" : a.tier === "STANDARD" ? "badge-info" : "badge-mute"}">${esc(a.tier)}</span></td>
           <td class="right">${a.completed}</td>
         </tr>`).join("")
     : `<tr><td colspan="3" class="empty">No agents have ordered yet.</td></tr>`;
 }
 
-async function renderEvents() {
-  const { events } = await api("/api/events?limit=25");
-  if (!changed("events", events)) return;
+function setLedgerFilter(name, btn) {
+  ledgerFilter = name;
+  for (const b of $("ledgerSeg").children) b.classList.toggle("on", b === btn);
+  renderEvents(true);
+}
+
+/* A settled row is one where money genuinely moved. `sim_` is an
+   assertion of ours, so it gets its own pill and is never counted. */
+function settlementPill(e) {
+  if (e.payment_id) {
+    return e.payment_id.startsWith("sim_")
+      ? `<span class="badge badge-warn settle">SIMULATED</span>`
+      : `<span class="badge badge-ok settle">PAID</span>`;
+  }
+  if (e.decision === "REFUNDED") return `<span class="badge badge-info settle">REFUNDED</span>`;
+  if (e.payment_link_id) return `<span class="muted">link issued</span>`;
+  if (["ESCALATE", "REJECTED", "COUNTER_OFFER"].includes(e.decision)) {
+    return `<span class="badge badge-stop settle">NO RAZORPAY CALL</span>`;
+  }
+  return `<span class="muted">—</span>`;
+}
+
+async function renderEvents(fromCache) {
+  if (!fromCache) {
+    const { events } = await api("/api/events?limit=200");
+    ALL_EVENTS = events;
+  }
+  const events = ALL_EVENTS;
+
+  const today = new Date().toISOString().slice(0, 10);
+  const settled = events.filter((e) => e.payment_id && !e.payment_id.startsWith("sim_"));
+  const refunded = new Set(events.filter((e) => e.decision === "REFUNDED").map((e) => e.order_ref));
+  $("kpiRevenue").textContent = rupee(
+    settled
+      .filter((e) => (e.ts || "").startsWith(today) && !refunded.has(e.id))
+      .reduce((sum, e) => sum + e.total_inr, 0)
+  );
+  $("kpiInterventions").textContent = events.filter(
+    (e) => e.decision === "ESCALATE" && (e.ts || "").startsWith(today)
+  ).length;
+
+  const recent = events.slice(0, 25);
   const stats = {
-    total: events.length,
-    escalated: events.filter((e) => e.decision === "ESCALATE").length,
-    gated: events.filter((e) => ["ESCALATE", "REJECTED"].includes(e.decision) && !e.payment_link_id).length,
+    total: recent.length,
+    escalated: recent.filter((e) => e.decision === "ESCALATE").length,
+    gated: recent.filter((e) => ["ESCALATE", "REJECTED"].includes(e.decision) && !e.payment_link_id).length,
     // Only genuine Razorpay captures count as revenue; `sim_` does not.
-    revenue: events
+    revenue: recent
       .filter((e) => e.payment_id && !e.payment_id.startsWith("sim_"))
       .reduce((s, e) => s + e.total_inr, 0),
   };
@@ -447,34 +736,35 @@ async function renderEvents() {
     [stats.escalated, "escalated to you"],
     [stats.gated, "stopped before Razorpay"],
     [rupee(stats.revenue), "captured (recent)"],
-  ].map(([n, l]) => `<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`).join("");
+  ].map(([n, l]) =>
+    `<div class="insight-stat"><b>${n}</b>${l}</div>`).join("");
 
-  $("eventRows").innerHTML = events.length
-    ? events.map((e) => {
+  const needle = ($("ledgerSearch").value || "").trim().toLowerCase();
+  const rows = events.slice(0, 60).filter((e) => {
+    if (ledgerFilter === "paid" && !e.payment_id) return false;
+    if (ledgerFilter === "gated" && (e.payment_id || e.payment_link_id)) return false;
+    if (!needle) return true;
+    return (e.agent_id + " " + e.decision + " " + (e.cart_json || "")).toLowerCase().includes(needle);
+  });
+  if (!changed("ledger", [rows.map((e) => e.id), ledgerFilter, needle])) return;
+
+  $("eventRows").innerHTML = rows.length
+    ? rows.map((e) => {
         const cart = JSON.parse(e.cart_json || "[]").map((l) => `${l.qty}×${titleize(l.item)}`).join(", ");
         const cls = e.decision === "APPROVE" ? "badge-ok"
           : e.decision === "REJECTED" ? "badge-stop"
           : e.decision === "PAYMENT_NOT_COMPLETED" ? "badge-mute" : "badge-warn";
-        const pay = e.payment_id
-          ? (e.payment_id.startsWith("sim_")
-              ? `<span class="badge badge-warn">SIMULATED</span>`
-              : `<span class="badge badge-ok">PAID</span>`)
-          : e.payment_link_id
-            ? `<span class="muted">link issued</span>`
-            : ["ESCALATE", "REJECTED", "COUNTER_OFFER"].includes(e.decision)
-              ? `<span style="color:var(--stop); font-weight:600">no Razorpay call</span>`
-              : `<span class="muted">—</span>`;
         return `<tr>
           <td class="mono muted">${e.id}</td>
-          <td class="mono">${e.agent_id}</td>
-          <td><span class="proto">${e.protocol.toUpperCase()}</span></td>
-          <td>${cart || "<span class='muted'>—</span>"}</td>
+          <td class="mono">${esc(e.agent_id)}</td>
+          <td><span class="proto">${esc(e.protocol.toUpperCase())}</span></td>
+          <td>${esc(cart) || "<span class='muted'>—</span>"}</td>
           <td class="right">${rupee(e.total_inr)}</td>
-          <td><span class="badge ${cls}">${e.decision.replace(/_/g, " ")}</span></td>
-          <td class="nowrap">${pay}</td>
+          <td><span class="badge ${cls}">${esc(e.decision.replace(/_/g, " "))}</span></td>
+          <td class="nowrap">${settlementPill(e)}</td>
         </tr>`;
       }).join("")
-    : `<tr><td colspan="7" class="empty">Nothing yet.</td></tr>`;
+    : `<tr><td colspan="7" class="empty">Nothing matches that filter.</td></tr>`;
 }
 
 $("smsSendBtn").addEventListener("click", sendSmsReply);
@@ -555,8 +845,9 @@ async function optimizeYield() {
         `dish${data.changed.length === 1 ? "" : "es"} — buyer agents see this on their next fetch</div>` +
         data.changed.map((c) => `
           <div class="yield-line">
-            <span style="flex:1">${esc(c.title)}</span>
+            <span style="flex:1; font-weight:600">${esc(c.title)}</span>
             <span class="yield-was">${rupee(c.was_inr)}</span>
+            <span class="yield-arrow">→</span>
             <span class="yield-now">${rupee(c.now_inr)}</span>
             <span class="muted">${esc(c.stock)} left · ${esc(c.why)}</span>
           </div>`).join("");
