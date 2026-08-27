@@ -502,3 +502,52 @@ def test_the_phone_labels_each_message_and_matches_its_buttons(client):
     # The vocabularies are chosen per message, not hardcoded in the markup.
     assert 'data-reply="YES"' in page and 'data-reply="1"' in page
     assert "answer in the buyer console" in page
+
+
+# ------------------------------- pay-first, from the buyer console this time
+
+def _escalating_ap2(client, agent):
+    """Rs.440 -- over her Rs.400 confirmation threshold, under her cap."""
+    mandate = client.post("/ap2/intent-mandates", json={
+        "agent_id": agent, "intent": {"items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    }).json()["intent_mandate"]
+    client.post(f"/ap2/intent-mandates/{mandate['id']}/settle-pending-confirmation")
+    cart = client.post(f"/ap2/intent-mandates/{mandate['id']}/cart-mandate").json()["cart_mandate"]
+    paid = client.post(f"/ap2/cart-mandates/{cart['id']}/execute-payment").json()["payment_mandate"]
+    return mandate, paid
+
+
+def test_the_paid_order_reaches_her_queue_tagged_with_its_own_protocol(client, monkeypatch):
+    """The lifecycle is shared now, so her queue must say which door an
+    order came through rather than calling everything MCP."""
+    import mcp_orders
+
+    _escalating_ap2(client, "pf-queue")
+
+    mine = [p for p in client.get("/api/pending").json()["pending"]
+            if p["agent_id"] == "pf-queue"]
+    assert len(mine) == 1, "listed twice, or not at all"
+    assert mine[0]["protocol"] == "ap2"
+    assert mine[0]["decision_detail"]["already_paid"] is True
+
+
+def test_declining_a_simulated_settlement_says_so_rather_than_claiming_a_refund(client):
+    """A `sim_` reference has no Razorpay payment behind it -- asking to
+    refund one is rejected as an invalid id. The order is still reversed
+    and still closed, and the trail says which kind of reversal it was.
+    Printing "refunded to your card" here would be a false statement
+    about money."""
+    import mcp_orders
+
+    _, paid = _escalating_ap2(client, "pf-sim")
+    assert paid["payment_id"].startswith("sim_")
+
+    ref = [p for p in client.get("/api/pending").json()["pending"]
+           if p["agent_id"] == "pf-sim"][0]["session_id"]
+    result = client.post(f"/mcp-orders/{ref}/human_reject").json()
+
+    assert result["status"] == mcp_orders.REFUNDED
+    assert result["simulated"] is True
+    outcome = [o for o in client.get("/api/order-outcomes").json()["outcomes"]
+               if str(o["order_ref"]) == str(ref)][0]
+    assert "no real money moved" in outcome["reason"]

@@ -189,3 +189,51 @@ def test_accept_upsell_extends_cart_and_stays_ready(client, monkeypatch):
     updated = client.post(f"/ap2/intent-mandates/{mandate['id']}/accept-upsell").json()["intent_mandate"]
     assert updated["status"] == "cart_ready"
     assert updated["decision_detail"]["total_inr"] > mandate["decision_detail"]["total_inr"]
+
+
+# ------------------------------------------- pay-first on the buyer console
+
+def _escalating(client, agent="pf-1"):
+    return client.post("/ap2/intent-mandates", json={
+        "agent_id": agent, "intent": {"items": [{"item_id": "chicken_biryani", "qty": 2}]},
+    }).json()["intent_mandate"]
+
+
+def test_pay_first_takes_payment_before_she_answers(client, monkeypatch):
+    """The old flow made the customer sit and wait for a cook to look at
+    her phone, which is a sale that quietly dies. Payment goes through
+    now; her verdict is actioned afterwards, exactly as on the Claude
+    path. Nothing is re-decided -- negotiation.py already said ESCALATE."""
+    mandate = _escalating(client)
+    assert mandate["status"] == "requires_human"
+    assert mandate["decision_detail"]["decision"] == "ESCALATE"
+
+    out = client.post(f"/ap2/intent-mandates/{mandate['id']}/settle-pending-confirmation")
+    assert out.status_code == 200
+    assert out.json()["intent_mandate"]["status"] == "cart_ready"
+
+
+def test_a_hard_rule_is_still_refused_before_any_money_moves(client):
+    """A disallowed category cannot be waved through by anybody, so
+    charging for it would guarantee a refund."""
+    mandate = client.post("/ap2/intent-mandates", json={
+        "agent_id": "pf-hard",
+        "intent": {"items": [{"item_id": "party_catering_tray", "qty": 1}]},
+    }).json()["intent_mandate"]
+
+    out = client.post(f"/ap2/intent-mandates/{mandate['id']}/settle-pending-confirmation")
+    assert out.status_code == 403
+    assert "hard merchant rule" in out.json()["detail"]
+
+
+def test_pay_first_is_not_recorded_as_a_human_override(client, monkeypatch):
+    """Nobody approved anything. What happened is that payment was taken
+    first, and the trail has to say that rather than inventing a yes."""
+    import audit_log
+
+    mandate = _escalating(client, "pf-noforge")
+    client.post(f"/ap2/intent-mandates/{mandate['id']}/settle-pending-confirmation")
+
+    reasons = [e["reason"] for e in
+               audit_log.get_events_for_agent("pf-noforge", db_path=audit_log.DEFAULT_DB_PATH)]
+    assert not any("human override" in r for r in reasons), reasons

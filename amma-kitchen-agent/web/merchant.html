@@ -652,13 +652,13 @@ async function renderQueue() {
             close it out, but the system will not let it be approved here — that is deliberate.
           </p>
           <div class="btn-row" style="margin-top:12px">
-            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject')">Decline and close</button>
+            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject',${!!d.already_paid})">Decline and close</button>
           </div>
         ` : `
           <div class="btn-row" style="margin-top:14px">
-            <button class="btn btn-ok btn-sm" onclick="decide('${p.session_id}','${p.protocol}','confirm')">Approve as asked</button>
-            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject')">Decline</button>
-            <button class="btn btn-ghost btn-sm" onclick="toggleReduce('${p.session_id}')">Counter with less</button>
+            <button class="btn btn-ok btn-sm" onclick="decide('${p.session_id}','${p.protocol}','confirm',${!!d.already_paid})">Approve as asked</button>
+            <button class="btn btn-stop btn-sm" onclick="decide('${p.session_id}','${p.protocol}','reject',${!!d.already_paid})">Decline</button>
+            ${d.already_paid ? "" : `<button class="btn btn-ghost btn-sm" onclick="toggleReduce('${p.session_id}')">Counter with less</button>`}
           </div>
           <div class="reduce" id="reduce-${p.session_id}" style="display:${reduceState[p.session_id] ? "" : "none"}">
             ${reduceRows}
@@ -687,8 +687,17 @@ function adjust(sessionId, itemId, delta, originalQty) {
   renderQueue();
 }
 
-async function decide(sessionId, protocol, action) {
-  const path = DECISION_PATH[protocol](sessionId, action);
+/* An order that has already been paid for is decided through the shared
+   lifecycle, whatever protocol opened it -- that is where the refund
+   lives. Only an unpaid escalation is still the adapter's own business. */
+function decisionPath(sessionId, protocol, action, alreadyPaid) {
+  return alreadyPaid
+    ? DECISION_PATH.mcp(sessionId, action)
+    : DECISION_PATH[protocol](sessionId, action);
+}
+
+async function decide(sessionId, protocol, action, alreadyPaid) {
+  const path = decisionPath(sessionId, protocol, action, alreadyPaid);
   try {
     await api(path, { method: "POST", body: action === "confirm" ? "{}" : undefined });
     toast(action === "confirm" ? "Approved — the buyer can pay now." : "Declined and closed on the record.");

@@ -476,3 +476,77 @@ def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH) -> dict:
         ],
         "total_decisions": len(rows),
     }
+
+
+def transactions(db_path: str = DEFAULT_DB_PATH, limit: int = 60) -> list[dict]:
+    """Money in and money out, newest first. Read-only.
+
+    Built from the trail rather than a ledger table, because the trail is
+    already the record and a second one could disagree with it. Three
+    kinds of row:
+
+      out       the customer paid -- a real `pay_` capture
+      out_sim   an autonomous settlement, labelled `sim_`, where the order
+                is real and the capture is asserted by us
+      in        money coming back: a refund, or the reversal of a
+                simulated capture
+
+    A refund is matched to its order by `order_ref`, so the two sides of
+    the same order line up without anything having to store a link.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = [dict(r) for r in conn.execute(
+            "SELECT * FROM audit_events ORDER BY id DESC"
+        )]
+
+    by_id = {r["id"]: r for r in rows}
+    out: list[dict] = []
+    # A refund is written twice on purpose -- once when it is issued and
+    # again when Razorpay confirms it processed -- so the trail reads as
+    # what happened. That is one movement of money, not two, and rows are
+    # newest first, so the first one seen is the latest word on it.
+    seen_reversal: set[int] = set()
+
+    for row in rows:
+        ref = row.get("order_ref") or row["id"]
+        origin = by_id.get(ref, row)
+        cart = []
+        try:
+            cart = [f"{l['qty']}x {l['item'].replace('_', ' ')}" for l in json.loads(origin["cart_json"])]
+        except (json.JSONDecodeError, TypeError, KeyError):
+            pass
+
+        if row["decision"] in ("REFUNDED", "REFUND_FAILED"):
+            if ref in seen_reversal:
+                continue
+            seen_reversal.add(ref)
+            simulated = "simulated capture" in (row["reason"] or "")
+            out.append({
+                "direction": "in",
+                "kind": "reversal" if simulated else "refund",
+                "order_ref": ref,
+                "amount_inr": origin["total_inr"],
+                "at": row["ts"],
+                "protocol": row["protocol"],
+                "cart": cart,
+                "status": row["decision"],
+                "detail": row["reason"],
+            })
+        elif row["payment_id"]:
+            simulated = str(row["payment_id"]).startswith("sim_")
+            out.append({
+                "direction": "out",
+                "kind": "simulated" if simulated else "payment",
+                "order_ref": ref,
+                "amount_inr": row["total_inr"],
+                "at": row["ts"],
+                "protocol": row["protocol"],
+                "cart": cart,
+                "status": "SIMULATED" if simulated else "PAID",
+                "reference": row["payment_id"],
+                "detail": row["reason"],
+            })
+
+    return out[:limit]

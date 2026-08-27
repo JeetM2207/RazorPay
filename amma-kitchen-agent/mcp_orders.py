@@ -138,17 +138,40 @@ def get_order(order_ref: int) -> dict | None:
 
 # ------------------------------------------------------- step 1: checkout
 
-def open_order(order_ref: int) -> int:
-    """Called by the adapter once a payment link exists. From here on the
-    order is in the lifecycle and the chat is no longer involved."""
+def open_order(order_ref: int, reason: str | None = None) -> int:
+    """The order enters the paid lifecycle. From here on the buyer's agent
+    is no longer involved -- the rest happens between Amma and the trail.
+
+    Called once a payment is either pending on a link (the Claude-chat
+    path) or already settled autonomously (the buyer console). The reason
+    differs because the instrument does; the states after it do not.
+    """
     order = get_order(order_ref)
     if order is None:
         raise ValueError(f"no such order: {order_ref}")
     return _transition(
         order,
         AWAITING_PAYMENT,
-        "payment link issued; awaiting the customer paying on Razorpay",
+        reason or "payment link issued; awaiting the customer paying on Razorpay",
     )
+
+
+def settle_now(order_ref: int, payment_id: str) -> str | None:
+    """Enter the lifecycle for an order that is ALREADY paid.
+
+    The buyer console settles autonomously -- no link, no browser, no OTP
+    -- so there is no window between "link issued" and "captured" for a
+    webhook to land in. Both rows are still written, in order, because the
+    trail is supposed to read as what happened rather than as a summary.
+
+    From here it is identical to the Claude-chat path: her verdict was
+    decided when the cart was proposed, and is actioned now.
+    """
+    open_order(order_ref, reason=f"settled autonomously as {payment_id}; no browser involved")
+    order = get_order(order_ref)
+    if order is None:
+        raise ValueError(f"no such order: {order_ref}")
+    return on_payment_captured(dict(order, payment_id=payment_id), payment_id)
 
 
 # ----------------------------------------------- step 2: payment captured
@@ -272,6 +295,22 @@ def _refund(order: dict, status: str, reason: str) -> dict:
     # wanted and must not be reported as an error. None means Razorpay
     # could not be reached -- fall back to the order total and let the
     # refund itself fail loudly rather than guessing it is fine.
+    # A simulated capture cannot be refunded: there is no Razorpay payment
+    # behind a `sim_` reference, and asking to refund one is rejected as an
+    # invalid id. Saying "refunded to your card" here would be a false
+    # statement about money -- the one thing this project will not print.
+    # The order is still reversed and still closed; the trail says which
+    # kind of reversal it was, and so does the customer's screen.
+    if payment_id.startswith("sim_"):
+        _transition(
+            order, REFUNDED,
+            f"simulated capture {payment_id} reversed -- no real money moved, "
+            "so there is nothing for Razorpay to return",
+        )
+        _tell(phone, f"Order #{order_ref} couldn't be accepted. Nothing was charged.")
+        return {"order_ref": order_ref, "status": REFUNDED, "refunded": True,
+                "simulated": True, "refund": None}
+
     outstanding = razorpay_client.outstanding_paise(payment_id)
     if outstanding is not None and outstanding <= 0:
         _transition(
@@ -398,10 +437,16 @@ def expire(order_ref: int) -> dict:
 # ------------------------------------------------------------- the queue
 
 def pending_orders() -> list[dict]:
-    """Paid orders waiting on Amma, for her console."""
-    return audit_log.get_orders_with_status(
-        PENDING_MERCHANT_APPROVAL, db_path=_db(), protocol=PROTOCOL
-    )
+    """Paid orders waiting on Amma, for her console.
+
+    No longer filtered to one protocol. This lifecycle started life as the
+    Claude-chat path's, but pay-first is a property of the FLOW, not of the
+    protocol that opened it -- the buyer console settles first too now, and
+    an order that has been paid for and is awaiting her answer is the same
+    thing to her whichever door it came through. Every row carries its own
+    protocol, so her queue still says where it came from.
+    """
+    return audit_log.get_orders_with_status(PENDING_MERCHANT_APPROVAL, db_path=_db())
 
 
 # ------------------------------------------- outcomes, for the buyer's screen
@@ -438,7 +483,7 @@ def recent_outcomes(minutes: int = 30) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     out = []
     for status, kind in TERMINAL.items():
-        for order in audit_log.get_orders_with_status(status, db_path=_db(), protocol=PROTOCOL):
+        for order in audit_log.get_orders_with_status(status, db_path=_db()):
             rows = audit_log.get_order_rows(order["id"], db_path=_db())
             last = rows[-1]
             if last["ts"] < since:

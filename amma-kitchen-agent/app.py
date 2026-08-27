@@ -362,14 +362,26 @@ def pending() -> dict:
     order arrived on -- that's the whole architectural claim, made
     operational.
 
-    MCP's entries are rebuilt from the audit trail rather than held in
-    memory, because that adapter is deliberately stateless.
+    Two kinds of entry sit here side by side. An adapter session waiting
+    on a human BEFORE payment is held in that adapter's memory. An order
+    that has already been PAID for and is waiting on her answer is rebuilt
+    from the audit trail instead -- so it survives a restart, and so a
+    stateless adapter can have a queue at all.
+
+    An order in the paid lifecycle is deliberately not also listed by its
+    own adapter: it is no longer waiting for permission to proceed, it is
+    waiting for her verdict on something already bought.
     """
-    acp = adapter_acp.list_sessions(status="requires_human")["sessions"]
-    ap2 = adapter_ap2.list_intent_mandates(status="requires_human")["sessions"]
-    x402 = adapter_x402.list_orders(status="requires_human")["sessions"]
-    mcp = adapter_mcp.list_pending()["sessions"]
-    return {"pending": acp + ap2 + x402 + mcp}
+    paid = adapter_mcp.list_pending()["sessions"]
+    settled_refs = {str(s["session_id"]) for s in paid}
+
+    def unsettled(sessions):
+        return [s for s in sessions if str(s.get("session_id")) not in settled_refs]
+
+    acp = unsettled(adapter_acp.list_sessions(status="requires_human")["sessions"])
+    ap2 = unsettled(adapter_ap2.list_intent_mandates(status="requires_human")["sessions"])
+    x402 = unsettled(adapter_x402.list_orders(status="requires_human")["sessions"])
+    return {"pending": acp + ap2 + x402 + paid}
 
 
 @app.get("/api/demand")
@@ -381,6 +393,32 @@ def unmatched_demand() -> dict:
     her queue.
     """
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
+
+
+@app.get("/api/transactions")
+def transactions(limit: int = 60) -> dict:
+    """Money out and money back, for the customer's own statement.
+
+    Read-only, and derived from the audit trail rather than a second
+    ledger -- a separate table could disagree with the record, and then
+    one of them would be lying.
+    """
+    limit = max(1, min(int(limit), 200))
+    rows = audit_log.transactions(db_path=audit_log.DEFAULT_DB_PATH, limit=limit)
+    return {
+        "transactions": rows,
+        "totals": {
+            # Only a real capture counts as money out. A `sim_` reference
+            # is an assertion of ours, and it is totalled separately so it
+            # can never be mistaken for takings.
+            "paid_inr": sum(r["amount_inr"] for r in rows
+                            if r["direction"] == "out" and r["kind"] == "payment"),
+            "returned_inr": sum(r["amount_inr"] for r in rows
+                                if r["direction"] == "in" and r["kind"] == "refund"),
+            "simulated_inr": sum(r["amount_inr"] for r in rows
+                                 if r["kind"] == "simulated"),
+        },
+    }
 
 
 @app.get("/api/order-outcomes")

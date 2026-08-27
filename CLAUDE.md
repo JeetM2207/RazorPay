@@ -176,7 +176,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 401 tests; test_negotiation.py still matters most
+  tests/                  # 411 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -309,6 +309,15 @@ failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`, `NOTHING TO
 | `head` | purple | a section heading |
 
 Bold text inside a line renders white, so amounts and ids stand out of the sentence.
+
+**The customer is never shown her limits.** The terminal used to print
+*"Her limits: max ₹500 per order, human check from ₹400"* straight from the catalog feed,
+and then quote her threshold verbatim out of the escalation reason. `catalog.py` still
+publishes those numbers, because a well-behaved buyer *agent* can use them to self-limit —
+but a human reading this screen is the other side of the negotiation, and a customer who
+learns the threshold has been handed the rule to game. `customerSafeReason()` rewrites the
+two limit-bearing reasons exactly as `adapter_mcp._customer_safe_reason()` does
+server-side, and everything that says nothing about her limits passes through untouched.
 
 **Lines that quote one of the merchant's hard limits are marked differently** — a left rule
 down the line, the rule's name (`budget cap`, `human confirmation threshold`, `mandate`,
@@ -647,7 +656,7 @@ server-side, because a schema constrains a cooperative caller and nothing else.
   delivery details" flow was built, and none should be. Written onto the same audit row
   as the order.
 
-## Pay first, confirm after: the MCP order lifecycle
+## Pay first, confirm after: the shared order lifecycle
 
 The Claude-chat path completes differently from the other three adapters, and the reason
 is a constraint of the medium rather than a preference.
@@ -658,9 +667,35 @@ then come back and ask Claude to finish checking out. Claude cannot be woken bet
 turns, so in practice the order simply stalled — and the customer was told it was
 "pending confirmation" about something they had no way to follow.
 
-So for MCP only, payment happens first and confirmation runs afterwards over WhatsApp,
-fully decoupled from the chat. **Claude's involvement ends the moment it hands over a
-payment link.** ACP, AP2 and x402 are untouched and still finish at capture.
+So payment happens first and confirmation runs afterwards over WhatsApp, fully decoupled
+from the conversation. **Claude's involvement ends the moment it hands over a payment
+link.**
+
+**This is no longer MCP-only.** The buyer console had the same disease in a worse form: it
+printed *"Nothing has been charged. Waiting for her decision…"* and then sat there, with a
+customer watching a screen until a cook happened to look at her phone. That is a sale that
+quietly dies. `POST /ap2/intent-mandates/{id}/settle-pending-confirmation` takes the
+payment now and lets her answer afterwards, and from that point the order walks the
+identical lifecycle — same states, same queue, same automatic reversal.
+
+Pay-first is a property of the FLOW, not of the protocol that opened it, so
+`mcp_orders.pending_orders()` no longer filters by protocol and each queue entry carries
+its own. The scripted `buyer_agent_b.py` still uses the old confirm-first route, which is
+untouched; x402 and ACP still finish at capture.
+
+**A pay-first settlement is not recorded as a human override.** Nobody approved anything —
+what happened is that payment was taken first, which is a different fact, and the trail
+says that instead of inventing a yes. A test asserts no "human override" row appears.
+
+**What the buyer console cannot honestly claim.** It settles autonomously, which on this
+account means a `sim_` reference with no Razorpay payment behind it — asking to refund one
+is rejected as *"not a valid id"*, which was checked rather than assumed. So a declined
+order there is still reversed, still closed, and still tells the customer — but it says
+*"reversed — the settlement was simulated, so nothing was ever charged"*, not "refunded to
+your card". The MCP path takes real money through a payment link and gets the real refund
+sentence. One env change (S2S enablement) makes both real; until then the screens say which
+is which, because printing a false statement about money is the one thing this project
+will not do.
 
 The decision is *not* re-derived after payment. `negotiation.py` already said APPROVE or
 ESCALATE when the cart was proposed; that verdict is carried on the order and simply
@@ -1200,7 +1235,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**401 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**411 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1398,6 +1433,20 @@ The MCP feed carries `on_sale` and `usual_price_inr` **only on a dish that is ac
 discounted**. `on_sale: false` on every item is eight lines of a token-capped response
 saying nothing, while on the one reduced dish the old price is exactly the reason to order
 it today.
+
+## The customer's own statement
+
+`GET /api/transactions` and a **Transactions** drawer on the buyer console: everything that
+went out and everything that came back, newest first, with a three-way total — **paid**,
+**returned**, **simulated**.
+
+Built from the audit trail rather than a ledger table, because the trail is already the
+record and a second one could disagree with it. Three kinds of line, and the difference
+between them is the whole point: a real `pay_` capture, an autonomous settlement labelled
+`sim_`, and money coming back — a refund, or the reversal of a simulated capture. A refund
+is matched to its order by `order_ref`, so both sides of the same order line up without
+anything storing a link. The two rows a refund legitimately writes — issued, then confirmed
+processed — are one movement of money, so the statement shows it once.
 
 ## Showing the boundary, not describing it
 

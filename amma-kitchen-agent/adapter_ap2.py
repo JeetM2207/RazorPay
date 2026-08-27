@@ -216,6 +216,45 @@ def human_confirm(intent_id: str, req: HumanConfirmRequest = HumanConfirmRequest
     return _intent_view(intent_id)
 
 
+@router.post("/ap2/intent-mandates/{intent_id}/settle-pending-confirmation")
+def settle_pending_confirmation(intent_id: str) -> dict:
+    """Take payment now and collect her answer afterwards.
+
+    The other route on this mandate, human-confirm, is the old flow: it
+    waits for Amma, and only then lets the money move. That is still there
+    and still used by the scripted buyer agent. This one is pay-first, and
+    it exists because a customer sitting on a screen waiting for a cook to
+    look at her phone is a sale that quietly dies.
+
+    Nothing is re-decided. negotiation.py already said ESCALATE when the
+    cart was proposed; that verdict rides along and is actioned after
+    payment, exactly as it is on the Claude-chat path.
+
+    A HARD rule is refused here before any money moves -- a disallowed
+    category cannot be waved through by anybody, so charging for it would
+    guarantee a refund. Same marker, same restriction, as human-confirm.
+    """
+    mandate = _INTENT_MANDATES.get(intent_id)
+    if not mandate:
+        raise HTTPException(404, "unknown intent mandate")
+    if mandate["status"] != "requires_human":
+        raise HTTPException(409, "intent mandate is not awaiting human confirmation")
+    if _HUMAN_OVERRIDABLE_MARKER not in mandate["detail"]["reason"]:
+        raise HTTPException(
+            403,
+            "this escalation is a hard merchant rule (disallowed category, "
+            "unknown item, or over the flexible margin); no payment may be "
+            "taken for an order that cannot be fulfilled",
+        )
+
+    # Deliberately NOT recorded as a human override: nobody approved
+    # anything. What happened is that payment was taken first, which is a
+    # different fact and the trail says so.
+    mandate["status"] = "cart_ready"
+    mandate["pay_first_pending"] = True
+    return _intent_view(intent_id)
+
+
 @router.post("/ap2/intent-mandates/{intent_id}/human-reject")
 def human_reject(intent_id: str) -> dict:
     mandate = _INTENT_MANDATES.get(intent_id)
@@ -297,6 +336,22 @@ def execute_payment_mandate(cart_mandate_id: str) -> dict:
         cart=cart_mandate["cart"],
         amount_inr=cart_mandate["total_inr"],
     )
+
+    # An order taken pay-first now goes where every other paid order goes:
+    # the shared lifecycle, which tells Amma, waits for her answer, and
+    # reverses the payment if she declines. Entered HERE rather than by
+    # the caller, so a console that forgets cannot skip it -- the same
+    # argument as follow_up_after_capture.
+    intent = _INTENT_MANDATES.get(cart_mandate["intent_mandate_id"], {})
+    if intent.get("pay_first_pending"):
+        import mcp_orders
+
+        try:
+            mcp_orders.settle_now(cart_mandate["event_id"], settlement.payment_id)
+        except Exception:
+            # The payment is recorded either way; a follow-up failure must
+            # not make the settlement look like it did not happen.
+            pass
 
     matched_mandate_hash = hashlib.sha256(
         f"{cart_mandate['intent_mandate_id']}:{cart_mandate_id}:{cart_mandate['total_inr']}".encode()

@@ -305,7 +305,11 @@ def list_pending() -> dict:
                 "session_id": str(order["id"]),
                 "agent_id": order["agent_id"],
                 "status": "requires_human",
-                "protocol": PROTOCOL,
+                # The order's OWN protocol, not this adapter's. The paid
+                # lifecycle is shared now, so an entry here may have come
+                # from the buyer console over AP2 just as easily as from
+                # a Claude conversation, and her queue should say so.
+                "protocol": order["protocol"],
                 "cart": json.loads(order["cart_json"]),
                 "decision_detail": {
                     "event_id": order["id"],

@@ -77,6 +77,51 @@
   .dish-add:hover { background: var(--accent); color: #fff; }
   .dish-add:disabled { opacity: .5; cursor: default; background: var(--surface-3); color: var(--ink-3); border-color: var(--line); }
 
+  /* ---- transactions drawer ---- */
+  .tx-btn { width: 100%; margin-top: 12px; }
+  .tx-back { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; }
+  .tx-panel {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 94vw); z-index: 71;
+    background: var(--surface); border-left: 1px solid var(--line);
+    box-shadow: -22px 0 60px -28px rgba(15,23,42,.5);
+    display: flex; flex-direction: column;
+    animation: slideIn .24s cubic-bezier(.2,.9,.3,1);
+  }
+  @keyframes slideIn { from { transform: translateX(24px); opacity: 0; } }
+  .tx-head {
+    padding: 18px 20px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  }
+  .tx-close {
+    appearance: none; border: 0; background: var(--surface-3); cursor: pointer;
+    width: 30px; height: 30px; border-radius: 8px; font-size: 17px; color: var(--ink-2);
+  }
+  .tx-totals { display: flex; gap: 9px; padding: 15px 20px; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+  .tx-total { flex: 1 1 110px; }
+  .tx-total .n { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  .tx-total .l { font-size: 10.5px; font-weight: 650; letter-spacing: .05em;
+                 text-transform: uppercase; color: var(--ink-3); }
+  .tx-total.in .n  { color: var(--ok); }
+  .tx-total.sim .n { color: var(--warn); }
+  .tx-list { flex: 1; overflow-y: auto; padding: 12px 14px; }
+  .tx-row {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 12px; border: 1px solid var(--line); border-radius: 11px; margin-bottom: 8px;
+  }
+  .tx-arrow {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    display: grid; place-items: center; font-size: 14px; font-weight: 700;
+    background: var(--surface-3); color: var(--ink-2);
+  }
+  .tx-row.in .tx-arrow { background: var(--ok-soft); color: var(--ok); }
+  .tx-row.sim .tx-arrow { background: var(--warn-soft); color: var(--warn); }
+  .tx-main { flex: 1; min-width: 0; }
+  .tx-title { font-size: 13.5px; font-weight: 620; }
+  .tx-sub { font-size: 11.5px; color: var(--ink-3); margin-top: 2px; line-height: 1.45; }
+  .tx-amt { font-weight: 700; font-size: 14px; white-space: nowrap; }
+  .tx-row.in .tx-amt { color: var(--ok); }
+  .tx-ref { font-family: var(--mono); font-size: 10.5px; color: var(--ink-3); margin-top: 3px; }
+
   /* ---- the 4-step progress stepper ---- */
   .steps { display: flex; align-items: flex-start; gap: 0; margin-bottom: 14px; }
   .stp { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; position: relative; }
@@ -276,6 +321,9 @@
             The agent negotiates on its own and pays with your saved card. It comes
             back to you only if something crosses your soft cap.
           </p>
+          <button class="btn btn-ghost btn-sm tx-btn" id="txBtn" onclick="openTransactions()">
+            Transactions
+          </button>
         </div>
 
         <div class="card" style="margin-top:16px">
@@ -331,6 +379,19 @@
       </div>
     </div>
   </div>
+
+<div id="txBack" class="tx-back" style="display:none" onclick="closeTransactions()"></div>
+<aside id="txPanel" class="tx-panel" style="display:none" aria-label="Transactions">
+  <div class="tx-head">
+    <div>
+      <h2 style="margin:0">Transactions</h2>
+      <p class="note" style="margin:2px 0 0">Everything that went out, and everything that came back.</p>
+    </div>
+    <button class="tx-close" onclick="closeTransactions()" aria-label="Close">&times;</button>
+  </div>
+  <div class="tx-totals" id="txTotals"></div>
+  <div class="tx-list" id="txList"></div>
+</aside>
 
 <script>
 const $ = (id) => document.getElementById(id);
@@ -413,6 +474,27 @@ async function step(message, kind = "step", pause = 520) {
    there is no attribute context to escape for at all. */
 const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* The core writes its reasons for the audit trail and for Amma, so they
+   name her budget cap and her confirmation threshold in rupees. This line
+   is read by the CUSTOMER. Rewritten here for exactly the reasons
+   adapter_mcp._customer_safe_reason() rewrites it server-side -- and, like
+   that one, everything which says nothing about her limits (an unknown
+   item, a disallowed category, out of stock) passes through untouched,
+   because that is what the customer actually needs to hear. */
+function customerSafeReason(reason) {
+  const text = String(reason || "");
+  if (text.includes("human confirmation threshold")) {
+    return "Amma confirms an order this size herself. Paying now; she answers straight after.";
+  }
+  if (text.includes("exceeds budget cap")) {
+    return "That is larger than she takes in a single order.";
+  }
+  if (text.includes("within budget and below human confirm threshold")) {
+    return "She will make this.";
+  }
+  return text;
+}
 
 const setState = (t, c) => { $("termState").textContent = t; $("termState").style.color = c; };
 
@@ -581,8 +663,12 @@ async function deploy() {
       "quiet"
     );
     await step(
-      `Her limits: max <b>${rupee(catalog.order_limits.max_order_inr)}</b> per order, ` +
-      `human check from <b>${rupee(catalog.order_limits.human_confirm_at_inr)}</b>.`,
+      // Her cap and her confirmation threshold are HERS. The catalog
+      // publishes them so a well-behaved agent can self-limit, but this
+      // line is read by the customer -- and a customer who learns the
+      // threshold has been handed the rule to game. Same reason
+      // get_catalog stopped returning them to Claude.
+      `Reading her published rules so I don't waste a request.`,
       "quiet", 560
     );
 
@@ -927,20 +1013,25 @@ async function handleMerchantResponse(mandate, hardCap) {
   }
 
   if (mandate.status === "requires_human") {
-    log(`&gt; Amma's AI escalated this to her: ${mandate.decision_detail.reason}.`, "warn");
-    log("&gt; Nothing has been charged. Waiting for her decision…", "quiet");
-    setState("WAITING ON MERCHANT", "#e3b341");
-    while (mandate.status === "requires_human") {
-      await sleep(2000);
-      mandate = (await api(`/ap2/intent-mandates/${mandate.id}`)).intent_mandate;
-    }
-    if (mandate.status === "rejected") {
-      log("&gt; Amma declined the order. Closing out — no payment was attempted.", "err");
-      setState("DECLINED", "#f85149"); stepFailed();
+    log(`&gt; ${customerSafeReason(mandate.decision_detail.reason)}`, "warn");
+
+    // Pay-first, the same as the Claude-chat path. Waiting for a cook to
+    // look at her phone while the customer sits on a screen is a sale
+    // that quietly dies -- so the payment goes through now and her answer
+    // is collected straight after. If she declines, it is reversed
+    // automatically and this screen says so.
+    try {
+      mandate = (await api(`/ap2/intent-mandates/${mandate.id}/settle-pending-confirmation`, {
+        method: "POST",
+      })).intent_mandate;
+      log("&gt; Paying now; she confirms straight after. Declined orders are reversed automatically.", "ok");
+    } catch (err) {
+      // A hard rule of hers -- no payment may be taken for an order that
+      // cannot be fulfilled. The server refuses this, not the page.
+      log(`&gt; ${err.message}`, "err");
+      setState("REFUSED", "#f85149"); stepFailed();
       return null;
     }
-    log("&gt; Amma approved it.", "ok");
-    setState("RUNNING", "#56d364");
   }
 
   const upsell = mandate.decision_detail.upsell_suggestion;
@@ -1032,12 +1123,22 @@ function refundToast(outcome) {
   const el = document.createElement("div");
   const refunded = outcome.kind === "refunded";
   el.className = "refund-toast" + (refunded ? "" : " ok");
+  // Never claim money came back that never went out. An autonomous
+  // settlement is a `sim_` reference with no Razorpay payment behind it,
+  // so there is nothing to return -- and saying otherwise would be a
+  // false statement about a payment, which is the one thing this project
+  // will not print.
+  const simulated = /simulated capture/.test(outcome.reason || "");
   el.innerHTML = refunded
     ? `<span class="rt-mark">↺</span><div>
          <b>Order #${outcome.order_ref} rejected by the kitchen.</b>
-         ${rupee(outcome.total_inr)} automatically refunded via the Razorpay API.
-         <span class="rt-sub">No one had to chase it — the refund was issued in the
-         same call that recorded her answer.</span>
+         ${simulated
+           ? `${rupee(outcome.total_inr)} reversed — the settlement was simulated,
+              so nothing was ever charged.`
+           : `${rupee(outcome.total_inr)} automatically refunded via the Razorpay API,
+              back to your original payment method.`}
+         <span class="rt-sub">No one had to chase it — it was issued in the same call
+         that recorded her answer. Open <b>Transactions</b> for the record.</span>
        </div>`
     : `<span class="rt-mark">✓</span><div>
          <b>Order #${outcome.order_ref} confirmed by the kitchen.</b>
@@ -1076,6 +1177,73 @@ async function watchOutcomes() {
   } catch { /* ignore */ }
   setInterval(watchOutcomes, 3000);
 })();
+
+/* ------------------------------------------------------- transactions
+   A statement built from the audit trail, so it cannot disagree with the
+   record. Three kinds of line, and the difference between them is the
+   whole point: a real capture, an autonomous settlement we labelled
+   ourselves, and money coming back. */
+
+const TX_SHAPE = {
+  payment:   { cls: "",    mark: "\u2191", verb: "Paid to Amma's Kitchen" },
+  simulated: { cls: "sim", mark: "\u2191", verb: "Settled autonomously" },
+  refund:    { cls: "in",  mark: "\u2193", verb: "Refunded by Amma's Kitchen" },
+  reversal:  { cls: "in",  mark: "\u2193", verb: "Reversed by Amma's Kitchen" },
+};
+
+const TX_NOTE = {
+  simulated: "no real money moved &mdash; labelled <b>sim_</b> in the trail",
+  refund: "returned to your original payment method",
+  reversal: "the settlement was simulated, so nothing was ever charged",
+  payment: "",
+};
+
+async function openTransactions() {
+  $("txBack").style.display = "";
+  $("txPanel").style.display = "flex";
+  $("txList").innerHTML = `<div class="empty">Reading the trail\u2026</div>`;
+  try {
+    const data = await api("/api/transactions?limit=60");
+    const t = data.totals;
+    $("txTotals").innerHTML =
+      `<div class="tx-total"><div class="n">${rupee(t.paid_inr)}</div><div class="l">Paid</div></div>` +
+      `<div class="tx-total in"><div class="n">${rupee(t.returned_inr)}</div><div class="l">Returned</div></div>` +
+      `<div class="tx-total sim"><div class="n">${rupee(t.simulated_inr)}</div><div class="l">Simulated</div></div>`;
+
+    $("txList").innerHTML = data.transactions.length
+      ? data.transactions.map((tx) => {
+          const shape = TX_SHAPE[tx.kind] || TX_SHAPE.payment;
+          const failed = tx.status === "REFUND_FAILED";
+          const when = escHtml((tx.at || "").slice(0, 16).replace("T", " "));
+          return `
+            <div class="tx-row ${shape.cls}">
+              <div class="tx-arrow">${shape.mark}</div>
+              <div class="tx-main">
+                <div class="tx-title">${failed ? "Refund did not go through" : escHtml(shape.verb)}</div>
+                <div class="tx-sub">
+                  Order #${escHtml(tx.order_ref)} &middot; ${escHtml((tx.cart || []).join(", ") || "\u2014")}<br>
+                  ${when} UTC &middot; ${escHtml((tx.protocol || "").toUpperCase())}
+                  ${TX_NOTE[tx.kind] ? "&middot; " + TX_NOTE[tx.kind] : ""}
+                </div>
+                ${tx.reference ? `<div class="tx-ref">${escHtml(tx.reference)}</div>` : ""}
+              </div>
+              <div class="tx-amt">${tx.direction === "in" ? "+" : "\u2212"}${rupee(tx.amount_inr)}</div>
+            </div>`;
+        }).join("")
+      : `<div class="empty">Nothing yet. Place an order and it will show up here.</div>`;
+  } catch (err) {
+    $("txList").innerHTML = `<div class="empty">Couldn't load: ${escHtml(err.message)}</div>`;
+  }
+}
+
+function closeTransactions() {
+  $("txBack").style.display = "none";
+  $("txPanel").style.display = "none";
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeTransactions();
+});
 
 $("deployBtn").addEventListener("click", deploy);
 boot();
