@@ -68,7 +68,25 @@ app.include_router(escalations.router)
 app.include_router(catalog.router)
 app.include_router(dashboard.router)
 
-app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+class _RevalidatingStatic(StaticFiles):
+    """Serve the console's CSS and assets, but make browsers check.
+
+    Without this a browser holds the old stylesheet and shows a
+    half-restyled page: the pages' inline rules reference design tokens
+    the stale sheet has never heard of, so they resolve to nothing and,
+    for instance, the merchant's board comes out white instead of dark.
+    `no-cache` still allows caching -- it only requires revalidation --
+    so the cost is one 304, and the failure mode it removes is somebody
+    reloading mid-demo onto a page that looks broken.
+    """
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", _RevalidatingStatic(directory=str(WEB_DIR)), name="static")
 
 # The MCP endpoint an external assistant connects to. Mounted rather than
 # routed because it is a Starlette app of its own, speaking Streamable
