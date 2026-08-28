@@ -176,7 +176,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 411 tests; test_negotiation.py still matters most
+  tests/                  # 413 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -196,6 +196,19 @@ uvicorn app:app --port 8000 --reload    # everything, one process
 | `/catalog` | agent-readable product feed (JSON) — what the buyer agent fetches |
 | `/mcp` | Streamable HTTP endpoint an external AI assistant connects to |
 | `/docs` | the REST protocols' API reference |
+
+The consoles also call a handful of read-only JSON endpoints that exist only to feed a
+screen, and are worth knowing by name because each one closed a gap where something was
+recorded correctly and reached nobody:
+
+| Endpoint | Feeds |
+| --- | --- |
+| `GET /api/insights` | the AI Strategist's two sentences, plus the numbers behind them |
+| `POST /api/merchant/optimize-prices` | the **only** console button that writes: inventory-led repricing |
+| `GET /api/transactions` | the customer's statement — money out, money back, simulated |
+| `GET /api/order-outcomes` | orders that finished, so the buyer's screen can toast a refund |
+| `GET /api/demand` | what people asked for that she does not sell |
+| `POST /ap2/intent-mandates/{id}/settle-pending-confirmation` | pay-first from the buyer console |
 
 `python demo.py` runs the whole story scripted instead, starting and stopping its own
 servers on separate ports. `python -m pytest` runs the suite.
@@ -268,15 +281,28 @@ limits are drawn as meters rather than written as numbers: a rose **hard cap** b
 width labelled *"never exceeded"*, and an amber **soft cap** bar labelled *"asks you
 first"*, with the note *"Anything above the soft cap comes back to you before it is
 bought."* Then the order textarea, pre-filled with *"Order 1 paneer bhurji and 4 tandoori
-roti"*, and a full-width **Deploy Agent** button.
+roti"*, a full-width **Deploy Agent** button, and a **Transactions** button that opens the
+statement drawer.
 
 Below that, a second card: **"On the menu today"**, with a badge reading `7 of 8
 orderable`, and a two-column **dish grid** straight from her live menu. Each tile shows the
-dish name, its category in small caps, the price, and a **+ Add** button that appends to
-the order box, so two taps build a two-item order. A dish she has unticked is dimmed and
+dish name, its category in small caps and the price. A dish she has unticked is dimmed and
 its button reads **in person** — visible, but not orderable, which is exactly what the
 catalog publishes. A discounted dish shows its old price struck through beside the new one
 and adds *· on sale* to the category line.
+
+**The picker is a real basket.** A tile starts with **+ Add**; once picked it becomes a
+`− 2 +` stepper and the tile turns indigo, and a bar under the order box shows
+`3 items · ₹330` with a **Clear**. The order text is written *from* the basket, so tapping
+the same dish twice gives **"Order 2 veg thali"** rather than *"1 veg thali, 1 veg thali"* —
+which is what the parser would otherwise have to untangle, and what a customer would
+rightly find odd.
+
+Typing by hand wins. The box is the order and the basket only fills it in, so the moment
+they disagree the tiles reset rather than showing counts that are no longer in the sentence
+being sent. And the basket is a way of building that sentence, never a way around the
+parse: what it writes goes through `/api/parse-cart` exactly as typed text does, and every
+gate after it is unchanged.
 
 **Right, "Your buying agent"** — a four-step progress stepper above a dark glass terminal.
 The steps are in the order they really run, which is the two-party story in one glance:
@@ -294,10 +320,10 @@ decides nothing.
 The terminal itself is a mac-style window with a translucent blurred title bar over a
 slate gradient: three red/amber/green dots, the agent's id as its name, and a state chip on
 the right that moves `IDLE` → `WAKING` → `RUNNING`, then `ASKING YOU` in amber while it
-waits on the customer, `WAITING ON MERCHANT` while it waits on Amma, `SETTLING`, and
-`COMPLETE` in green. A run that ends badly parks on the reason rather than a generic
-failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`, `NOTHING TO ORDER` or
-`ERROR`. Inside, timestamped lines in a fixed grammar:
+waits on the customer, `SETTLING`, `AWAITING PAYMENT` while the customer is on Razorpay's
+page, and `COMPLETE` in green. A run that ends badly parks on the reason rather than a
+generic failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`, `UNPAID`,
+`NOTHING TO ORDER` or `ERROR`. Inside, timestamped lines in a fixed grammar:
 
 | kind | colour | used for |
 | --- | --- | --- |
@@ -332,6 +358,12 @@ the question in amber. It is rebuilt per question: a soft-cap confirmation shows
 same panel reads *"Waiting for your WhatsApp reply…"* and either channel resolves it —
 answering on screen posts through the real `/webhook/sms-reply`, so the offline path
 exercises the live one.
+
+The same panel is where the **payment link** appears once the cart is agreed: *"Your order
+is ready. Pay ₹440 on Razorpay's own page."* with a **Pay ₹440** link and **Not now**. It
+is a plain anchor the customer clicks — this page structurally cannot submit a payment for
+them, which is the same boundary the MCP adapter has. The terminal then polls Razorpay
+until the link reads paid, and says so.
 
 Bottom-centre, a **refund toast**: a dark maroon card with a `↺` mark reading *"Order #N
 rejected by the kitchen. ₹480 automatically refunded via the Razorpay API."*, or a green
@@ -382,6 +414,11 @@ An ordinary escalation offers **Approve as asked** / **Decline** / **Counter wit
 the last expands a per-dish stepper (`− 2 +`) and a **Send this smaller order back** button.
 A hard-rule refusal offers only **Decline and close**, above a note explaining that the
 system will not let it be approved here and that this is deliberate.
+
+An entry that is **already paid for** — the pay-first flow, from either door — is decided
+through the shared lifecycle rather than the adapter's own session, and **"Counter with
+less" is not offered**: the money is already taken, so the only answers are accept or
+decline-and-refund. Its reason line says so.
 
 *Right, "Amma's phone":* an actual phone mock-up — rounded dark bezel, dark screen, a
 WhatsApp-style header with an `AK` avatar reading *"Amma's Kitchen bot · WhatsApp · mock
@@ -1249,7 +1286,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**411 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**413 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1498,6 +1535,29 @@ from `REFUNDED`: the customer is owed money and the screen must not say otherwis
 Seen order refs live in `localStorage`, so reloading the page does not replay the day's
 outcomes as if they had just happened, and a first pass marks what is already finished
 before the poll starts.
+
+## Two bugs the browser found that the suite could not
+
+Both were in `web/`, both were mine, and both are the same shape: a page that parses in
+Python's eyes and is dead in a browser's.
+
+**A duplicate declaration blanks the whole script.** The dish picker's running total was
+named `cartTotal()`, which `order.html` already had for the cart the *agent* drafts. Two
+declarations of one name is a SyntaxError, and a SyntaxError kills the **entire** script
+block — so the page rendered with no dishes, no terminal, no anything, while every test
+passed. There was already a guard test for exactly this, written after the same mistake with
+`const rupee`; it only matched `const` and `let`, so a duplicate `function` walked straight
+past it. It now matches both, confirmed by putting the duplicate back.
+
+**A patch that sliced to the end of the file.** Rewriting the picker by replacing
+everything from `renderDishes()` to the next section marker quietly deleted `deploy()`,
+`settle()` and `handleMerchantResponse()` — the entire order flow — because those sit
+between the two anchors. Caught from the browser console (`deploy is not defined`), restored
+from HEAD, and re-applied as a bounded replacement of just the function being changed.
+
+The lesson is the one this project keeps relearning in a new costume: **a green suite says
+the Python is fine, and says nothing about whether the page runs.** Anything that touches
+`web/` gets opened in a browser and its console read before it is called done.
 
 ## Before a demo, run the check
 
