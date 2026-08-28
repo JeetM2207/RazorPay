@@ -244,6 +244,68 @@ def check_messaging() -> None:
         report("PASS", "Twilio", f"{account.type} account")
 
 
+# ------------------------------------------------------------- the model
+
+def check_model() -> None:
+    """Does the NL parser have a model, and can it actually afford a call?
+
+    Here because it went wrong live: the free credit ran out mid-run and
+    the console stopped at "Cannot draft a cart without interpreting the
+    request". A key that is present and valid and BROKE looks identical to
+    a working one from every angle except a real request -- which is the
+    same shape as every other check in this file.
+
+    Never a FAIL, because the order still goes through without it: the
+    parser falls back to matching against the menu directly. It is a WARN
+    because that fallback matches less, and finding out during the pitch
+    is the thing worth avoiding.
+    """
+    key = ENV.get("OPENROUTER_API_KEY")
+    if not key:
+        report("WARN", "model for NL parsing",
+               "no OPENROUTER_API_KEY -- orders still work via menu matching, "
+               "but loose phrasing will miss more")
+        return
+
+    try:
+        import httpx
+
+        r = httpx.get(
+            "https://openrouter.ai/api/v1/credits",
+            headers={"Authorization": f"Bearer {key}"}, timeout=15,
+        )
+    except Exception as exc:
+        report("WARN", "model for NL parsing", f"could not reach OpenRouter: {str(exc)[:80]}")
+        return
+
+    if r.status_code == 401:
+        report("WARN", "model for NL parsing",
+               "OpenRouter rejected the key -- parsing will fall back to menu matching")
+        return
+    if r.status_code != 200:
+        report("WARN", "model for NL parsing", f"OpenRouter answered {r.status_code}")
+        return
+
+    data = r.json().get("data", {})
+    granted = float(data.get("total_credits") or 0)
+    used = float(data.get("total_usage") or 0)
+    left = granted - used
+
+    if left <= 0:
+        # granted is 0 on an account that has only ever spent the free
+        # allowance, so "of $0.00" would read as nonsense.
+        spent = (f"${used:.2f} spent, no credit purchased" if granted <= 0
+                 else f"${used:.2f} of ${granted:.2f} used")
+        report("WARN", "model for NL parsing",
+               f"OpenRouter balance exhausted ({spent}) -- parsing WILL fall back to "
+               "menu matching. Top up at openrouter.ai/settings/credits")
+    elif left < 0.10:
+        report("WARN", "model for NL parsing",
+               f"only ${left:.3f} left -- roughly {int(left / 0.0027)} more parses")
+    else:
+        report("PASS", "model for NL parsing", f"${left:.2f} of credit left")
+
+
 # ------------------------------------------------------------------- MCP
 
 def check_mcp(public_url: str | None) -> None:
@@ -356,6 +418,7 @@ def main() -> int:
     check_webhook_secret(public_url)
     check_razorpay(public_url)
     check_messaging()
+    check_model()
     check_mcp(public_url)
     check_state()
     check_routines()
