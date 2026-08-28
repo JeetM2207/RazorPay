@@ -24,19 +24,19 @@
   .section-head:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
 
   .cardface {
-    background: linear-gradient(135deg, #2E1B0E 0%, #1C0F06 60%, #4A3320 100%);
-    border-radius: 14px; padding: 19px; color: var(--paper); margin-bottom: 16px;
+    background: linear-gradient(135deg, #0B0716 0%, #070410 60%, rgba(255,255,255,0.09) 100%);
+    border-radius: 14px; padding: 19px; color: var(--ink); margin-bottom: 16px;
     box-shadow: 0 12px 30px -14px rgba(28, 15, 6, .55);
     position: relative; overflow: hidden;
   }
   .cardface::after {
     content: ""; position: absolute; right: -40px; top: -60px;
     width: 170px; height: 170px; border-radius: 50%;
-    background: rgba(184, 121, 26, .2);
+    background: rgba(138, 92, 255, .2);
   }
   .cardface .chip {
     width: 36px; height: 26px; border-radius: 5px; margin-bottom: 18px;
-    background: linear-gradient(135deg, #F0D68A, #8F5C10);
+    background: linear-gradient(135deg, #C7B8FF, #A98BFF);
   }
   .cardface .num {
     font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -44,15 +44,15 @@
   }
   .cardface .meta {
     display: flex; justify-content: space-between; margin-top: 13px;
-    font-size: 10.5px; color: #9A8E7B; text-transform: uppercase; letter-spacing: .08em;
+    font-size: 10.5px; color: #948FA8; text-transform: uppercase; letter-spacing: .08em;
   }
 
   .safety {
     display: flex; gap: 10px; padding: 13px 15px; border-radius: 11px;
     background: var(--info-soft); border: 1px solid var(--info-line);
-    font-size: 12.5px; color: #3F5A66; line-height: 1.5; margin-bottom: 17px;
+    font-size: 12.5px; color: #3A2E63; line-height: 1.5; margin-bottom: 17px;
   }
-  .safety b { color: #33505C; }
+  .safety b { color: #2A2149; }
 
   .saved-banner {
     display: flex; align-items: center; gap: 12px; justify-content: space-between;
@@ -64,6 +64,9 @@
 </style>
 </head>
 <body>
+
+  <div class="aurora aurora-quiet" aria-hidden="true"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
+
   <div class="topbar">
     <div class="brand">
       <span class="brand-mark">Amma's Kitchen</span>
@@ -117,7 +120,7 @@
         <div class="section-head">Card on file</div>
 
         <div class="safety">
-          <span>&#4F7942;</span>
+          <span>&#3DE8A0;</span>
           <span>
             <b>Test mode.</b> Use the Razorpay test card below &mdash; it's pre-filled.
             Your card number never leaves this browser and is never stored: only the

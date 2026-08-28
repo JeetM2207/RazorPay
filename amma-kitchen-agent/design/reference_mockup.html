@@ -3,401 +3,293 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Amma's Kitchen — Design Direction</title>
+<title>Amma's Kitchen — Direction 5: Motion + Terminal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root{
-    --paper:#F1ECDF;
-    --paper-card:#FBF8F0;
-    --paper-border:#DAD0B8;
-    --ink:#2B1D14;
-    --ink-soft:#6B5940;
-    --coffee:#2E1B0E;
-    --coffee-2:#1C0F06;
-    --coffee-border:#4A3320;
-    --gold:#B8791A;
-    --gold-deep:#8F5C10;
-    --leaf:#4F7942;
-    --rust:#A85C2A;
-    --brick:#9B3A2C;
-    --steel:#5C7A8A;
-    --radius-chit: 3px 16px 3px 16px;
-    --font-display: Georgia, 'Iowan Old Style', Charter, 'Times New Roman', serif;
-    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+    --bg:#0A0714;
+    --frame:#150F24;
+    --card:#1A1330;
+    --card-2:#211A3D;
+    --line:rgba(255,255,255,0.09);
+    --ink:#F5F3FA;
+    --muted:#948FA8;
+    --muted-2:#635D78;
+    --violet:#8A5CFF;
+    --violet-dim:#4A2FA0;
+    --lilac:#C7B8FF;
+    --amber:#FFB020;
+    --coral:#FF7A5C;
+    --green:#3DE8A0;
+    --font: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
   }
   *{box-sizing:border-box;}
+  html,body{ margin:0; background:var(--bg); }
   body{
-    margin:0; background:var(--paper); color:var(--ink);
-    font-family:var(--font-body);
-    -webkit-font-smoothing:antialiased;
-  }
-  a{color:inherit;}
-
-  /* ---------- topbar ---------- */
-  .topbar{
-    display:flex; align-items:center; justify-content:space-between;
-    padding:16px 32px; border-bottom:1px solid var(--paper-border);
-    background:var(--paper-card);
-  }
-  .brand{ display:flex; align-items:center; gap:12px; }
-  .brand-mark{
-    width:34px;height:34px;border-radius:50%;
-    background:var(--coffee);
-    display:flex;align-items:center;justify-content:center;
-    color:var(--paper); font-family:var(--font-display); font-weight:700; font-size:15px;
-    flex-shrink:0;
-  }
-  .brand-name{ font-family:var(--font-display); font-weight:700; font-size:19px; letter-spacing:-0.01em; }
-  .role-toggle{
-    display:flex; background:var(--paper); border:1px solid var(--paper-border);
-    border-radius:999px; padding:3px; gap:2px;
-  }
-  .role-toggle button{
-    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
-    border:none; background:transparent; color:var(--ink-soft);
-    padding:7px 16px; border-radius:999px; cursor:pointer; font-weight:600;
-  }
-  .role-toggle button.active{ background:var(--coffee); color:var(--paper); }
-  .navlinks{ display:flex; gap:22px; font-size:13px; color:var(--ink-soft); }
-
-  .view{ display:none; padding:36px 32px 60px; max-width:1320px; margin:0 auto; }
-  .view.active{ display:block; }
-
-  .page-head{ margin-bottom:28px; }
-  .eyebrow{
-    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.12em;
-    color:var(--gold-deep); margin-bottom:8px;
-  }
-  h1{ font-family:var(--font-display); font-size:32px; margin:0 0 6px; letter-spacing:-0.01em; }
-  .sub{ color:var(--ink-soft); font-size:14.5px; max-width:640px; line-height:1.5; }
-
-  /* ---------- chit component (the signature element) ---------- */
-  .chit{
-    background:var(--paper-card);
-    border:1px solid var(--paper-border);
-    border-radius:var(--radius-chit);
-    padding:22px 24px;
-    position:relative;
-    box-shadow:0 1px 0 rgba(43,29,20,0.04);
-  }
-  .chit::before{
-    content:'';
-    position:absolute; top:0; left:24px; right:24px; height:0;
-    border-top:1.5px dashed var(--paper-border);
-  }
-  .stamp{
-    display:inline-flex; align-items:center; gap:6px;
-    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.07em;
-    font-size:10.5px; font-weight:700;
-    padding:4px 11px; border-radius:999px;
-    border:1.5px solid currentColor;
-    transform:rotate(-2.5deg);
-    white-space:nowrap;
-  }
-  .stamp.leaf{ color:var(--leaf); }
-  .stamp.rust{ color:var(--rust); }
-  .stamp.brick{ color:var(--brick); }
-  .stamp.steel{ color:var(--steel); }
-  .stamp.gold{ color:var(--gold-deep); }
-
-  /* ================= BUYER VIEW ================= */
-  .buyer-grid{ display:grid; grid-template-columns:1.15fr 1fr; gap:24px; align-items:start; }
-
-  .field-label{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px; }
-  .customer-row{ display:flex; gap:12px; align-items:flex-start; margin-bottom:18px; }
-  .avatar{
-    width:38px;height:38px;border-radius:50%; background:var(--gold); color:var(--coffee);
-    display:flex;align-items:center;justify-content:center; font-weight:700; font-family:var(--font-display);
-    flex-shrink:0;
-  }
-  .customer-name{ font-weight:600; font-size:15px; }
-  .customer-addr{ font-size:13px; color:var(--ink-soft); margin-top:2px; line-height:1.4; }
-
-  .card-file{
-    background:var(--coffee); color:var(--paper);
-    border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;
-    font-family:var(--font-mono); font-size:13.5px; margin-bottom:18px;
-  }
-  .card-file .tag{ font-size:10px; letter-spacing:0.08em; background:var(--leaf); color:var(--paper); padding:2px 8px; border-radius:999px; text-transform:uppercase; }
-
-  .gauge-wrap{ margin-bottom:14px; }
-  .gauge-top{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
-  .gauge-top .lbl{ color:var(--ink-soft); }
-  .gauge-top .val{ font-family:var(--font-mono); font-weight:600; }
-  .gauge{ height:7px; background:var(--paper-border); border-radius:999px; overflow:hidden; }
-  .gauge > div{ height:100%; border-radius:999px; }
-  .gauge.hard > div{ background:var(--brick); width:38%; }
-  .gauge.soft > div{ background:var(--rust); width:64%; }
-  .gauge-note{ font-size:11px; color:var(--ink-soft); margin-top:4px; }
-
-  textarea.order-input{
-    width:100%; font-family:var(--font-body); font-size:14px; padding:12px 14px;
-    border:1px solid var(--paper-border); border-radius:8px; background:var(--paper);
-    resize:vertical; min-height:56px; color:var(--ink);
-  }
-  .deploy-btn{
-    width:100%; margin-top:12px; padding:13px; border:none; border-radius:8px;
-    background:var(--gold); color:var(--coffee); font-weight:700; font-size:14px;
-    cursor:pointer; letter-spacing:0.01em;
-  }
-  .deploy-note{ font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.5; }
-
-  /* agent console — "the machine speaking", integrated not alien */
-  .agent-console{
-    background:var(--coffee); border:1px solid var(--coffee-border); border-radius:var(--radius-chit);
-    padding:0; overflow:hidden; color:var(--paper);
-  }
-  .agent-head{
-    display:flex; justify-content:space-between; align-items:center;
-    padding:14px 18px; border-bottom:1px solid var(--coffee-border);
-    font-family:var(--font-mono); font-size:12px;
-  }
-  .agent-head .dot{ width:8px; height:8px; border-radius:50%; background:var(--leaf); display:inline-block; margin-right:6px; }
-  .agent-steps{ display:flex; }
-  .astep{ flex:1; text-align:center; padding:16px 8px; border-right:1px solid var(--coffee-border); font-size:11px; }
-  .astep:last-child{ border-right:none; }
-  .astep .n{ font-family:var(--font-mono); color:var(--gold); display:block; margin-bottom:4px; }
-  .agent-screen{
-    background:var(--coffee-2); margin:0 18px 18px; border-radius:6px; padding:18px;
-    font-family:var(--font-mono); font-size:12.5px; color:#B8AFA0; min-height:120px;
+    color:var(--ink); font-family:var(--font); -webkit-font-smoothing:antialiased;
+    padding:28px; position:relative; overflow-x:hidden;
   }
 
-  .menu-section{ margin-top:26px; }
-  .menu-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
-  .menu-head h3{ font-family:var(--font-display); font-size:19px; margin:0; }
-  .menu-count{ font-family:var(--font-mono); font-size:11px; color:var(--ink-soft); }
-  .menu-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
-  .dish{ background:var(--paper-card); border:1px solid var(--paper-border); border-radius:var(--radius-chit); padding:14px 16px; }
-  .dish-cat{ font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); }
-  .dish-name{ font-weight:700; margin:2px 0 8px; }
-  .dish-bottom{ display:flex; justify-content:space-between; align-items:center; }
-  .dish-price{ font-family:var(--font-mono); font-weight:700; }
-  .dish-strike{ font-size:11px; color:var(--ink-soft); text-decoration:line-through; margin-right:4px; }
-  .add-btn{ border:1px solid var(--gold-deep); color:var(--gold-deep); background:transparent; border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; }
-  .dish.muted{ opacity:0.45; }
+  .aurora{ position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; }
+  .blob{ position:absolute; border-radius:50%; filter:blur(80px); opacity:0.55; mix-blend-mode:screen; }
+  .blob-1{ width:520px; height:520px; top:-140px; left:-80px; background:radial-gradient(circle, #8A5CFF, transparent 70%); animation:drift1 22s ease-in-out infinite; }
+  .blob-2{ width:600px; height:600px; top:-200px; right:-160px; background:radial-gradient(circle, #B34FFF, transparent 70%); animation:drift2 27s ease-in-out infinite; }
+  .blob-3{ width:480px; height:480px; bottom:-220px; left:20%; background:radial-gradient(circle, #4EA1FF, transparent 70%); animation:drift3 31s ease-in-out infinite; }
+  @keyframes drift1{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(60px,40px) scale(1.15); } }
+  @keyframes drift2{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(-50px,60px) scale(1.1); } }
+  @keyframes drift3{ 0%,100%{ transform:translate(0,0) scale(1); } 50%{ transform:translate(40px,-50px) scale(1.2); } }
 
-  /* ================= MERCHANT VIEW (the board) ================= */
-  #merchantView.active{ background:var(--coffee-2); }
-  .board-stats{ display:flex; gap:14px; margin-bottom:26px; }
-  .stat{ background:var(--coffee); border:1px solid var(--coffee-border); border-radius:10px; padding:14px 18px; color:var(--paper); flex:1; }
-  .stat .num{ font-family:var(--font-display); font-size:24px; font-weight:700; }
-  .stat .lbl{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; color:#9A8E7B; letter-spacing:0.05em; margin-top:2px; }
-
-  .board-grid{ display:grid; grid-template-columns:1.3fr 1fr; gap:24px; align-items:start; }
-  .pinboard{ position:relative; }
-  .pin-title{ font-family:var(--font-display); font-size:20px; color:var(--paper); margin-bottom:16px; }
-  .pin-title .muted{ color:#8A7C68; font-size:13px; font-family:var(--font-body); font-weight:400; }
-
-  .pinned{
-    background:var(--paper-card); border-radius:var(--radius-chit); padding:18px 20px;
-    margin-bottom:22px; position:relative; box-shadow:0 14px 24px rgba(0,0,0,0.4);
+  .frame{
+    position:relative; z-index:1; max-width:1340px; margin:0 auto;
+    background:linear-gradient(180deg, var(--frame), #0C0819);
+    border:1px solid var(--line); border-radius:28px; overflow:hidden;
+    box-shadow:0 50px 120px rgba(0,0,0,0.55);
   }
-  .pinned.rot-l{ transform:rotate(-1.6deg); }
-  .pinned.rot-r{ transform:rotate(1.3deg); }
-  .pin-dot{
-    position:absolute; top:-7px; left:32px; width:13px; height:13px; border-radius:50%;
-    background:radial-gradient(circle at 32% 30%, #f0d68a, var(--gold-deep));
-    box-shadow:0 2px 5px rgba(0,0,0,0.45);
-  }
-  .pin-row{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
-  .pin-agent{ font-family:var(--font-mono); font-size:12px; color:var(--ink-soft); }
-  .pin-cart{ font-size:14.5px; font-weight:600; margin-bottom:4px; }
-  .pin-total{ font-family:var(--font-display); font-size:22px; font-weight:700; margin-top:6px; }
-  .pin-reason{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.4; }
-  .pin-actions{ display:flex; gap:10px; margin-top:14px; }
-  .pin-actions button{ flex:1; padding:9px; border-radius:7px; font-weight:700; font-size:13px; cursor:pointer; border:none; }
-  .btn-yes{ background:var(--leaf); color:var(--paper-card); }
-  .btn-no{ background:transparent; color:var(--brick); border:1.5px solid var(--brick) !important; }
 
-  .phone{
-    background:var(--coffee); border:1px solid var(--coffee-border); border-radius:20px;
-    padding:16px; color:var(--paper);
-  }
-  .phone-head{ display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:12px; color:#B8AFA0; }
-  .phone-head .dot{ width:7px; height:7px; border-radius:50%; background:var(--leaf); }
-  .bubble{
-    background:var(--coffee-2); border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.5; margin-bottom:10px;
-  }
-  .bubble.out{ background:#22331D; }
+  .topbar{ display:flex; align-items:center; justify-content:space-between; padding:26px 40px; position:relative; z-index:2; }
+  .brand{ display:flex; align-items:center; gap:10px; font-weight:800; font-size:16px; }
+  .brand-mark{ width:26px;height:26px;border-radius:8px; background:radial-gradient(circle at 30% 30%, var(--lilac), var(--violet)); }
+  .navlinks{ display:flex; gap:30px; font-size:13.5px; color:var(--muted); }
+  .role-toggle{ display:flex; background:rgba(255,255,255,0.04); border:1px solid var(--line); border-radius:10px; padding:3px; gap:2px; }
+  .role-toggle button{ font-family:var(--font); font-size:12px; border:none; background:transparent; color:var(--muted); padding:8px 16px; border-radius:7px; cursor:pointer; font-weight:600; }
+  .role-toggle button.active{ background:var(--card-2); color:var(--ink); }
+  .btn-solid{ background:var(--violet); border:none; color:#fff; border-radius:999px; padding:10px 20px; font-size:13px; font-weight:800; cursor:pointer; box-shadow:0 8px 24px rgba(138,92,255,0.35); font-family:var(--font); }
 
-  .log-strip{ margin-top:24px; }
+  .view{ display:none; } .view.active{ display:block; }
+
+  .hero{ position:relative; padding:56px 40px 0; text-align:center; }
+  h1{ font-size:46px; font-weight:800; letter-spacing:-0.03em; line-height:1.12; margin:0 0 18px; }
+  h1 span{ display:inline-block; opacity:0; filter:blur(8px); animation:blurIn 0.7s ease forwards; }
+  @keyframes blurIn{ to{ opacity:1; filter:blur(0); } }
+  .sub{ font-size:15.5px; color:var(--muted); margin-bottom:30px; opacity:0; animation:fadeUp 0.6s ease 0.9s forwards; }
+  .sub b{ color:var(--lilac); font-weight:700; }
+  @keyframes fadeUp{ from{ opacity:0; transform:translateY(8px); } to{ opacity:1; transform:translateY(0); } }
+
+  .order-card{
+    display:inline-flex; gap:8px; background:var(--card); border:1px solid var(--line); border-radius:18px;
+    padding:8px; max-width:600px; width:100%; box-shadow:0 20px 50px rgba(0,0,0,0.3);
+    opacity:0; animation:fadeUp 0.6s ease 1.1s forwards;
+  }
+  .order-card input{ flex:1; background:transparent; border:none; color:var(--ink); font-size:14.5px; padding:13px 16px; font-family:var(--font); }
+  .order-card input:focus{ outline:none; }
+  .order-card button{ background:var(--violet); border:none; color:#fff; border-radius:12px; padding:0 22px; font-weight:800; font-size:13.5px; cursor:pointer; font-family:var(--font); }
+
+  .terminal-wrap{ padding:52px 40px 0; position:relative; z-index:2; }
+  .terminal{
+    background:#0B0716; border:1px solid var(--line); border-radius:16px; overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,0.4); max-width:100%;
+  }
+  .term-head{ display:flex; align-items:center; gap:8px; padding:12px 16px; border-bottom:1px solid var(--line); }
+  .term-dot{ width:10px;height:10px;border-radius:50%; }
+  .term-head .t1{ background:#FF5F57; } .term-head .t2{ background:#FEBC2E; } .term-head .t3{ background:#28C840; }
+  .term-title{ margin-left:8px; font-family:var(--font-mono); font-size:11.5px; color:var(--muted); }
+  .term-body{ padding:20px 22px; font-family:var(--font-mono); font-size:13px; line-height:1.9; min-height:200px; color:#C9C2E0; }
+  .term-line{ white-space:pre-wrap; }
+  .term-ok{ color:var(--green); }
+  .term-warn{ color:var(--amber); }
+  .term-dim{ color:var(--muted-2); }
+
+  .bento{ display:grid; grid-template-columns:1fr 1.15fr 1.15fr 1fr; gap:14px; padding:36px 40px 48px; position:relative; z-index:2; }
+  .bcard{
+    background:var(--card); border:1px solid var(--line); border-radius:20px; padding:22px; display:flex; flex-direction:column;
+    position:relative; overflow:hidden;
+  }
+  .bcard::before{
+    content:''; position:absolute; inset:0; opacity:0; transition:opacity 0.25s;
+    background:radial-gradient(280px circle at var(--mx,50%) var(--my,50%), rgba(255,255,255,0.09), transparent 60%);
+  }
+  .bcard:hover::before{ opacity:1; }
+  .bcard h4{ font-size:14px; font-weight:700; margin:0 0 16px; position:relative; z-index:1; }
+  .bwidget{ flex:1; display:flex; align-items:center; justify-content:center; position:relative; z-index:1; }
+
+  .cap-row{ display:flex; align-items:center; gap:8px; background:var(--card-2); border-radius:10px; padding:9px 12px; margin-bottom:8px; font-size:12px; }
+  .cap-row.on{ border:1px solid var(--violet-dim); color:var(--lilac); }
+  .cap-row .dash{ margin-left:auto; width:20px; height:2px; background:var(--muted-2); border-radius:2px; }
+
+  .bars{ display:flex; align-items:flex-end; gap:7px; height:90px; width:100%; }
+  .bars div{ flex:1; background:linear-gradient(180deg, var(--lilac), rgba(138,92,255,0.12)); border-radius:4px 4px 0 0; animation:grow 1.2s ease-out both; }
+  @keyframes grow{ from{ transform:scaleY(0); transform-origin:bottom; } to{ transform:scaleY(1); } }
+
+  .ring-row{ display:flex; gap:22px; justify-content:center; width:100%; }
+  .pring{ position:relative; width:64px;height:64px; }
+  .pring svg{ transform:rotate(-90deg); }
+  .pring .pct{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-family:var(--font-mono); font-size:11px; font-weight:700; }
+  .pring-label{ font-size:10.5px; color:var(--muted); text-align:center; margin-top:8px; max-width:80px; }
+
+  .rowlist div.item{ display:flex; align-items:center; gap:10px; margin-bottom:11px; font-size:12px; }
+  .rowlist .amt{ font-family:var(--font-mono); font-weight:700; width:52px; }
+  .rowlist .bar{ flex:1; height:5px; background:var(--card-2); border-radius:3px; overflow:hidden; }
+  .rowlist .bar div{ height:100%; background:var(--violet); border-radius:3px; }
+
+  .m-wrap{ padding:44px 40px 60px; position:relative; z-index:2; }
+  .stat-row{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin:28px 0 34px; }
+  .statcard{ background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px; }
+  .statcard .num{ font-size:28px; font-weight:800; font-family:var(--font-mono); }
+  .statcard .lbl{ font-size:11.5px; color:var(--muted); margin-top:4px; }
+  .statcard.flag .num{ color:var(--coral); }
+
+  .m-grid{ display:grid; grid-template-columns:1.3fr 1fr; gap:18px; }
+  .decision{
+    background:var(--card); border:1px solid var(--line); border-top:2px solid var(--coral); border-radius:18px; padding:22px 24px; margin-bottom:14px;
+    position:relative; overflow:hidden;
+  }
+  .decision::before{ content:''; position:absolute; inset:0; opacity:0; transition:opacity 0.25s; background:radial-gradient(280px circle at var(--mx,50%) var(--my,50%), rgba(255,122,92,0.08), transparent 60%); }
+  .decision:hover::before{ opacity:1; }
+  .dc-top{ display:flex; justify-content:space-between; margin-bottom:10px; position:relative; z-index:1; }
+  .dc-agent{ font-size:11.5px; color:var(--muted); font-family:var(--font-mono); }
+  .dc-cart{ font-weight:700; font-size:15px; margin-top:2px; }
+  .dc-total{ font-size:28px; font-weight:800; margin:6px 0 10px; position:relative; z-index:1; }
+  .dc-reason{ font-size:12.5px; color:var(--muted); line-height:1.5; margin-bottom:16px; position:relative; z-index:1; }
+  .dc-actions{ display:flex; gap:10px; position:relative; z-index:1; }
+  .dc-actions button{ flex:1; padding:11px; border-radius:11px; font-weight:700; font-size:13px; cursor:pointer; border:none; font-family:var(--font); }
+  .btn-approve{ background:var(--violet); color:#fff; }
+  .btn-decline{ background:var(--card-2); color:var(--ink); }
+
+  .log-card{ background:var(--card); border:1px solid var(--line); border-radius:18px; padding:20px 22px; }
+  .log-title{ font-size:12.5px; font-weight:700; color:var(--muted); margin-bottom:12px; text-transform:uppercase; letter-spacing:0.05em; }
   .log-row{
-    display:grid; grid-template-columns:100px 1fr 90px 110px; align-items:center; gap:14px;
-    padding:11px 4px; border-bottom:1px solid var(--coffee-border); font-size:12.5px; color:#C9BFA9;
+    display:grid; grid-template-columns:50px 1fr 66px 84px; gap:10px; align-items:center; padding:9px 0; border-bottom:1px solid var(--line); font-size:12.5px;
+    opacity:0; animation:slideIn 0.5s ease forwards;
   }
-  .log-row .t{ font-family:var(--font-mono); color:#8A7C68; font-size:11px; }
-  .log-row .amt{ font-family:var(--font-mono); text-align:right; font-weight:600; color:var(--paper); }
-
-  .askpanel{
-    background:var(--paper-card); border-radius:var(--radius-chit); padding:18px 20px; margin-top:22px;
-  }
-  .askpanel h4{ margin:0 0 4px; font-family:var(--font-display); font-size:16px; }
-  .askpanel p{ font-size:12.5px; color:var(--ink-soft); margin:0 0 12px; line-height:1.4; }
-  .tag-pill{ display:inline-flex; align-items:center; gap:8px; background:var(--paper); border:1px solid var(--paper-border); border-radius:999px; padding:5px 12px 5px 12px; font-size:12.5px; margin-right:8px; }
-  .tag-pill .count{ background:var(--rust); color:var(--paper-card); border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; }
+  .log-row:nth-child(2){ animation-delay:0.1s; } .log-row:nth-child(3){ animation-delay:0.2s; } .log-row:nth-child(4){ animation-delay:0.3s; }
+  @keyframes slideIn{ from{ opacity:0; transform:translateX(-8px); } to{ opacity:1; transform:translateX(0); } }
+  .log-row:last-child{ border:none; }
+  .log-row .t{ font-family:var(--font-mono); color:var(--muted-2); font-size:10.5px; }
+  .log-row .amt{ text-align:right; font-weight:700; }
+  .pill{ font-size:10px; font-weight:800; padding:4px 9px; border-radius:999px; justify-self:end; text-transform:uppercase; }
+  .pill.cleared{ background:rgba(138,92,255,0.15); color:var(--lilac); }
+  .pill.blocked{ background:rgba(255,122,92,0.12); color:var(--coral); }
 </style>
 </head>
 <body>
 
-  <div class="topbar">
-    <div class="brand">
-      <div class="brand-mark">AK</div>
-      <div class="brand-name">Amma's Kitchen</div>
-    </div>
-    <div class="role-toggle">
-      <button class="active" onclick="showView('buyer', this)">Buyer</button>
-      <button onclick="showView('merchant', this)">Merchant</button>
-    </div>
-    <div class="navlinks"><a href="#">Audit trail</a><a href="#">Account</a><a href="#">Home</a></div>
+  <div class="aurora">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
   </div>
 
-  <!-- ============ BUYER VIEW ============ -->
-  <div class="view active" id="buyerView">
-    <div class="page-head">
-      <div class="eyebrow">Your order</div>
-      <h1>What would you like?</h1>
-      <div class="sub">Say it in your own words. Your agent takes it from there, and shows you everything it does.</div>
+  <div class="frame">
+    <div class="topbar">
+      <div class="brand"><div class="brand-mark"></div>Amma's Kitchen</div>
+      <div class="navlinks">Product &nbsp; How it works &nbsp; Merchants &nbsp; Pricing</div>
+      <div style="display:flex; gap:10px; align-items:center;">
+        <div class="role-toggle">
+          <button class="active" onclick="showView('buyer', this)">Buyer</button>
+          <button onclick="showView('merchant', this)">Merchant</button>
+        </div>
+        <button class="btn-solid">Deploy agent</button>
+      </div>
     </div>
 
-    <div class="buyer-grid">
-      <div>
-        <div class="chit" style="margin-bottom:18px;">
-          <div class="customer-row">
-            <div class="avatar">J</div>
-            <div>
-              <div class="customer-name">Jeet Manseta</div>
-              <div class="customer-addr">Sharad Appartment, Sardar Nagar West, Opposite Railway Track</div>
+    <div class="view active" id="buyerView">
+      <div class="hero">
+        <h1>
+          <span style="animation-delay:0.05s">An</span> <span style="animation-delay:0.12s">Agent</span> <span style="animation-delay:0.19s">That</span> <span style="animation-delay:0.26s">Orders.</span><br>
+          <span style="animation-delay:0.4s">And</span> <span style="animation-delay:0.47s">Never</span> <span style="animation-delay:0.54s">Oversteps.</span>
+        </h1>
+        <div class="sub">Built native to <b>Razorpay</b></div>
+        <div class="order-card">
+          <input value="Order 1 paneer bhurji and 4 tandoori roti">
+          <button>Deploy</button>
+        </div>
+      </div>
+
+      <div class="terminal-wrap">
+        <div class="terminal">
+          <div class="term-head">
+            <div class="term-dot t1"></div><div class="term-dot t2"></div><div class="term-dot t3"></div>
+            <div class="term-title">agent-an1yp · live</div>
+          </div>
+          <div class="term-body" id="termBody"></div>
+        </div>
+      </div>
+
+      <div class="bento">
+        <div class="bcard" onmousemove="spot(event,this)">
+          <h4>Bounded by design</h4>
+          <div class="bwidget">
+            <div style="width:100%;">
+              <div class="cap-row on">Hard cap <span class="dash"></span> ₹600</div>
+              <div class="cap-row">Soft cap <span class="dash"></span> ₹300</div>
             </div>
           </div>
-          <div class="card-file">
-            <span>•••• 1007</span>
-            <span class="tag">Tokenised</span>
+        </div>
+        <div class="bcard" onmousemove="spot(event,this)">
+          <h4>Demand you can see</h4>
+          <div class="bwidget">
+            <div class="bars">
+              <div style="height:35%; animation-delay:0.05s;"></div>
+              <div style="height:48%; animation-delay:0.1s;"></div>
+              <div style="height:42%; animation-delay:0.15s;"></div>
+              <div style="height:63%; animation-delay:0.2s;"></div>
+              <div style="height:58%; animation-delay:0.25s;"></div>
+              <div style="height:80%; animation-delay:0.3s;"></div>
+              <div style="height:100%; animation-delay:0.35s;"></div>
+            </div>
           </div>
-          <div class="gauge-wrap">
-            <div class="gauge-top"><span class="lbl">Hard cap — never exceeded</span><span class="val">₹600</span></div>
-            <div class="gauge hard"><div></div></div>
+        </div>
+        <div class="bcard" onmousemove="spot(event,this)">
+          <h4>Every order, gated</h4>
+          <div class="bwidget">
+            <div class="ring-row">
+              <div>
+                <div class="pring"><svg width="64" height="64"><circle cx="32" cy="32" r="27" stroke="#211A3D" stroke-width="6" fill="none"/><circle cx="32" cy="32" r="27" stroke="#8A5CFF" stroke-width="6" fill="none" stroke-dasharray="170" stroke-dashoffset="10" stroke-linecap="round"/></svg><div class="pct" id="pct1">0%</div></div>
+                <div class="pring-label">cleared automatically</div>
+              </div>
+              <div>
+                <div class="pring"><svg width="64" height="64"><circle cx="32" cy="32" r="27" stroke="#211A3D" stroke-width="6" fill="none"/><circle cx="32" cy="32" r="27" stroke="#FFB020" stroke-width="6" fill="none" stroke-dasharray="170" stroke-dashoffset="150" stroke-linecap="round"/></svg><div class="pct" id="pct2">0%</div></div>
+                <div class="pring-label">sent to a human</div>
+              </div>
+            </div>
           </div>
-          <div class="gauge-wrap">
-            <div class="gauge-top"><span class="lbl">Soft cap — asks you first</span><span class="val">₹300</span></div>
-            <div class="gauge soft"><div></div></div>
-            <div class="gauge-note">Anything above the soft cap comes back to you before it's bought.</div>
+        </div>
+        <div class="bcard" onmousemove="spot(event,this)">
+          <h4>Full audit, always</h4>
+          <div class="bwidget">
+            <div class="rowlist" style="width:100%;">
+              <div class="item"><span class="amt">₹330</span><div class="bar"><div style="width:100%;"></div></div></div>
+              <div class="item"><span class="amt">₹68</span><div class="bar"><div style="width:100%;"></div></div></div>
+              <div class="item"><span class="amt">₹480</span><div class="bar"><div style="width:60%; background:var(--coral);"></div></div></div>
+            </div>
           </div>
-          <div class="field-label" style="margin-top:16px;">What do you want your AI to buy?</div>
-          <textarea class="order-input">Order 1 paneer bhurji and 4 tandoori roti</textarea>
-          <button class="deploy-btn">Deploy Agent</button>
-          <div class="deploy-note">The agent negotiates on its own and pays with your saved card. It comes back to you only if something crosses your soft cap.</div>
-        </div>
-      </div>
-
-      <div class="agent-console">
-        <div class="agent-head">
-          <span><span class="dot"></span>agent-an1yp</span>
-          <span style="color:#8A7C68;">IDLE</span>
-        </div>
-        <div class="agent-steps">
-          <div class="astep"><span class="n">1</span>Discover<br>her catalog</div>
-          <div class="astep"><span class="n">2</span>Your limits<br>bounded check</div>
-          <div class="astep"><span class="n">3</span>Negotiate<br>her limits</div>
-          <div class="astep"><span class="n">4</span>Settle<br>Razorpay</div>
-        </div>
-        <div class="agent-screen">Agent asleep. Say what you want and deploy.</div>
-      </div>
-    </div>
-
-    <div class="menu-section">
-      <div class="menu-head">
-        <h3>On the menu today</h3>
-        <span class="menu-count">7 of 8 orderable</span>
-      </div>
-      <div class="menu-grid">
-        <div class="dish">
-          <div class="dish-cat">Meals</div>
-          <div class="dish-name">Veg Thali</div>
-          <div class="dish-bottom"><span class="dish-price"><span class="dish-strike">₹150</span>₹127</span><button class="add-btn">+ Add</button></div>
-        </div>
-        <div class="dish">
-          <div class="dish-cat">Meals</div>
-          <div class="dish-name">Chicken Biryani</div>
-          <div class="dish-bottom"><span class="dish-price"><span class="dish-strike">₹220</span>₹187</span><button class="add-btn">+ Add</button></div>
-        </div>
-        <div class="dish">
-          <div class="dish-cat">Snacks</div>
-          <div class="dish-name">Masala Dosa</div>
-          <div class="dish-bottom"><span class="dish-price">₹68</span><button class="add-btn">+ Add</button></div>
-        </div>
-        <div class="dish">
-          <div class="dish-cat">Beverages</div>
-          <div class="dish-name">Filter Coffee</div>
-          <div class="dish-bottom"><span class="dish-price">₹25</span><button class="add-btn">+ Add</button></div>
-        </div>
-        <div class="dish">
-          <div class="dish-cat">Desserts</div>
-          <div class="dish-name">Gulab Jamun</div>
-          <div class="dish-bottom"><span class="dish-price">₹51</span><button class="add-btn">+ Add</button></div>
-        </div>
-        <div class="dish muted">
-          <div class="dish-cat">Bulk catering</div>
-          <div class="dish-name">Party Catering Tray</div>
-          <div class="dish-bottom"><span class="dish-price">₹350</span><span class="stamp brick">In person</span></div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- ============ MERCHANT VIEW ============ -->
-  <div class="view" id="merchantView">
-    <div class="page-head">
-      <div class="eyebrow" style="color:var(--gold);">Orders needing your decision</div>
-      <h1 style="color:var(--paper);">The board</h1>
-      <div class="sub" style="color:#A69B87;">These are the ones the system refused to decide on its own. Everything else already cleared inside the bounds you set, or was refused outright before it ever reached Razorpay.</div>
-    </div>
+    <div class="view" id="merchantView">
+      <div class="m-wrap">
+        <h1 style="font-size:34px; text-align:left;">Orders needing your decision</h1>
+        <div class="sub" style="text-align:left; opacity:1; animation:none;">Everything inside your bounds already cleared on its own.</div>
 
-    <div class="board-stats">
-      <div class="stat"><div class="num">₹0</div><div class="lbl">Today's revenue</div></div>
-      <div class="stat"><div class="num">59</div><div class="lbl">Active agents</div></div>
-      <div class="stat"><div class="num" style="color:var(--rust);">1</div><div class="lbl">Waiting on you</div></div>
-    </div>
-
-    <div class="board-grid">
-      <div class="pinboard">
-        <div class="pin-title">Waiting on you <span class="muted">— 1 pinned</span></div>
-        <div class="pinned rot-l">
-          <div class="pin-dot"></div>
-          <div class="pin-row">
-            <div><div class="pin-agent">agent-an1yp</div><div class="pin-cart">2× Veg Thali</div></div>
-            <span class="stamp rust">Escalate</span>
-          </div>
-          <div class="pin-total">₹480</div>
-          <div class="pin-reason">Over your ₹400 confirm threshold. Payment already captured — reject and it refunds automatically.</div>
-          <div class="pin-actions">
-            <button class="btn-yes">Accept</button>
-            <button class="btn-no" style="border:1.5px solid var(--brick);">Reject</button>
-          </div>
+        <div class="stat-row">
+          <div class="statcard"><div class="num" id="statRev">₹0</div><div class="lbl">Today's revenue</div></div>
+          <div class="statcard"><div class="num" id="statAgents">0</div><div class="lbl">Active agents</div></div>
+          <div class="statcard flag"><div class="num">1</div><div class="lbl">Waiting on you</div></div>
         </div>
 
-        <div class="askpanel">
-          <h4>Asked for, but not on your menu</h4>
-          <p>Requests an agent brought you that you don't currently sell. Worth knowing before you decide what to cook next.</p>
-          <span class="tag-pill">2 pizzas <span class="count">3</span></span>
-          <span class="tag-pill">Filter coffee — cold <span class="count">1</span></span>
-        </div>
-      </div>
-
-      <div>
-        <div class="phone">
-          <div class="phone-head"><span class="dot"></span>Amma's Kitchen bot · WhatsApp preview</div>
-          <div class="bubble">Your agent wants to order 2× Veg Thali for ₹480. That's above the ₹400 you asked to be checked on.</div>
-          <div class="bubble out">Reply YES to go ahead, or NO to cancel.</div>
-        </div>
-
-        <div class="log-strip">
-          <div class="log-row" style="color:#8A7C68; font-family:var(--font-mono); font-size:10.5px;">
-            <span>TIME</span><span>CART</span><span>TOTAL</span><span style="text-align:right;">DECISION</span>
+        <div class="m-grid">
+          <div class="decision" onmousemove="spot(event,this)">
+            <div class="dc-top">
+              <div><div class="dc-agent">agent-an1yp</div><div class="dc-cart">2× Veg Thali</div></div>
+            </div>
+            <div class="dc-total">₹480</div>
+            <div class="dc-reason">Crosses your ₹400 confirm threshold. Payment is already captured — declining refunds it automatically.</div>
+            <div class="dc-actions">
+              <button class="btn-approve">Approve</button>
+              <button class="btn-decline">Decline</button>
+            </div>
           </div>
-          <div class="log-row"><span class="t">05:12</span><span>2× Veg Thali</span><span class="amt">₹330</span><span class="stamp leaf" style="justify-self:end;">Approve</span></div>
-          <div class="log-row"><span class="t">05:08</span><span>1× Masala Dosa</span><span class="amt">₹68</span><span class="stamp leaf" style="justify-self:end;">Approve</span></div>
-          <div class="log-row"><span class="t">04:36</span><span>1× Party Tray</span><span class="amt">₹350</span><span class="stamp brick" style="justify-self:end;">Refused</span></div>
-          <div class="log-row"><span class="t">04:21</span><span>1× Paneer Bhurji, 5× Roti</span><span class="amt">₹400</span><span class="stamp gold" style="justify-self:end;">Paid</span></div>
+
+          <div class="log-card">
+            <div class="log-title">Recent decisions</div>
+            <div class="log-row"><span class="t">05:12</span><span>2× Veg Thali</span><span class="amt">₹330</span><span class="pill cleared">Cleared</span></div>
+            <div class="log-row"><span class="t">05:08</span><span>1× Masala Dosa</span><span class="amt">₹68</span><span class="pill cleared">Cleared</span></div>
+            <div class="log-row"><span class="t">04:36</span><span>Party Tray</span><span class="amt">₹350</span><span class="pill blocked">Blocked</span></div>
+          </div>
         </div>
       </div>
     </div>
@@ -410,6 +302,64 @@
     btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
   }
+
+  function spot(e, el){
+    const r = el.getBoundingClientRect();
+    el.style.setProperty('--mx', (e.clientX - r.left) + 'px');
+    el.style.setProperty('--my', (e.clientY - r.top) + 'px');
+  }
+
+  function countUp(el, target, duration, prefix, suffix){
+    const start = performance.now();
+    function tick(now){
+      const p = Math.min(1, (now - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = (prefix||'') + Math.round(eased * target) + (suffix||'');
+      if(p < 1) requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  }
+  countUp(document.getElementById('pct1'), 94, 1400, '', '%');
+  countUp(document.getElementById('pct2'), 6, 1400, '', '%');
+  countUp(document.getElementById('statAgents'), 59, 1200, '', '');
+  countUp(document.getElementById('statRev'), 0, 800, '₹', '');
+
+  const lines = [
+    { text: '> connecting to agent-an1yp...', cls: 'term-dim' },
+    { text: "> reading amma's live catalog \u2014 8 items found", cls: '' },
+    { text: '> mandate: hard cap Rs.600 \u00b7 soft cap Rs.300', cls: '' },
+    { text: '> cart: 1x paneer bhurji, 4x tandoori roti = Rs.211', cls: '' },
+    { text: '> within soft cap \u2014 no confirmation needed', cls: 'term-ok' },
+    { text: '> negotiating with merchant rules...', cls: 'term-dim' },
+    { text: '> \u2713 APPROVED \u2014 settling via razorpay', cls: 'term-ok' },
+    { text: '> \u2713 paid \u00b7 order #114', cls: 'term-ok' },
+  ];
+  const termBody = document.getElementById('termBody');
+  let li = 0, ci = 0;
+  function typeLine(){
+    if(li >= lines.length){
+      setTimeout(()=>{ termBody.innerHTML=''; li=0; ci=0; typeLine(); }, 2200);
+      return;
+    }
+    const line = lines[li];
+    if(ci === 0){
+      const div = document.createElement('div');
+      div.className = 'term-line ' + line.cls;
+      div.id = 'activeLine';
+      termBody.appendChild(div);
+    }
+    const div = document.getElementById('activeLine');
+    if(ci <= line.text.length){
+      div.textContent = line.text.slice(0, ci);
+      ci++;
+      setTimeout(typeLine, 18);
+    } else {
+      div.removeAttribute('id');
+      li++; ci = 0;
+      setTimeout(typeLine, 260);
+    }
+  }
+  typeLine();
 </script>
 </body>
 </html>

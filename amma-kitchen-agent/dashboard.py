@@ -214,15 +214,29 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   /* Same tokens as web/shared.css, inlined because this page is rendered
      server-side and loads no stylesheet. Every family is a system stack:
      nothing here reaches the network. */
+  /* The fonts are the same two files the consoles use, served from this
+     origin off the /static mount. Declared here rather than linked
+     because this page still loads no stylesheet -- but they must be the
+     same faces, or the audit trail would be the one screen in the demo
+     rendering in a different typeface. */
+  @font-face {{
+    font-family: 'Inter'; font-weight: 400 800; font-display: swap;
+    src: url('/static/fonts/inter-latin.woff2') format('woff2');
+  }}
+  @font-face {{
+    font-family: 'JetBrains Mono'; font-weight: 400 600; font-display: swap;
+    src: url('/static/fonts/jetbrains-mono-latin.woff2') format('woff2');
+  }}
   :root {{
-    --paper:#F1ECDF; --paper-card:#FBF8F0; --paper-border:#DAD0B8;
-    --ink:#2B1D14; --ink-soft:#6B5940;
-    --coffee:#2E1B0E; --gold:#B8791A; --gold-deep:#8F5C10;
-    --leaf:#4F7942; --rust:#A85C2A; --brick:#9B3A2C; --steel:#5C7A8A;
-    --radius-chit: 3px 16px 3px 16px;
-    --font-display: Georgia, 'Iowan Old Style', Charter, 'Times New Roman', serif;
-    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+    --paper:#0A0714; --paper-card:#1A1330; --paper-border:rgba(255,255,255,0.09);
+    --card-2:#211A3D;
+    --ink:#F5F3FA; --ink-soft:#948FA8; --muted-2:#7C769A;
+    --coffee:#0B0716; --gold:#8A5CFF; --gold-deep:#A98BFF; --lilac:#C7B8FF;
+    --leaf:#3DE8A0; --rust:#FFB020; --brick:#FF7A5C; --steel:#4EA1FF;
+    --radius-chit: 18px;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
   }}
   * {{ box-sizing: border-box; }}
   body {{
@@ -230,9 +244,9 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     font: 15px/1.55 var(--font-body);
     background: var(--paper); color: var(--ink);
   }}
-  h1 {{ margin: 0 0 4px; font-family: var(--font-display); font-size: 30px; letter-spacing: -.01em; }}
+  h1 {{ margin: 0 0 4px; font-weight: 800; font-size: 32px; letter-spacing: -.025em; }}
   h2 {{ margin: 32px 0 12px; font-family: var(--font-mono); font-size: 11px;
-        text-transform: uppercase; letter-spacing: .12em; color: var(--gold-deep); }}
+        text-transform: uppercase; letter-spacing: .12em; color: var(--lilac); }}
   .sub {{ margin: 0 0 24px; color: var(--ink-soft); }}
   .mandate {{
     display: inline-block; padding: 8px 14px; margin-bottom: 20px;
@@ -245,18 +259,14 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     flex: 1 1 150px; background: var(--paper-card); border: 1px solid var(--paper-border);
     border-radius: var(--radius-chit); padding: 16px 18px; position: relative;
   }}
-  .card::before {{
-    content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 0;
-    border-top: 1.5px dashed var(--paper-border);
-  }}
-  .card .num {{ font-family: var(--font-display); font-size: 26px; font-weight: 700;
-                letter-spacing: -.02em; }}
+  .card .num {{ font-family: var(--font-mono); font-size: 26px; font-weight: 700;
+                letter-spacing: -.02em; font-variant-numeric: tabular-nums; }}
   .card .lbl {{ font-size: 12px; color: var(--ink-soft); margin-top: 2px; }}
   .wrap {{ overflow-x: auto; background: var(--paper-card);
            border: 1px solid var(--paper-border); border-radius: var(--radius-chit); }}
   table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
   th {{
-    text-align: left; padding: 11px 14px; background: #F6F1E5;
+    text-align: left; padding: 11px 14px; background: #211A3D;
     border-bottom: 1px solid var(--paper-border); font-size: 11.5px;
     text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft);
     white-space: nowrap;
@@ -266,7 +276,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   .mono {{ font-family: var(--font-mono); font-size: 12px; }}
   /* Every raw technical value reads as one: ids, references, timestamps. */
   td.mono, td .mono, .num-cell {{ font-family: var(--font-mono); }}
-  .muted {{ color: #8B7A61; }}
+  .muted {{ color: #7C769A; }}
   .nowrap {{ white-space: nowrap; }}
   .num-cell {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
   .reason {{ max-width: 400px; color: var(--ink); }}
@@ -287,7 +297,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     font-size: 10.5px; font-weight: 700;
     padding: 4px 11px; border-radius: 999px;
     border: 1.5px solid currentColor;
-    transform: rotate(-2.5deg); white-space: nowrap;
+    white-space: nowrap;
   }}
   .stamp.leaf {{ color: var(--leaf); }}
   .stamp.rust {{ color: var(--rust); }}
@@ -296,7 +306,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   .stamp.gold {{ color: var(--gold-deep); }}
   .proto {{
     display: inline-block; padding: 2px 8px; border-radius: 5px;
-    background: #FAF1E0; border: 1px solid #E7CE9F; color: var(--gold-deep);
+    background: rgba(138,92,255,0.13); border: 1px solid rgba(138,92,255,0.34); color: var(--gold-deep);
     font-family: var(--font-mono); font-size: 10px;
     font-weight: 700; letter-spacing: .07em;
   }}

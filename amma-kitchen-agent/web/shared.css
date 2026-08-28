@@ -1,121 +1,234 @@
 /* Shared design system for the buyer and merchant consoles.
 
-   The metaphor is a kitchen ticket. An order in this system is a physical
-   chit: warm paper, a torn dashed edge, a rubber-stamped verdict. That is
-   not decoration -- it is what the audit trail actually is, one record per
-   decision, and the surfaces say so before anyone reads a word.
+   The system is dark, violet and in motion. An aurora drifts behind the
+   page; surfaces are lifted slabs on near-black; the agent's terminal
+   types its work out a character at a time as it actually happens. Where
+   the previous pass said "kitchen ticket", this one says "something is
+   running, and you are watching it run" -- which is what a live agent
+   demo actually is.
 
-   Two grounds, and the split is deliberate: PAPER for the customer, who is
-   holding the ticket, and COFFEE wherever the machine is speaking -- the
-   agent terminal, the merchant's board, the phone, the card face.
+   FONTS ARE SELF-HOSTED, in web/fonts/. The mockup pulled Inter and
+   JetBrains Mono from Google's CDN; that would have broken the rule this
+   project has held since the first console, which is that everything
+   renders identically offline and on camera. A conference wifi that
+   drops the font request must not change what a judge sees, so the two
+   .woff2 files are committed and served from this origin. A check of the
+   network tab shows requests to 127.0.0.1 and nothing else.
 
-   No build step, no framework, no CDN, no web fonts. Every family below is
-   a system stack, so this renders identically offline and on camera, which
-   is the whole point during a live demo.
+   Class names are stable on purpose: the consoles, the shop editor and
+   the landing page all draw from this file and their JS selects by them,
+   so nothing here is renamed. THE OLD VARIABLE NAMES ARE KEPT AS ALIASES
+   onto the new tokens -- that is what lets every page-local rule and
+   every inline `var(--ok)` pick up the new palette without being
+   rewritten, and it is what kept a restyle of this size from becoming a
+   rewrite. The names still say "paper" and "coffee" in places; they now
+   mean "page ground" and "the ground the machine speaks on", which is
+   the role they always had. */
 
-   Class names are stable on purpose: the consoles, the shop editor and the
-   landing page all draw from this file and their JS selects by them, so
-   nothing here is renamed. The old variable names are kept as aliases onto
-   the new tokens, which is what lets every existing rule and inline
-   `var(--ok)` pick up the new palette without being rewritten. */
+/* ------------------------------------------------------------- fonts */
+
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url('fonts/inter-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'Inter'; font-style: normal; font-weight: 400 800; font-display: swap;
+  src: url('fonts/inter-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url('fonts/jetbrains-mono-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'JetBrains Mono'; font-style: normal; font-weight: 400 600; font-display: swap;
+  src: url('fonts/jetbrains-mono-latin-ext.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304,
+    U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0,
+    U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* ------------------------------------------------------------ tokens */
 
 :root{
-  --paper:#F1ECDF;
-  --paper-card:#FBF8F0;
-  --paper-border:#DAD0B8;
-  --ink:#2B1D14;
-  --ink-soft:#6B5940;
-  --coffee:#2E1B0E;
-  --coffee-2:#1C0F06;
-  --coffee-border:#4A3320;
-  --gold:#B8791A;
-  --gold-deep:#8F5C10;
-  --leaf:#4F7942;
-  --rust:#A85C2A;
-  --brick:#9B3A2C;
-  --steel:#5C7A8A;
-  --radius-chit: 3px 16px 3px 16px;
-  --font-display: Georgia, 'Iowan Old Style', Charter, 'Times New Roman', serif;
-  --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+  --bg:#0A0714;
+  --frame:#150F24;
+  --card:#1A1330;
+  --card-2:#211A3D;
+  --card-3:#2A2149;
+  --line:rgba(255,255,255,0.09);
+  --line-2:rgba(255,255,255,0.16);
+  --ink:#F5F3FA;
+  --muted:#948FA8;
+  --muted-2:#7C769A;      /* lifted from #635D78: 4.1:1 was under AA on --card */
+  --violet:#8A5CFF;
+  --violet-dim:#4A2FA0;
+  --lilac:#C7B8FF;
+  --amber:#FFB020;
+  --coral:#FF7A5C;
+  --green:#3DE8A0;
+  --sky:#4EA1FF;
 
-  /* Washes of each semantic colour, for badge and panel fills. Derived
-     from the five above rather than invented, so nothing here is a sixth
-     colour sneaking in. */
-  --leaf-soft:#EDF2EA;   --leaf-line:#C3D3BC;
-  --rust-soft:#FAF0E6;   --rust-line:#E6C9AC;
-  --brick-soft:#FAECEA;  --brick-line:#E5BFB8;
-  --steel-soft:#EDF1F3;  --steel-line:#C2CFD6;
-  --gold-soft:#FAF1E0;   --gold-line:#E7CE9F;
+  --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
 
-  /* ---- the old names, re-pointed. Same meaning, new value ----
+  /* ---- the old names, re-pointed. Same MEANING, new value ----
+     Which status owns which slot has not moved across any design pass:
      primary action, cleared, waiting on a human, refused by a hard rule,
-     informational, and the dark "machine speaking" ground. Which status
-     owns which slot is unchanged; only the hex moved. */
-  --bg: var(--paper);
-  --surface: var(--paper-card);
-  --surface-2: #F6F1E5;
-  --surface-3: #EDE6D5;
-  --line: var(--paper-border);
-  --line-strong: #C9BC9E;
-  --ink-2: var(--ink-soft);
-  --ink-3: #8B7A61;
+     informational. Only the hex changed. */
+  --paper: var(--bg);
+  --paper-card: var(--card);
+  --paper-border: var(--line);
+  --ink-soft: var(--muted);
+  --ink-2: var(--muted);
+  --ink-3: var(--muted-2);
 
-  --accent: var(--gold);
-  --accent-hover: var(--gold-deep);
+  /* "coffee" meant: the ground the machine speaks on. On a dark system
+     that is darker still than the page, so the terminal reads as a well
+     rather than a slab. */
+  --coffee:#0B0716;
+  --coffee-2:#070410;
+  --coffee-border: var(--line);
+
+  --gold: var(--violet);
+  --gold-deep:#A98BFF;     /* links and ghost buttons: readable on dark */
+  --leaf: var(--green);
+  --rust: var(--amber);
+  --brick: var(--coral);
+  --steel: var(--sky);
+
+  --font-display: var(--font);
+  --font-body: var(--font);
+  --mono: var(--font-mono);
+
+  /* Washes, now translucent tints of the colour they belong to rather
+     than opaque pastels -- which is what makes them sit correctly on any
+     of the three surface depths instead of only on paper. */
+  --leaf-soft:rgba(61,232,160,0.11);   --leaf-line:rgba(61,232,160,0.30);
+  --rust-soft:rgba(255,176,32,0.11);   --rust-line:rgba(255,176,32,0.30);
+  --brick-soft:rgba(255,122,92,0.11);  --brick-line:rgba(255,122,92,0.30);
+  --steel-soft:rgba(78,161,255,0.11);  --steel-line:rgba(78,161,255,0.30);
+  --gold-soft:rgba(138,92,255,0.13);   --gold-line:rgba(138,92,255,0.34);
+
+  --surface: var(--card);
+  --surface-2: var(--card-2);
+  --surface-3: var(--card-3);
+  --line-strong: var(--line-2);
+
+  --accent: var(--violet);
+  --accent-hover: var(--lilac);
   --accent-soft: var(--gold-soft);
   --accent-line: var(--gold-line);
 
-  --ok: var(--leaf);       --ok-soft: var(--leaf-soft);     --ok-line: var(--leaf-line);
-  --warn: var(--rust);     --warn-soft: var(--rust-soft);   --warn-line: var(--rust-line);
-  --stop: var(--brick);    --stop-soft: var(--brick-soft);  --stop-line: var(--brick-line);
-  --info: var(--steel);    --info-soft: var(--steel-soft);  --info-line: var(--steel-line);
+  --ok: var(--green);   --ok-soft: var(--leaf-soft);    --ok-line: var(--leaf-line);
+  --warn: var(--amber); --warn-soft: var(--rust-soft);  --warn-line: var(--rust-line);
+  --stop: var(--coral); --stop-soft: var(--brick-soft); --stop-line: var(--brick-line);
+  --info: var(--sky);   --info-soft: var(--steel-soft); --info-line: var(--steel-line);
 
   --dark: var(--coffee);
   --dark-2: var(--coffee-2);
-  --dark-line: var(--coffee-border);
+  --dark-line: var(--line);
 
-  --radius: 10px;
-  --radius-lg: var(--radius-chit);
-  --shadow-sm: 0 1px 0 rgba(43, 29, 20, .05);
-  --shadow: 0 1px 2px rgba(43, 29, 20, .06), 0 10px 24px -14px rgba(43, 29, 20, .18);
-  --shadow-lg: 0 4px 12px rgba(43, 29, 20, .08), 0 24px 48px -20px rgba(43, 29, 20, .3);
-
-  --font: var(--font-body);
-  --mono: var(--font-mono);
+  --radius: 12px;
+  --radius-lg: 20px;
+  --radius-chit: 18px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35);
+  --shadow: 0 8px 28px rgba(0,0,0,.42);
+  --shadow-lg: 0 24px 70px rgba(0,0,0,.55);
 }
 
 * { box-sizing: border-box; }
 
+html { background: var(--bg); }
 body {
   margin: 0;
-  background: var(--paper);
+  background: var(--bg);
   color: var(--ink);
-  font-family: var(--font-body);
+  font-family: var(--font);
   font-size: 15px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+  position: relative;
+  overflow-x: hidden;
 }
+
+/* ------------------------------------------------------------ aurora */
+/* Three slow blurred blobs behind everything. Fixed, pointer-transparent
+   and full-bleed -- the mockup wrapped the app in a rounded "frame" to
+   present itself as a product screenshot, which a real page has no
+   business doing, so that wrapper is deliberately not ported.
+
+   Sized down from the mockup's 520-600px / blur(80px): a blur that large
+   is a genuinely expensive composite, and this has to hold frame rate on
+   a laptop during a live demo. `will-change: transform` keeps each blob
+   on its own layer so the drift animates without repainting the page. */
+
+.aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.blob {
+  position: absolute; border-radius: 50%;
+  filter: blur(64px); opacity: .5; mix-blend-mode: screen;
+  will-change: transform;
+}
+.blob-1 {
+  width: 420px; height: 420px; top: -130px; left: -70px;
+  background: radial-gradient(circle, #8A5CFF, transparent 70%);
+  animation: drift1 22s ease-in-out infinite;
+}
+.blob-2 {
+  width: 470px; height: 470px; top: -170px; right: -140px;
+  background: radial-gradient(circle, #B34FFF, transparent 70%);
+  animation: drift2 27s ease-in-out infinite;
+}
+.blob-3 {
+  width: 380px; height: 380px; bottom: -190px; left: 22%;
+  background: radial-gradient(circle, #4EA1FF, transparent 70%);
+  animation: drift3 31s ease-in-out infinite;
+}
+@keyframes drift1 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(55px,36px) scale(1.14); } }
+@keyframes drift2 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(-46px,54px) scale(1.1); } }
+@keyframes drift3 { 0%,100% { transform: translate(0,0) scale(1); } 50% { transform: translate(36px,-46px) scale(1.18); } }
+
+/* A working console does not need as much weather as a hero. */
+.aurora-quiet .blob { opacity: .3; filter: blur(72px); }
+
+/* Everything the user actually reads sits above the aurora. */
+.topbar, .page, .page-narrow, .toast { position: relative; z-index: 1; }
+
+/* -------------------------------------------------------------- text */
 
 a { color: var(--gold-deep); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-h1, h2, h3 { font-family: var(--font-display); letter-spacing: -.01em; }
-h1 { font-size: 30px; font-weight: 700; margin: 0 0 6px; }
+h1, h2, h3 { font-family: var(--font); letter-spacing: -.025em; }
+h1 { font-size: 32px; font-weight: 800; margin: 0 0 6px; }
 h2 { font-size: 19px; font-weight: 700; margin: 0 0 12px; }
 h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
 
-.lede { color: var(--ink-soft); margin: 0 0 26px; max-width: 74ch; font-size: 14.5px; }
-.muted { color: var(--ink-3); }
+/* The mockup's headline resolves out of a blur, one word at a time.
+   `.blur-in` is applied per word by the page; the delay is inline. */
+.blur-in { display: inline-block; opacity: 0; filter: blur(8px); animation: blurIn .7s ease forwards; }
+@keyframes blurIn { to { opacity: 1; filter: blur(0); } }
+.fade-up { opacity: 0; animation: fadeUp .6s ease forwards; }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+.lede { color: var(--muted); margin: 0 0 26px; max-width: 74ch; font-size: 14.5px; }
+.muted { color: var(--muted-2); }
 .mono { font-family: var(--font-mono); font-size: 12.5px; }
 .right { text-align: right; }
 .nowrap { white-space: nowrap; }
-.note { font-size: 12.5px; color: var(--ink-3); margin: 10px 0 0; line-height: 1.5; }
+.note { font-size: 12.5px; color: var(--muted-2); margin: 10px 0 0; line-height: 1.5; }
 
-/* A small caps line above a heading, as in the mockup. */
 .eyebrow {
   font-family: var(--font-mono); font-size: 11px; text-transform: uppercase;
-  letter-spacing: .12em; color: var(--gold-deep); margin-bottom: 8px;
+  letter-spacing: .12em; color: var(--lilac); margin-bottom: 8px;
 }
 
 /* ------------------------------------------------------------- layout */
@@ -130,124 +243,110 @@ h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
 
 .topbar {
   display: flex; align-items: center; gap: 16px;
-  padding: 0 32px; height: 62px;
-  background: var(--paper-card);
-  border-bottom: 1px solid var(--paper-border);
+  padding: 0 32px; height: 66px;
+  background: rgba(21,15,36,.72);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 40;
 }
 .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-/* The wordmark gets a round coffee token, as in the mockup. Drawn with a
-   pseudo-element so no page's markup had to change to gain it. */
 .brand::before {
-  content: "AK"; flex: none;
-  width: 32px; height: 32px; border-radius: 50%;
-  background: var(--coffee); color: var(--paper);
-  display: grid; place-items: center;
-  font-family: var(--font-display); font-weight: 700; font-size: 14px;
+  content: ''; flex: none;
+  width: 26px; height: 26px; border-radius: 8px;
+  background: radial-gradient(circle at 30% 30%, var(--lilac), var(--violet));
+  box-shadow: 0 6px 18px rgba(138,92,255,.4);
 }
-.brand-mark {
-  font-family: var(--font-display); font-weight: 700; font-size: 18px;
-  letter-spacing: -.01em; white-space: nowrap;
-}
+.brand-mark { font-weight: 800; font-size: 16px; letter-spacing: -.02em; white-space: nowrap; }
 .brand-role {
   font-family: var(--font-mono);
   font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
-  color: var(--paper); background: var(--coffee);
-  border-radius: 999px; padding: 4px 12px;
+  color: var(--lilac); background: var(--card-2);
+  border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px;
 }
 .topbar-links { margin-left: auto; display: flex; align-items: center; gap: 22px; }
-.topbar-links a { color: var(--ink-soft); font-size: 13px; font-weight: 500; }
+.topbar-links a { color: var(--muted); font-size: 13px; font-weight: 500; }
 .topbar-links a:hover { color: var(--ink); text-decoration: none; }
 
 .live {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono);
   font-size: 10.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--leaf); background: var(--leaf-soft);
+  color: var(--green); background: var(--leaf-soft);
   border: 1px solid var(--leaf-line);
   border-radius: 999px; padding: 3px 11px;
 }
-.dot {
-  width: 6px; height: 6px; border-radius: 50%; background: var(--leaf);
-  animation: pulse 2s infinite;
-}
+.dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
 @keyframes pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(79, 121, 66, .55); }
-  70%  { box-shadow: 0 0 0 6px rgba(79, 121, 66, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(79, 121, 66, 0); }
+  0%   { box-shadow: 0 0 0 0 rgba(61,232,160,.5); }
+  70%  { box-shadow: 0 0 0 6px rgba(61,232,160,0); }
+  100% { box-shadow: 0 0 0 0 rgba(61,232,160,0); }
 }
 
-/* ---------------------------------------------------------- the chit */
-/* The signature element: an order or an audit record drawn as the paper
-   ticket it stands for, torn edge and all. Replaces the plain card
-   everywhere -- .card is an alias so existing markup inherits it. */
+/* --------------------------------------------------------- the card */
+/* `.chit` was the torn paper ticket and is now the lifted slab the rest
+   of the system is built from. The name stays because the consoles' JS
+   and every page's markup already use it. */
 
 .chit, .card {
-  background: var(--paper-card);
-  border: 1px solid var(--paper-border);
-  border-radius: var(--radius-chit);
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   padding: 22px 24px;
   position: relative;
-  box-shadow: var(--shadow-sm);
-  transition: box-shadow .18s ease, border-color .18s ease;
+  transition: border-color .18s ease, box-shadow .18s ease;
 }
-.chit::before, .card::before {
-  content: ''; position: absolute;
-  top: 0; left: 24px; right: 24px; height: 0;
-  border-top: 1.5px dashed var(--paper-border);
-}
-.card:hover { box-shadow: var(--shadow); border-color: var(--line-strong); }
+/* The dashed torn edge went with the paper. */
+.chit::before, .card::before { content: none; }
+.card:hover { border-color: var(--line-2); }
 .card-flush { padding: 0; overflow: hidden; }
-.card-flush::before { display: none; }
-.card-flush:hover { box-shadow: var(--shadow-sm); }
+.card-flush:hover { box-shadow: none; }
 
 .card-head {
   display: flex; align-items: flex-start; justify-content: space-between;
   gap: 14px; flex-wrap: wrap; margin-bottom: 4px;
 }
-.card-title { font-family: var(--font-display); font-size: 17px; font-weight: 700; margin: 0; }
+.card-title { font-size: 15px; font-weight: 700; margin: 0; letter-spacing: -.01em; }
 
-.empty { padding: 26px 20px; text-align: center; color: var(--ink-3); font-size: 13.5px; }
+.empty { padding: 26px 20px; text-align: center; color: var(--muted-2); font-size: 13.5px; }
+
+/* ------------------------------------------------------- spotlight */
+/* A light in the room, not a spotlight following the cursor. The radius
+   and the .09 alpha are the mockup's; anything stronger starts competing
+   with the content for attention. `spot(e, el)` sets --mx/--my. */
+
+.spot { position: relative; overflow: hidden; }
+.spot::before {
+  content: ''; position: absolute; inset: 0; opacity: 0; transition: opacity .25s;
+  background: radial-gradient(280px circle at var(--mx,50%) var(--my,50%),
+              rgba(255,255,255,0.09), transparent 60%);
+  pointer-events: none;
+}
+.spot:hover::before { opacity: 1; }
+.spot > * { position: relative; z-index: 1; }
 
 /* --------------------------------------------------------- the stamp */
-/* A rubber-stamped verdict. Every decision state in the system renders
-   through this, at a slight angle, in the colour its status owns. */
+/* The rubber-stamped verdict loses its rotation on a dark system -- a
+   tilted pill reads as a print artefact on paper and as a mistake on
+   glass -- but every status keeps exactly the colour it owned. */
 
-.stamp {
+.stamp, .badge {
   display: inline-flex; align-items: center; gap: 6px;
   font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .07em;
-  font-size: 10.5px; font-weight: 700;
-  padding: 4px 11px; border-radius: 999px;
-  border: 1.5px solid currentColor;
-  transform: rotate(-2.5deg);
+  font-size: 10px; font-weight: 700;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid currentColor;
   white-space: nowrap;
 }
-.stamp.leaf  { color: var(--leaf); }
-.stamp.rust  { color: var(--rust); }
-.stamp.brick { color: var(--brick); }
-.stamp.steel { color: var(--steel); }
-.stamp.gold  { color: var(--gold-deep); }
-
-/* `.badge` is what the consoles' JS already emits, so it IS a stamp --
-   only the modifier names differ, and those are kept. */
-.badge {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .07em;
-  font-size: 10.5px; font-weight: 700;
-  padding: 4px 11px; border-radius: 999px;
-  border: 1.5px solid currentColor;
-  transform: rotate(-2.5deg);
-  white-space: nowrap;
-}
-.badge-ok   { color: var(--leaf); }
-.badge-warn { color: var(--rust); }
-.badge-stop { color: var(--brick); }
-.badge-info { color: var(--steel); }
-.badge-mute { color: var(--ink-3); }
+.stamp.leaf,  .badge-ok   { color: var(--green); background: var(--leaf-soft); }
+.stamp.rust,  .badge-warn { color: var(--amber); background: var(--rust-soft); }
+.stamp.brick, .badge-stop { color: var(--coral); background: var(--brick-soft); }
+.stamp.steel, .badge-info { color: var(--sky);   background: var(--steel-soft); }
+.stamp.gold               { color: var(--lilac); background: var(--gold-soft); }
+.badge-mute { color: var(--muted-2); background: rgba(255,255,255,.04); }
 
 .proto {
   font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .07em;
-  color: var(--gold-deep); background: var(--gold-soft);
+  color: var(--lilac); background: var(--gold-soft);
   border: 1px solid var(--gold-line); border-radius: 5px; padding: 2px 7px;
 }
 
@@ -255,43 +354,43 @@ h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
 
 .btn {
   appearance: none; cursor: pointer;
-  font-family: inherit; font-size: 14px; font-weight: 700; letter-spacing: .01em;
-  color: var(--coffee); background: var(--gold);
-  border: 1px solid var(--gold); border-radius: 8px;
+  font-family: inherit; font-size: 13.5px; font-weight: 700; letter-spacing: .01em;
+  color: #fff; background: var(--violet);
+  border: 1px solid var(--violet); border-radius: 10px;
   padding: 11px 18px;
-  transition: filter .15s ease, transform .06s ease;
+  box-shadow: 0 8px 24px rgba(138,92,255,.3);
+  transition: filter .15s ease, transform .06s ease, box-shadow .15s ease;
 }
-.btn:hover { filter: brightness(1.07); }
+.btn:hover { filter: brightness(1.1); box-shadow: 0 10px 30px rgba(138,92,255,.42); }
 .btn:active { transform: translateY(1px); }
-.btn:disabled { opacity: .5; cursor: default; transform: none; }
-.btn-sm { font-size: 13px; padding: 7px 14px; }
-.btn-ok   { background: var(--leaf);  border-color: var(--leaf);  color: var(--paper-card); }
-.btn-stop { background: transparent;  border: 1.5px solid var(--brick); color: var(--brick); }
-.btn-stop:hover { background: var(--brick-soft); filter: none; }
-.btn-ghost {
-  background: transparent; color: var(--gold-deep);
-  border: 1px solid var(--gold-deep);
-}
-.btn-ghost:hover { background: var(--gold-soft); filter: none; }
+.btn:disabled { opacity: .45; cursor: default; transform: none; box-shadow: none; }
+.btn-sm { font-size: 12.5px; padding: 7px 14px; box-shadow: none; }
+.btn-ok   { background: var(--green); border-color: var(--green); color: #06251A; box-shadow: none; }
+.btn-stop { background: transparent; border: 1px solid var(--coral); color: var(--coral); box-shadow: none; }
+.btn-stop:hover { background: var(--brick-soft); filter: none; box-shadow: none; }
+.btn-ghost { background: rgba(255,255,255,.04); color: var(--lilac); border: 1px solid var(--line); box-shadow: none; }
+.btn-ghost:hover { background: var(--gold-soft); border-color: var(--gold-line); filter: none; box-shadow: none; }
 .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
 
 /* --------------------------------------------------------------- forms */
 
 label {
-  display: block; font-size: 11.5px; font-weight: 600; color: var(--ink-soft);
+  display: block; font-size: 11px; font-weight: 600; color: var(--muted);
   text-transform: uppercase; letter-spacing: .06em; margin-bottom: 5px;
 }
 input[type="text"], input[type="tel"], input[type="number"], textarea, select {
-  width: 100%; font-family: var(--font-body); font-size: 14px; color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--paper-border); border-radius: 8px;
+  width: 100%; font-family: var(--font); font-size: 14px; color: var(--ink);
+  background: rgba(255,255,255,.04);
+  border: 1px solid var(--line); border-radius: 10px;
   padding: 11px 13px;
-  transition: border-color .15s ease, box-shadow .15s ease;
+  transition: border-color .15s ease, box-shadow .15s ease, background .15s ease;
 }
+input::placeholder, textarea::placeholder { color: var(--muted-2); }
 input:focus, textarea:focus, select:focus {
-  outline: none; border-color: var(--gold);
-  box-shadow: 0 0 0 3px rgba(184, 121, 26, .16);
+  outline: none; border-color: var(--violet); background: rgba(255,255,255,.06);
+  box-shadow: 0 0 0 3px rgba(138,92,255,.22);
 }
+select option { background: var(--card); color: var(--ink); }
 textarea { resize: vertical; line-height: 1.5; }
 
 /* --------------------------------------------------------------- table */
@@ -299,56 +398,56 @@ textarea { resize: vertical; line-height: 1.5; }
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
 th {
   text-align: left; font-family: var(--font-mono);
-  font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-  color: var(--ink-3);
-  padding: 11px 16px; border-bottom: 1px solid var(--paper-border);
-  background: var(--surface-2); position: sticky; top: 0;
+  font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted-2);
+  padding: 11px 16px; border-bottom: 1px solid var(--line);
+  background: var(--card-2); position: sticky; top: 0;
 }
-td { padding: 11px 16px; border-bottom: 1px solid var(--paper-border); vertical-align: middle; }
+td { padding: 11px 16px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr { transition: background .12s ease; }
-tbody tr:hover { background: var(--surface-2); }
+tbody tr:hover { background: rgba(255,255,255,.035); }
 
 /* ------------------------------------------------------------- pieces */
 
 .kv { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; font-size: 13.5px; }
-.kv + .kv { border-top: 1px solid var(--paper-border); }
+.kv + .kv { border-top: 1px solid var(--line); }
 .kv b { font-weight: 700; }
 
 .mandate-strip {
   display: flex; gap: 8px; flex-wrap: wrap; align-items: center;
-  font-size: 12.5px; color: var(--ink-soft);
-  background: var(--paper-card); border: 1px solid var(--paper-border);
+  font-size: 12.5px; color: var(--muted);
+  background: var(--card); border: 1px solid var(--line);
   border-radius: 999px; padding: 9px 18px; margin-bottom: 18px;
 }
-.mandate-strip span + span::before { content: "·"; margin-right: 8px; color: var(--ink-3); }
+.mandate-strip span + span::before { content: "·"; margin-right: 8px; color: var(--muted-2); }
 .mandate-strip b { color: var(--ink); font-family: var(--font-mono); font-weight: 700; }
 
 .pill-row { display: flex; gap: 7px; flex-wrap: wrap; }
 
 .seg {
-  display: inline-flex; background: var(--paper);
-  border: 1px solid var(--paper-border); border-radius: 999px; padding: 3px;
+  display: inline-flex; background: rgba(255,255,255,.04);
+  border: 1px solid var(--line); border-radius: 10px; padding: 3px;
 }
 .seg button {
   appearance: none; border: 0; background: transparent; cursor: pointer;
   font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: .07em; color: var(--ink-soft);
-  padding: 7px 15px; border-radius: 999px; transition: all .15s ease;
+  text-transform: uppercase; letter-spacing: .07em; color: var(--muted);
+  padding: 7px 15px; border-radius: 7px; transition: all .15s ease;
 }
-.seg button.on { background: var(--coffee); color: var(--paper); }
+.seg button.on { background: var(--card-2); color: var(--ink); }
 
 .stepper { display: inline-flex; align-items: center; gap: 2px; }
 .stepper button {
   appearance: none; cursor: pointer; width: 27px; height: 27px;
-  border: 1px solid var(--paper-border); background: var(--paper);
-  color: var(--ink-soft); border-radius: 6px; font-size: 15px; line-height: 1;
+  border: 1px solid var(--line); background: rgba(255,255,255,.04);
+  color: var(--muted); border-radius: 7px; font-size: 15px; line-height: 1;
 }
-.stepper button:hover { background: var(--surface-3); color: var(--ink); }
+.stepper button:hover { background: var(--card-3); color: var(--ink); }
 
 .spin {
   display: inline-block; width: 13px; height: 13px; vertical-align: -2px;
-  border: 2px solid var(--paper-border); border-top-color: var(--gold);
+  border: 2px solid var(--line-2); border-top-color: var(--violet);
   border-radius: 50%; animation: spin .7s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -356,45 +455,153 @@ tbody tr:hover { background: var(--surface-2); }
 /* menu grid, used by the shop editor and the buyer's dish picker */
 .menu-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); gap: 12px; }
 .item {
-  border: 1px solid var(--paper-border); border-radius: var(--radius-chit);
-  padding: 14px 16px; background: var(--paper-card);
-  transition: border-color .16s ease, box-shadow .16s ease;
+  border: 1px solid var(--line); border-radius: 14px;
+  padding: 14px 16px; background: var(--card-2);
+  transition: border-color .16s ease, background .16s ease;
 }
-.item:hover { border-color: var(--gold-line); box-shadow: var(--shadow-sm); }
+.item:hover { border-color: var(--gold-line); background: var(--card-3); }
 .item-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 9px; }
 .item-name { font-weight: 700; font-size: 14px; }
 .item-cat {
   font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--muted);
 }
 .item-price { font-family: var(--font-mono); font-weight: 700; font-size: 14px; white-space: nowrap; }
-.item.alt { opacity: .45; }
+.item.alt { opacity: .42; }
 
-.result { border: 1px solid var(--paper-border); border-radius: var(--radius-chit); padding: 15px; }
+.result { border: 1px solid var(--line); border-radius: 14px; padding: 15px; }
 .result-head { display: flex; align-items: center; gap: 9px; margin-bottom: 7px; }
-.result-reason { font-size: 13px; color: var(--ink-soft); }
-.blocked-note { font-size: 12.5px; color: var(--brick); margin-top: 9px; }
+.result-reason { font-size: 13px; color: var(--muted); }
+.blocked-note { font-size: 12.5px; color: var(--coral); margin-top: 9px; }
+
+/* ---------------------------------------------------------- the bento */
+/* Four small cards, each one a fact about this account read off the live
+   trail. The mockup's numbers were fixed; nothing here is. */
+
+.bento { display: grid; grid-template-columns: 1fr 1.15fr 1.15fr 1fr; gap: 14px; margin-top: 18px; }
+@media (max-width: 1040px) { .bento { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 620px)  { .bento { grid-template-columns: 1fr; } }
+
+.bcard {
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-lg);
+  padding: 20px 22px; display: flex; flex-direction: column; min-height: 168px;
+}
+.bcard h4 { font-size: 13.5px; font-weight: 700; margin: 0 0 16px; letter-spacing: -.01em; }
+.bwidget { flex: 1; display: flex; align-items: center; justify-content: center; width: 100%; }
+.bwidget .empty { padding: 0; font-size: 12px; }
+
+.cap-row {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--card-2); border: 1px solid transparent; border-radius: 10px;
+  padding: 9px 12px; margin-bottom: 8px; font-size: 12px;
+}
+.cap-row.on { border-color: var(--violet-dim); color: var(--lilac); }
+.cap-row .dash { margin-left: auto; width: 20px; height: 2px; background: var(--muted-2); border-radius: 2px; }
+.cap-row b { font-family: var(--font-mono); }
+
+/* Centred and width-capped: with one item, `flex: 1` alone made a single
+   bar span the whole card, which reads as a filled panel rather than as a
+   chart. Seen with one row of real demand in it. */
+.bars { display: flex; align-items: flex-end; justify-content: center; gap: 7px; height: 92px; width: 100%; }
+.bars div {
+  flex: 1 1 0; min-height: 3px; max-width: 46px;
+  background: linear-gradient(180deg, var(--lilac), rgba(138,92,255,0.12));
+  border-radius: 4px 4px 0 0; animation: grow 1.1s ease-out both;
+}
+@keyframes grow { from { transform: scaleY(0); transform-origin: bottom; } to { transform: scaleY(1); } }
+.bars-labels {
+  display: flex; justify-content: center; gap: 7px; width: 100%; margin-top: 7px;
+  font-size: 9.5px; color: var(--muted-2); font-family: var(--font-mono);
+}
+.bars-labels span { flex: 1 1 0; max-width: 46px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.ring-row { display: flex; gap: 22px; justify-content: center; width: 100%; }
+.pring { position: relative; width: 64px; height: 64px; }
+.pring svg { transform: rotate(-90deg); }
+.pring .pct {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700;
+}
+.pring-label { font-size: 10.5px; color: var(--muted); text-align: center; margin-top: 8px; max-width: 84px; }
+
+.rowlist { width: 100%; }
+.rowlist .item {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 11px; font-size: 12px;
+  border: 0; padding: 0; background: none;
+}
+.rowlist .item:hover { background: none; border: 0; }
+.rowlist .amt { font-family: var(--font-mono); font-weight: 700; width: 54px; }
+.rowlist .bar { flex: 1; height: 5px; background: var(--card-2); border-radius: 3px; overflow: hidden; }
+.rowlist .bar div { height: 100%; background: var(--violet); border-radius: 3px; }
+
+/* ------------------------------------------------------------ counters */
+/* countUp() animates these from 0 to the REAL current value on first
+   paint. The mockup counted to a hardcoded number; nothing here does. */
+.count { font-family: var(--font-mono); font-weight: 800; font-variant-numeric: tabular-nums; }
 
 /* --------------------------------------------------------------- toast */
 
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
   z-index: 90; max-width: min(520px, 92vw);
-  background: var(--coffee); color: var(--paper);
-  border: 1px solid var(--coffee-border); border-radius: 10px;
+  background: var(--card-2); color: var(--ink);
+  border: 1px solid var(--line-2); border-radius: 12px;
   padding: 13px 19px; font-size: 13.5px; font-weight: 500;
   box-shadow: var(--shadow-lg);
   animation: toastIn .26s cubic-bezier(.2, .9, .3, 1.2);
 }
-.toast.err { background: var(--brick); border-color: var(--brick); }
+.toast.err { background: #3A1410; border-color: rgba(255,122,92,.4); color: #FFC7BA; }
 @keyframes toastIn {
   from { opacity: 0; transform: translate(-50%, 12px); }
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
+/* The topbar is one flex row with no room to wrap, so below about a
+   laptop width the links start climbing over the role chip. Found in a
+   narrow viewport, not at the desktop size everything gets designed at. */
+@media (max-width: 900px) {
+  .topbar { padding: 0 18px; gap: 10px; }
+  .brand-role { display: none; }
+  .topbar-links { gap: 14px; }
+  .topbar-links a { font-size: 12.5px; }
+}
 @media (max-width: 640px) {
   .page, .page-narrow { padding: 16px; }
-  .topbar { padding: 0 16px; gap: 10px; }
-  .topbar-links { gap: 12px; }
-  .topbar-links a { font-size: 12.5px; }
+  .topbar { padding: 0 14px; gap: 8px; height: auto; min-height: 58px; flex-wrap: wrap; }
+  .brand-mark { font-size: 15px; }
+  .topbar-links { gap: 11px; }
+  .topbar-links a { font-size: 12px; }
+}
+
+/* ------------------------------------------------------- reduced motion */
+/* Not optional polish. Everything below removes the MOTION and keeps the
+   INFORMATION: the aurora holds still, the headline is simply present,
+   log rows are simply there, and the terminal prints each line whole
+   instead of typing it (handled in JS, which reads the same query). */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .blob { animation: none; }
+  .blur-in { opacity: 1; filter: none; animation: none; }
+  .fade-up { opacity: 1; animation: none; }
+  .dot { animation: none; }
+}
+
+/* --------------------------------------------------- entrance, once only */
+/* Applied by firstPaint(key), which returns the class only the first time
+   it sees a row. A board that polls every two seconds must not re-animate
+   what is already on screen -- that is a flicker, not an animation. */
+
+.enter { animation: enterIn .45s ease both; }
+tr.enter > td { animation: enterIn .45s ease both; }
+@keyframes enterIn {
+  from { opacity: 0; transform: translateX(-8px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter, tr.enter > td { animation: none; opacity: 1; transform: none; }
 }

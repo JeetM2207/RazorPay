@@ -12,7 +12,7 @@
   .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
   .pane-num {
     width: 22px; height: 22px; border-radius: 7px; flex: none;
-    background: var(--gold); color: var(--coffee); font-size: 12px; font-weight: 700;
+    background: var(--gold); color: #fff; font-size: 12px; font-weight: 700;
     display: grid; place-items: center;
   }
   .pane-title { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
@@ -22,7 +22,7 @@
   .who { display: flex; align-items: center; gap: 12px; }
   .avatar {
     width: 40px; height: 40px; border-radius: 12px; flex: none;
-    background: var(--gold); color: var(--coffee);
+    background: var(--gold); color: #fff;
     display: grid; place-items: center; font-weight: 700; font-size: 16px;
   }
   .who-name { font-weight: 650; letter-spacing: -.01em; }
@@ -31,13 +31,13 @@
   .card-on-file {
     display: flex; align-items: center; gap: 11px; margin-top: 15px;
     padding: 12px 14px; border-radius: 11px;
-    background: linear-gradient(135deg, #2E1B0E, #1C0F06); color: #F1ECDF;
+    background: linear-gradient(135deg, #0B0716, #070410); color: #F5F3FA;
   }
   .mini-chip {
     width: 26px; height: 19px; border-radius: 4px; flex: none;
-    background: linear-gradient(135deg, #F0D68A, #8F5C10);
+    background: linear-gradient(135deg, #C7B8FF, #A98BFF);
   }
-  .card-on-file .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #9A8E7B; }
+  .card-on-file .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #948FA8; }
   .card-on-file .num { font-family: var(--mono); font-size: 13.5px; letter-spacing: .06em; }
 
   /* two caps, drawn so you can see how much room is left */
@@ -74,7 +74,7 @@
     color: var(--accent); background: var(--accent-soft);
     border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 10px;
   }
-  .dish-add:hover { background: var(--gold); color: var(--coffee); }
+  .dish-add:hover { background: var(--gold); color: #fff; }
   .dish-add:disabled { opacity: .5; cursor: default; background: var(--surface-3); color: var(--ink-3); border-color: var(--line); }
 
   .dish-qty {
@@ -86,7 +86,7 @@
     color: var(--accent); font: inherit; font-size: 13px; font-weight: 700;
     width: 24px; height: 24px; line-height: 1;
   }
-  .dish-qty button:hover { background: var(--gold); color: var(--coffee); }
+  .dish-qty button:hover { background: var(--gold); color: #fff; }
   .dish-qty .n {
     min-width: 24px; text-align: center; font-size: 12.5px; font-weight: 700;
     color: var(--accent); background: var(--surface);
@@ -108,7 +108,7 @@
   }
 
   /* ---- standing orders ---- */
-  .routine { border-top: 1px dashed var(--paper-border); padding: 14px 0; }
+  .routine { border-top: 1px solid var(--line); padding: 14px 0; }
   .routine:first-of-type { border-top: 0; padding-top: 4px; }
   .routine-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
   .routine-cart { font-weight: 700; font-size: 14px; }
@@ -124,8 +124,8 @@
     cursor: pointer; color: var(--ink-soft); background: var(--paper);
   }
   .daybox input { display: none; }
-  .daybox label.on { background: var(--gold); border-color: var(--gold); color: var(--coffee); }
-  .routine-form { border-top: 1px dashed var(--paper-border); margin-top: 14px; padding-top: 15px; }
+  .daybox label.on { background: var(--gold); border-color: var(--gold); color: #fff; }
+  .routine-form { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 15px; }
   .routine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px; }
 
   /* ---- transactions drawer ---- */
@@ -189,11 +189,11 @@
     border: 2px solid var(--line); transition: all .25s ease;
   }
   .stp.on .stp-dot {
-    background: var(--gold); border-color: var(--gold); color: var(--coffee);
-    box-shadow: 0 0 0 5px rgba(184, 121, 26, .2);
+    background: var(--gold); border-color: var(--gold); color: #fff;
+    box-shadow: 0 0 0 5px rgba(138, 92, 255, .2);
   }
-  .stp.done .stp-dot { background: var(--leaf); border-color: var(--leaf); color: var(--paper); }
-  .stp.fail .stp-dot { background: var(--brick); border-color: var(--brick); color: var(--paper); }
+  .stp.done .stp-dot { background: var(--leaf); border-color: var(--leaf); color: var(--ink); }
+  .stp.fail .stp-dot { background: var(--brick); border-color: var(--brick); color: var(--ink); }
   .stp-label {
     font-size: 11px; font-weight: 620; color: var(--ink-3); text-align: center;
     letter-spacing: -.005em; line-height: 1.3;
@@ -204,7 +204,7 @@
 
   /* ---- terminal ---- */
   .terminal {
-    background: linear-gradient(160deg, #2E1B0E 0%, #1C0F06 60%, #1C0F06 100%);
+    background: linear-gradient(160deg, #0B0716 0%, #070410 60%, #070410 100%);
     border: 1px solid rgba(74, 51, 32, .9); border-radius: var(--radius-lg);
     overflow: hidden; display: flex; flex-direction: column; height: 620px;
     box-shadow: 0 24px 60px -24px rgba(28, 15, 6, .55),
@@ -213,49 +213,49 @@
   .term-bar {
     display: flex; align-items: center; gap: 8px;
     padding: 11px 15px;
-    background: rgba(46, 27, 14, .72);
+    background: rgba(10, 7, 20, .72);
     backdrop-filter: blur(8px);
     border-bottom: 1px solid rgba(74, 51, 32, .8);
   }
   .term-dot { width: 10px; height: 10px; border-radius: 50%; }
   .term-name {
-    margin-left: 6px; color: #9A8E7B; font-size: 12px;
+    margin-left: 6px; color: #948FA8; font-size: 12px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
   .term-state { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
   .term-body {
     flex: 1; overflow-y: auto; padding: 16px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12.5px; line-height: 1.75; color: #B8AFA0;
+    font-size: 12.5px; line-height: 1.75; color: #C9C2E0;
   }
   .term-body::-webkit-scrollbar { width: 9px; }
-  .term-body::-webkit-scrollbar-thumb { background: #4A3320; border-radius: 5px; }
+  .term-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 5px; }
 
   .ln { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
   .ln + .ln { margin-top: 3px; }
-  .ln .t { color: #7A6A52; flex: none; }
+  .ln .t { color: #7C769A; flex: none; }
   .ln .m { flex: 1; }
-  .ln.info .m  { color: #B8AFA0; }
-  .ln.step .m  { color: #8FB3C4; }
-  .ln.ok .m    { color: #8FBF7F; }
-  .ln.warn .m  { color: #D9A05B; }
-  .ln.err .m   { color: #D98070; }
-  .ln.quiet .m { color: #A2947E; }
-  .ln.head .m  { color: #D9A441; font-weight: 600; }
-  .ln .m b     { color: var(--paper); font-weight: 700; }
+  .ln.info .m  { color: #C9C2E0; }
+  .ln.step .m  { color: #8FC7FF; }
+  .ln.ok .m    { color: #3DE8A0; }
+  .ln.warn .m  { color: #FFB020; }
+  .ln.err .m   { color: #FF7A5C; }
+  .ln.quiet .m { color: #948FA8; }
+  .ln.head .m  { color: #FFB020; font-weight: 600; }
+  .ln .m b     { color: var(--ink); font-weight: 700; }
 
   /* A line quoting one of the merchant's hard limits is a line where
      plain Python overruled everything else. Marked so a viewer can see
      the boundary rather than take it on trust. */
-  .ln.rule { border-left: 2px solid #5A4630; padding-left: 8px; margin-left: -10px; }
+  .ln.rule { border-left: 2px solid #2A2149; padding-left: 8px; margin-left: -10px; }
   .ln .lim {
-    color: #D9B77A; border-bottom: 1px dotted #7A6440;
+    color: #FFC96B; border-bottom: 1px dotted #7C769A;
     text-transform: lowercase; letter-spacing: .2px;
   }
   .ln .num { font-weight: 800; }
-  .ln .num.pass { color: #8FBF7F; text-shadow: 0 0 12px rgba(63,185,80,.5); }
-  .ln .num.fail { color: #D98070; text-shadow: 0 0 12px rgba(255,123,114,.5); }
-  .ln .num.calc { color: #F1ECDF; }
+  .ln .num.pass { color: #3DE8A0; text-shadow: 0 0 12px rgba(63,185,80,.5); }
+  .ln .num.fail { color: #FF7A5C; text-shadow: 0 0 12px rgba(255,123,114,.5); }
+  .ln .num.calc { color: #F5F3FA; }
 
   /* The refund toast. Bigger than the ordinary one because it is the
      answer to "you took money for an order she might refuse". */
@@ -264,40 +264,43 @@
     z-index: 60; max-width: min(560px, 92vw);
     display: flex; gap: 13px; align-items: flex-start;
     padding: 15px 19px; border-radius: 13px;
-    background: #2B1410; border: 1px solid #7A3A2C;
+    background: #3A1410; border: 1px solid #5C2118;
     box-shadow: 0 18px 44px rgba(0,0,0,.45), 0 0 0 1px rgba(255,123,114,.14);
-    color: #E8D5C8; font-size: 14px; line-height: 1.5;
+    color: #FFC7BA; font-size: 14px; line-height: 1.5;
     animation: refundIn .32s cubic-bezier(.2,.9,.3,1.2);
   }
   .refund-toast .rt-mark {
     flex: none; width: 30px; height: 30px; border-radius: 50%;
-    background: rgba(217,128,112,.18); color: #D98070;
+    background: rgba(217,128,112,.18); color: #FF7A5C;
     display: grid; place-items: center; font-size: 16px; font-weight: 700;
   }
-  .refund-toast b { color: var(--paper); }
-  .refund-toast .rt-sub { display: block; margin-top: 3px; color: #B09A8A; font-size: 12.5px; }
-  .refund-toast.ok { background: #1E2A18; border-color: #3E6B34; color: #CFE3C4; }
-  .refund-toast.ok .rt-mark { background: rgba(143,191,127,.18); color: #8FBF7F; }
-  .refund-toast.ok .rt-sub { color: #93AE86; }
+  .refund-toast b { color: var(--ink); }
+  .refund-toast .rt-sub { display: block; margin-top: 3px; color: #948FA8; font-size: 12.5px; }
+  .refund-toast.ok { background: #0C241C; border-color: #1E6B4E; color: #9BF5D0; }
+  .refund-toast.ok .rt-mark { background: rgba(143,191,127,.18); color: #3DE8A0; }
+  .refund-toast.ok .rt-sub { color: #6FE0B4; }
   @keyframes refundIn {
     from { opacity: 0; transform: translate(-50%, 14px) scale(.97); }
     to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
   }
 
   .cursor {
-    display: inline-block; width: 7px; height: 14px; background: #8FBF7F;
+    display: inline-block; width: 7px; height: 14px; background: #3DE8A0;
     vertical-align: -2px; animation: blink 1.05s step-end infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
 
-  .term-ask { border-top: 1px solid #4A3320; background: #241408; padding: 14px; }
+  .term-ask { border-top: 1px solid rgba(255,255,255,0.09); background: #150F24; padding: 14px; }
   .term-ask p {
-    margin: 0 0 10px; color: #D9A05B; font-size: 12.5px;
+    margin: 0 0 10px; color: #FFB020; font-size: 12.5px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
 </style>
 </head>
 <body>
+
+  <div class="aurora" aria-hidden="true"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
+
   <div class="topbar">
     <div class="brand">
       <span class="brand-mark">Amma's Kitchen</span>
@@ -312,7 +315,7 @@
   </div>
 
   <div class="page">
-    <h1>What would you like?</h1>
+    <h1><span class="blur-in" style="animation-delay:0.05s">What</span> <span class="blur-in" style="animation-delay:0.12s">would</span> <span class="blur-in" style="animation-delay:0.19s">you</span> <span class="blur-in" style="animation-delay:0.26s">like?</span></h1>
     <p class="lede">
       Say it in your own words. Your agent takes it from there, and shows you
       everything it does.
@@ -453,11 +456,11 @@
 
         <div class="terminal">
           <div class="term-bar">
-            <span class="term-dot" style="background:#9B3A2C"></span>
-            <span class="term-dot" style="background:#A85C2A"></span>
-            <span class="term-dot" style="background:#4F7942"></span>
+            <span class="term-dot" style="background:#FF7A5C"></span>
+            <span class="term-dot" style="background:#FFB020"></span>
+            <span class="term-dot" style="background:#3DE8A0"></span>
             <span class="term-name" id="termName">buyer-agent</span>
-            <span class="term-state" id="termState" style="color:#A2947E">IDLE</span>
+            <span class="term-state" id="termState" style="color:#948FA8">IDLE</span>
           </div>
           <div class="term-body" id="term">
             <div class="ln quiet"><span class="t">--:--:--</span><span class="m">Agent asleep. Say what you want and deploy.</span></div>
@@ -470,6 +473,28 @@
             </div>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Four facts about this account, each read from the live trail.
+         The design pass had fixed numbers here; every one of these is
+         fetched, and a card with nothing behind it says so. -->
+    <div class="bento">
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Bounded by design</h4>
+        <div class="bwidget"><div style="width:100%" id="bentoCaps"></div></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Demand you can see</h4>
+        <div class="bwidget" id="bentoDemand"></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Every order, gated</h4>
+        <div class="bwidget" id="bentoGated"></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Full audit, always</h4>
+        <div class="bwidget" id="bentoAudit"></div>
       </div>
     </div>
   </div>
@@ -546,6 +571,68 @@ function markLimits(message, kind) {
   return { html, quotesARule };
 }
 
+/* The typewriter.
+
+   The design pass shipped this as eight hardcoded lines on a loop, which
+   is fine for a mockup and would be a lie here: this terminal is the one
+   surface a judge reads to believe the gates are real. So nothing about
+   WHAT is printed changed -- every line still comes from an actual step
+   the agent took, with that order's actual numbers. Only the RENDERING
+   moved: each line now arrives a character at a time instead of all at
+   once.
+
+   Typing has to preserve the markup, because a line is not plain text --
+   markLimits() wraps rule names and amounts in spans that colour the
+   arithmetic. So this reveals the existing DOM progressively by walking
+   its text nodes, rather than retyping a string and swapping the HTML in
+   at the end, which would make every marked line flash.
+
+   The rate is per-line rather than per-character: a long line at a fixed
+   18ms/char would take two seconds, and there are twenty of them. Each
+   line finishes inside TYPE_MAX_MS however long it is, so the pace of
+   the run is unchanged from before the effect existed.
+
+   Reduced motion prints the line whole. The information is the point;
+   the motion is not. */
+
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const TYPE_MS_PER_CHAR = 9;
+const TYPE_MAX_MS = 340;
+
+function textNodesOf(el) {
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  const out = [];
+  while (walker.nextNode()) out.push(walker.currentNode);
+  return out;
+}
+
+function typeInto(el) {
+  const nodes = textNodesOf(el);
+  const full = nodes.map((n) => n.nodeValue);
+  const total = full.reduce((n, s) => n + s.length, 0);
+  if (REDUCED_MOTION || !total) return Promise.resolve();
+
+  for (const n of nodes) n.nodeValue = "";
+  const perChar = Math.min(TYPE_MS_PER_CHAR, TYPE_MAX_MS / total);
+
+  return new Promise((resolve) => {
+    let shown = 0;
+    const tick = () => {
+      shown += Math.max(1, Math.round(16 / perChar));   // one frame's worth
+      let left = shown;
+      for (let i = 0; i < nodes.length; i++) {
+        const take = Math.max(0, Math.min(full[i].length, left));
+        nodes[i].nodeValue = full[i].slice(0, take);
+        left -= take;
+      }
+      $("term").scrollTop = $("term").scrollHeight;
+      if (shown < total) requestAnimationFrame(tick);
+      else resolve();
+    };
+    requestAnimationFrame(tick);
+  });
+}
+
 function log(message, kind = "info") {
   const line = document.createElement("div");
   const { html, quotesARule } = markLimits(message, kind);
@@ -553,6 +640,8 @@ function log(message, kind = "info") {
   line.innerHTML = `<span class="t">${stamp()}</span><span class="m">${html}</span>`;
   $("term").appendChild(line);
   $("term").scrollTop = $("term").scrollHeight;
+  // Only the message types; the timestamp is not being written by anyone.
+  typeInto(line.querySelector(".m"));
   return line;
 }
 
@@ -677,6 +766,7 @@ async function boot() {
   renderDayPicker();
   syncRoutineForm();
   renderRoutines();
+  renderBento();
 }
 
 /* Her live menu, straight from /api/menu. An item she has unticked is
@@ -805,7 +895,7 @@ async function deploy() {
   $("term").innerHTML = "";
   $("termAsk").style.display = "none";
   setStep(0);
-  setState("WAKING", "#D9A05B");
+  setState("WAKING", "#FFB020");
 
   const hardCap = PROFILE.hard_cap_inr;
   const softCap = PROFILE.soft_cap_inr;
@@ -814,7 +904,7 @@ async function deploy() {
   try {
     if (!prompt) throw new Error("You didn't say what to buy.");
 
-    setState("RUNNING", "#8FBF7F");
+    setState("RUNNING", "#3DE8A0");
     await step(`Acting for <b>${PROFILE.name}</b>.`, "head", 520);
     await step(`Mandate on file: hard cap <b>${rupee(hardCap)}</b>, ask above <b>${rupee(softCap)}</b>.`, "quiet", 480);
     await step(`Card ••••${PROFILE.card_last4} pre-authorised (token ${PROFILE.card_token.slice(0, 14)}…).`, "quiet", 440);
@@ -862,7 +952,7 @@ async function deploy() {
       thinking.remove();
       log("&gt; Could not reach the parser: " + err.message, "err");
       log("&gt; Cannot draft a cart without interpreting the request. Stopping.", "err");
-      setState("STOPPED", "#D98070"); stepFailed();
+      setState("STOPPED", "#FF7A5C"); stepFailed();
       return;
     }
     thinking.remove();
@@ -897,7 +987,7 @@ async function deploy() {
       items = retry.items || [];
       if (!items.length) {
         log("&gt; Still nothing on the menu. Stopping rather than guessing.", "err");
-        setState("NOTHING TO ORDER", "#D98070"); stepFailed();
+        setState("NOTHING TO ORDER", "#FF7A5C"); stepFailed();
         return;
       }
     }
@@ -925,7 +1015,7 @@ async function deploy() {
     if (gate.decision === "REFUSE") {
       log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks the mandate: ${gate.reason}.`, "err");
       log("&gt; Amma's Kitchen was never contacted. This was not her decision to make.", "err");
-      setState("REFUSED", "#D98070"); stepFailed();
+      setState("REFUSED", "#FF7A5C"); stepFailed();
       return;
     }
 
@@ -934,12 +1024,12 @@ async function deploy() {
       const ok = await askApprovalOverWhatsApp(cartLabel(items), gate.total_inr, softCap);
       if (ok === null) {
         log("&gt; No answer. Stopping — nothing was sent to Amma's Kitchen.", "err");
-        setState("NO ANSWER", "#D98070"); stepFailed();
+        setState("NO ANSWER", "#FF7A5C"); stepFailed();
         return;
       }
       if (!ok) {
         log("&gt; You said no. Nothing was sent to Amma's Kitchen.", "err");
-        setState("CANCELLED", "#D98070"); stepFailed();
+        setState("CANCELLED", "#FF7A5C"); stepFailed();
         return;
       }
       log("&gt; You approved. Proceeding.", "ok");
@@ -966,7 +1056,7 @@ async function deploy() {
     await settle(mandate, hardCap);
   } catch (err) {
     log("&gt; " + err.message, "err");
-    setState("ERROR", "#D98070"); stepFailed();
+    setState("ERROR", "#FF7A5C"); stepFailed();
   } finally {
     running = false;
     $("deployBtn").disabled = false;
@@ -986,7 +1076,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   if (!PROFILE.phone) {
     log("&gt; No phone number on your account, so I can't ask what you'd like instead.", "err");
     log("&gt; Add one in Account settings and I'll be able to check next time.", "quiet");
-    setState("NOTHING TO ORDER", "#D98070"); stepFailed();
+    setState("NOTHING TO ORDER", "#FF7A5C"); stepFailed();
     return null;
   }
 
@@ -1003,7 +1093,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
     });
   } catch (err) {
     log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
-    setState("NOTHING TO ORDER", "#D98070"); stepFailed();
+    setState("NOTHING TO ORDER", "#FF7A5C"); stepFailed();
     return null;
   }
 
@@ -1012,7 +1102,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
     `&gt; Messaging you on WhatsApp at <b>${conversation.phone}</b> with what she does have.`,
     "warn"
   );
-  setState("ASKING YOU", "#D9A05B");
+  setState("ASKING YOU", "#FFB020");
 
   if (!live) {
     // No Twilio configured. Show the message that would have gone out and
@@ -1023,11 +1113,11 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   const reply = await waitForWhatsAppReply(live);
   if (!reply) {
     log("&gt; No answer yet. Stopping — deploy me again when you've decided.", "err");
-    setState("NO ANSWER", "#D98070"); stepFailed();
+    setState("NO ANSWER", "#FF7A5C"); stepFailed();
     return null;
   }
 
-  setState("RUNNING", "#8FBF7F");
+  setState("RUNNING", "#3DE8A0");
   return reply;
 }
 
@@ -1063,7 +1153,7 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
   const live = conversation.transport === "twilio";
   log(`&gt; Asking you on WhatsApp at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
   if (!live) log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
-  setState("ASKING YOU", "#D9A05B");
+  setState("ASKING YOU", "#FFB020");
 
   return await waitForApproval(live, totalInr);
 }
@@ -1203,7 +1293,7 @@ async function handleMerchantResponse(mandate, hardCap) {
       // A hard rule of hers -- no payment may be taken for an order that
       // cannot be fulfilled. The server refuses this, not the page.
       log(`&gt; ${err.message}`, "err");
-      setState("REFUSED", "#D98070"); stepFailed();
+      setState("REFUSED", "#FF7A5C"); stepFailed();
       return null;
     }
   }
@@ -1236,7 +1326,7 @@ async function settle(mandate, hardCap) {
 
   await step(`Authorised by you up to ${rupee(hardCap)}; this is ${rupee(total)}.`, "step", 500);
   setStep(4);
-  setState("SETTLING", "#D9A05B");
+  setState("SETTLING", "#FFB020");
 
   /* A real Razorpay payment link, and the customer pays it themselves.
      The agent's job ends here, exactly as Claude's does on the MCP path.
@@ -1255,20 +1345,20 @@ async function settle(mandate, hardCap) {
   log(`&gt; Payment link issued. Mandate hash <b>${pm.matched_mandate_hash.slice(0, 16)}…</b> binds it to this exact cart.`, "quiet");
   log(`&gt; I cannot pay for you: the OTP, UPI PIN or CVV is entered by you, on Razorpay's own page.`, "quiet");
   showPaymentLink(pm.payment_link_url, total);
-  setState("AWAITING PAYMENT", "#D9A05B");
+  setState("AWAITING PAYMENT", "#FFB020");
 
   const paid = await waitForPayment(pm.payment_link_id);
   hidePaymentLink();
   if (!paid) {
     log("&gt; Payment link is still unpaid. Nothing has been charged.", "warn");
-    setState("UNPAID", "#D9A05B");
+    setState("UNPAID", "#FFB020");
     return;
   }
 
   log("&gt; Razorpay confirms the payment captured.", "ok");
   log("&gt; Amma has been notified. If she cannot make it, the refund is automatic.", "ok");
   log("&gt; Watch this screen — you will be told either way.", "quiet");
-  setState("COMPLETE", "#8FBF7F");
+  setState("COMPLETE", "#3DE8A0");
   stepsDone();
 }
 
@@ -1484,6 +1574,117 @@ function sayWhichParser(parsed) {
   log("&gt; Falling back to matching your words against her menu directly. "
       + "This matches less, never guesses, and changes nothing after this step: "
       + "the cart still goes through every limit below.", "quiet");
+}
+
+/* -------------------------------------------------- motion, on real data
+
+   Two effects from the design pass, and the same rule applies to both:
+   the mockup animated toward hardcoded targets, and everything here
+   animates toward a number that was fetched. A count-up to a fabricated
+   figure on a page whose whole argument is "check the trail" would be a
+   strange thing to ship. */
+
+function spot(e, el) {
+  const r = el.getBoundingClientRect();
+  el.style.setProperty("--mx", (e.clientX - r.left) + "px");
+  el.style.setProperty("--my", (e.clientY - r.top) + "px");
+}
+
+function countUp(el, target, { duration = 1100, prefix = "", suffix = "" } = {}) {
+  if (!el) return;
+  // Once per page load. These panels poll, and a number that restarts
+  // from zero every few seconds is a distraction, not an animation.
+  if (el.dataset.counted === String(target)) return;
+  el.dataset.counted = String(target);
+  if (REDUCED_MOTION) { el.textContent = prefix + target + suffix; return; }
+
+  const start = performance.now();
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    el.textContent = prefix + Math.round((1 - Math.pow(1 - p, 3)) * target) + suffix;
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
+/* ------------------------------------------------------------- the bento */
+
+function ring(pct, colour, label, id) {
+  const circumference = 2 * Math.PI * 27;
+  const offset = circumference * (1 - pct / 100);
+  return `<div>
+    <div class="pring"><svg width="64" height="64">
+      <circle cx="32" cy="32" r="27" stroke="var(--card-2)" stroke-width="6" fill="none"/>
+      <circle cx="32" cy="32" r="27" stroke="${colour}" stroke-width="6" fill="none"
+              stroke-dasharray="${circumference.toFixed(0)}"
+              stroke-dashoffset="${offset.toFixed(0)}" stroke-linecap="round"/>
+    </svg><div class="pct" id="${id}">0%</div></div>
+    <div class="pring-label">${label}</div>
+  </div>`;
+}
+
+async function renderBento() {
+  // 1. The customer's own limits, as configured. Not the merchant's.
+  $("bentoCaps").innerHTML = `
+    <div class="cap-row on">Hard cap <span class="dash"></span> <b>${rupee(PROFILE.hard_cap_inr)}</b></div>
+    <div class="cap-row">Soft cap <span class="dash"></span> <b>${rupee(PROFILE.soft_cap_inr)}</b></div>
+    ${PROFILE.routine_cap_inr
+      ? `<div class="cap-row">Standing order <span class="dash"></span> <b>${rupee(PROFILE.routine_cap_inr)}</b></div>`
+      : ""}`;
+
+  // 2. What people actually asked for and she doesn't sell.
+  try {
+    const rows = (await api("/api/demand")).demand.slice(0, 7);
+    if (!rows.length) {
+      $("bentoDemand").innerHTML =
+        `<div class="empty">Nothing has been asked for that isn't on her menu.</div>`;
+    } else {
+      const top = Math.max(...rows.map((r) => r.times));
+      $("bentoDemand").innerHTML = `<div style="width:100%">
+        <div class="bars">${rows.map((r, i) =>
+          `<div style="height:${Math.round((r.times / top) * 100)}%; animation-delay:${i * 0.05}s"
+                title="${escHtml(r.requested)} — asked ${r.times}×"></div>`).join("")}</div>
+        <div class="bars-labels">${rows.map((r) =>
+          `<span title="${escHtml(r.requested)}">${escHtml(r.requested)}</span>`).join("")}</div>
+      </div>`;
+    }
+  } catch { $("bentoDemand").innerHTML = `<div class="empty">Not available.</div>`; }
+
+  // 3. The real clear/escalate split, computed from the decision log.
+  try {
+    const events = (await api("/api/events?limit=200")).events
+      .filter((e) => ["APPROVE", "ESCALATE", "COUNTER_OFFER"].includes(e.decision));
+    if (!events.length) {
+      $("bentoGated").innerHTML = `<div class="empty">No decisions logged yet.</div>`;
+    } else {
+      const cleared = events.filter((e) => e.decision === "APPROVE").length;
+      const clearedPct = Math.round((cleared / events.length) * 100);
+      $("bentoGated").innerHTML = `<div class="ring-row">
+        ${ring(clearedPct, "var(--violet)", "cleared automatically", "ringCleared")}
+        ${ring(100 - clearedPct, "var(--amber)", "sent to a human", "ringHuman")}
+      </div>`;
+      countUp($("ringCleared"), clearedPct, { suffix: "%", duration: 1300 });
+      countUp($("ringHuman"), 100 - clearedPct, { suffix: "%", duration: 1300 });
+    }
+  } catch { $("bentoGated").innerHTML = `<div class="empty">Not available.</div>`; }
+
+  // 4. This account's most recent real orders, refusals included -- the
+  //    coral bar is an order the rules stopped, which is the point.
+  try {
+    const rows = (await api("/api/events?limit=40")).events
+      .filter((e) => e.total_inr > 0 && e.decision !== "UNMATCHED_DEMAND").slice(0, 4);
+    if (!rows.length) {
+      $("bentoAudit").innerHTML = `<div class="empty">No orders yet.</div>`;
+    } else {
+      const top = Math.max(...rows.map((r) => r.total_inr));
+      $("bentoAudit").innerHTML = `<div class="rowlist">${rows.map((r) => {
+        const stopped = !r.payment_id && !r.payment_link_id;
+        return `<div class="item"><span class="amt">${rupee(r.total_inr)}</span>
+          <div class="bar"><div style="width:${Math.round((r.total_inr / top) * 100)}%
+            ${stopped ? "; background:var(--coral)" : ""}"></div></div></div>`;
+      }).join("")}</div>`;
+    }
+  } catch { $("bentoAudit").innerHTML = `<div class="empty">Not available.</div>`; }
 }
 
 /* ------------------------------------------------------- standing orders

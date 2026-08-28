@@ -180,7 +180,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 464 tests; test_negotiation.py still matters most
+  tests/                  # 483 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -230,278 +230,167 @@ except the Razorpay keys degrades to a working offline path.
 ## What the screens actually look like
 
 Written out because a reader should not have to run the thing to know what a judge sees.
-Everything is vanilla HTML/CSS/JS on `shared.css` — **no build step, no framework, no CDN
-and no web fonts** — so it renders identically offline and on camera, which is the whole
-point during a live demo. Every family is a system stack; a check of the network tab on
-each page shows requests to `127.0.0.1` and nothing else.
+The design system is **dark, violet and in motion**: an aurora drifts behind every page,
+surfaces are lifted slabs on near-black, and the agent's terminal types its work out a
+character at a time as it happens. Where the previous pass said "kitchen ticket", this one
+says *something is running, and you are watching it run* — which is what a live agent demo
+actually is.
 
-**The motif is a kitchen ticket.** An order in this system *is* a chit: warm paper, a torn
-dashed edge along the top, and a rubber-stamped verdict at an angle. That is not
-decoration — it is what the audit trail actually is, one physical record per decision — and
-the surfaces say so before anyone reads a word. Two grounds, and the split is deliberate:
-**paper for the customer**, who is holding the ticket, and **coffee wherever the machine is
-speaking** — the agent terminal, the merchant's board, the phone, the card face.
+**No build step, no framework, no CDN.** The mockup this was ported from pulled Inter and
+JetBrains Mono off Google's CDN; that would have broken the rule this project has held
+since the first console, so both are **self-hosted from `web/fonts/`** (180KB of `.woff2`,
+committed). A conference wifi that drops a font request must not change what a judge sees.
+Verified in a browser rather than asserted: `performance.getEntriesByType("resource")`
+filtered to off-origin returns **zero entries** on every page, and there is a test that
+fails if any `fonts.googleapis.com`/CDN host reappears in any file.
 
 | Token | Value | Used for |
 | --- | --- | --- |
-| `--paper` / `--paper-card` | `#F1ECDF` / `#FBF8F0` | page ground, chit face |
-| `--paper-border` | `#DAD0B8` | hairlines and the torn edge |
-| `--ink` / `--ink-soft` | `#2B1D14` / `#6B5940` | body text, secondary text |
-| `--coffee` / `--coffee-2` | `#2E1B0E` / `#1C0F06` | the machine speaking |
-| `--coffee-border` | `#4A3320` | hairlines on the dark ground |
-| `--gold` / `--gold-deep` | `#B8791A` / `#8F5C10` | **primary action** |
-| `--leaf` | `#4F7942` | **paid / cleared** |
-| `--rust` | `#A85C2A` | **waiting on a human** |
-| `--brick` | `#9B3A2C` | **refused by a hard rule** |
-| `--steel` | `#5C7A8A` | **informational** |
-| `--radius-chit` | `3px 16px 3px 16px` | the asymmetric torn corner |
+| `--bg` | `#0A0714` | page ground |
+| `--card` / `--card-2` / `--card-3` | `#1A1330` / `#211A3D` / `#2A2149` | the three surface depths |
+| `--coffee` / `--coffee-2` | `#0B0716` / `#070410` | the well the machine speaks from (terminal, phone) |
+| `--line` / `--line-2` | `rgba(255,255,255,.09)` / `.16` | hairlines |
+| `--ink` / `--muted` / `--muted-2` | `#F5F3FA` / `#948FA8` / `#7C769A` | body, secondary, tertiary text |
+| `--violet` / `--lilac` | `#8A5CFF` / `#C7B8FF` | **primary action** |
+| `--green` | `#3DE8A0` | **paid / cleared** |
+| `--amber` | `#FFB020` | **waiting on a human** |
+| `--coral` | `#FF7A5C` | **refused by a hard rule** |
+| `--sky` | `#4EA1FF` | **informational** |
 
-Which status owns which slot is unchanged from the palette before it — only the ink moved.
-`.chit` is the card, `.stamp` the verdict; on the merchant's board the queue renders as
-chits *pinned* to it, tacked at alternating angles with a brass pin, which is why her
-screen reads as a spike of tickets rather than a table of rows.
+**Which status owns which slot has not moved across any design pass** — only the ink has.
+A restyle that quietly swapped *refused* and *waiting* would be a serious bug on a
+merchant's board, so a test asserts the four mappings.
 
-Every console page carries the same topbar: **Amma's Kitchen** wordmark, a role chip
-reading **Buyer** or **Merchant**, and links across to the other side, the audit trail and
-home.
+**The alias layer is what made this affordable.** Every old token name (`--paper`,
+`--coffee`, `--gold`, `--leaf`, `--rust`, `--brick`, `--steel`, `--radius-chit`…) is kept,
+re-pointed at the new value, so five pages of page-local CSS and every inline `var(--ok)`
+picked up the new palette without being rewritten. See "the one sharp edge" below, because
+that trick has exactly one failure mode and it bit.
 
-### `/` — the landing page
+### The aurora
 
-Title, one line of what this is, then two large "door" cards: **Buyer console** ("Order as
-a customer's AI shopping assistant would") and **Merchant console** ("Sit where Amma sits:
-decide the orders the system refuses to decide alone"), each with four bullets. Below them
-three plain links — the audit trail, the agent-readable catalog as raw JSON, and the
-protocol API reference. Then a short section on the two-party mandate idea, and **Running
-the two-person demo**: a six-step numbered script (order 3 biryanis and watch your own
-agent refuse it; drop to 2 and get asked; watch it reach Amma; pay; then try the catering
-tray) with the Razorpay test card `4100 2800 0000 1007` in monospace.
+Three blurred blobs drifting on 22/27/31-second loops, fixed behind everything,
+`pointer-events: none`. Ported from the mockup but **sized down** — 420–470px at
+`blur(64px)` rather than 520–600px at `blur(80px)` — because a blur that large is a
+genuinely expensive composite and this has to hold frame rate during a live demo.
+`will-change: transform` keeps each blob on its own layer. Measured on the buyer console
+with a live order running and the terminal typing: **144fps average, worst frame 14ms.**
 
-### `/buyer` — the customer's one-time setup
+The mockup's outer rounded "frame" wrapper is **deliberately not ported** — it existed to
+present the mockup as a product screenshot, and a real page has no business being a
+screenshot inside another screenshot. The consoles get `.aurora-quiet` (30% opacity):
+a working board is a place to work, not a hero.
 
-A single narrow column with a two-pip progress bar at the top. Heading **"Set up your
-account"**, and if a profile already exists in this browser a green banner appears:
-*"You've already set this up."* with a **Go to ordering** button. Three sections:
+### The terminal, and why it types
 
-- **Who you are** — full name, delivery address (textarea), WhatsApp number. The hint under
-  the phone field says what that number is actually for: *"If something you ask for isn't on
-  the menu, your agent messages you here to ask what you'd like instead."*
-- **Card on file** — a dark indigo-slate card face with a gold chip, a masked number that
-  updates as you type, cardholder and MM/YY. Below it the real inputs: card number, expiry,
-  CVV, pre-filled with the Razorpay test card so nobody types a real one by reflex. **On
-  save the number and CVV fields are wiped and only the last four survive** — see "Card
-  details never reach the server".
-- **What your agent may spend** — **Hard cap** (*"Never exceed this on one order, ever."*)
-  and **Soft cap** (*"Above this, the agent asks you first."*). The customer's own limits,
-  not Amma's.
+**This is the part that mattered most.** The design pass shipped a typewriter that looped
+eight hardcoded lines — fine for a mockup, and a lie here, because this terminal is the one
+surface a judge reads to believe the gates are real. So **nothing about what is printed
+changed**: every line is still an actual step the agent took, with that order's actual
+numbers, driven by the same `log()`/`step()` calls as before. Only the *rendering* moved.
 
-One **Save and continue** button.
+Three things that had to be got right:
 
-### `/buyer/order` — the buyer studio, and the screen a judge watches
+- **Typing must preserve the markup.** A line is not plain text: `markLimits()` wraps rule
+  names and amounts in spans that colour the arithmetic green or red. So `typeInto()`
+  reveals the existing DOM progressively by walking its text nodes, rather than retyping a
+  string and swapping the HTML in at the end — which would make every marked line flash.
+  Verified on a real run: 7 rule-marked lines and 12 coloured amounts survive the reveal.
+- **The rate is per-line, not per-character.** A long line at the mockup's 18ms/char takes
+  two seconds, and there are twenty of them. Each line finishes inside 340ms however long
+  it is, so the pace of the run is exactly what it was before the effect existed.
+- **An idle terminal says it is idle.** One line — *"Agent asleep. Say what you want and
+  deploy."* — rather than looping fake activity. Fabricating agent behaviour that is not
+  happening is the one thing this screen must never do, and there is a test that the
+  mockup's canned lines did not ship.
 
-Two columns: a 420px control rail on the left, the agent's work on the right.
+Under `prefers-reduced-motion` each line prints whole. The information still arrives; only
+the motion goes.
 
-**Left, "Your order"** — a mandate card. Avatar, name, address, then a dark **card-on-file**
-strip showing `•••• 1007` beside a gold chip and a green `TOKENISED` pill. Under it the two
-limits are drawn as meters rather than written as numbers: a rose **hard cap** bar at full
-width labelled *"never exceeded"*, and an amber **soft cap** bar labelled *"asks you
-first"*, with the note *"Anything above the soft cap comes back to you before it is
-bought."* Then the order textarea, pre-filled with *"Order 1 paneer bhurji and 4 tandoori
-roti"*, a full-width **Deploy Agent** button, and a **Transactions** button that opens the
-statement drawer.
+### Count-ups and the bento, on real numbers
 
-Below that, a second card: **"On the menu today"**, with a badge reading `7 of 8
-orderable`, and a two-column **dish grid** straight from her live menu. Each tile shows the
-dish name, its category in small caps and the price. A dish she has unticked is dimmed and
-its button reads **in person** — visible, but not orderable, which is exactly what the
-catalog publishes. A discounted dish shows its old price struck through beside the new one
-and adds *· on sale* to the category line.
+Same principle, and the same trap: the mockup animated to hardcoded targets (94% / 6% / 59
+agents). **Every number here is fetched**, and a test fails on any `countUp()` call whose
+target is a literal. They also run **once per value** — these panels poll every two seconds
+and a KPI that restarts from zero each time is noise, not animation.
 
-**The picker is a real basket.** A tile starts with **+ Add**; once picked it becomes a
-`− 2 +` stepper and the tile turns indigo, and a bar under the order box shows
-`3 items · ₹330` with a **Clear**. The order text is written *from* the basket, so tapping
-the same dish twice gives **"Order 2 veg thali"** rather than *"1 veg thali, 1 veg thali"* —
-which is what the parser would otherwise have to untangle, and what a customer would
-rightly find odd.
+The buyer console's bento reads four facts off the live trail: the customer's own caps from
+their profile; **"Demand you can see"** from `/api/demand` (the real off-menu asks, one bar
+each); **"Every order, gated"** as the actual cleared/escalated split from the decision log
+— it currently reads 53/47, not the mockup's 94/6; and **"Full audit, always"** as this
+account's most recent real orders, with a coral bar for any the rules stopped.
 
-Typing by hand wins. The box is the order and the basket only fills it in, so the moment
-they disagree the tiles reset rather than showing counts that are no longer in the sentence
-being sent. And the basket is a way of building that sentence, never a way around the
-parse: what it writes goes through `/api/parse-cart` exactly as typed text does, and every
-gate after it is unchanged.
+### Entrance animations, first paint only
 
-**Right, "Your buying agent"** — a four-step progress stepper above a dark glass terminal.
-The steps are in the order they really run, which is the two-party story in one glance:
+Rows blur in when they arrive and never again. `firstPaint(key)` returns the class only the
+first time it sees a row, so on a board that rebuilds every two seconds an existing
+escalation just sits there. Verified with two live escalations: the new one animates in,
+the one already on screen does not. A merchant cannot work from a list that re-animates
+under her.
 
-```
- (1) Discover        (2) Your limits      (3) Negotiate       (4) Settle
-     her catalog         bounded check        her limits          Razorpay
-```
+### The one sharp edge of the alias layer
 
-A finished phase turns emerald, the running one indigo with a halo, and a phase that fails
-turns rose **while the ones before it stay green** — the point is showing how far it got.
-The stepper is a renderer like `markLimits`: it reports which phase the agent is in and
-decides nothing.
+`--paper` named the *light ink that sat on the coffee ground* in the previous pass, and it
+names *the page ground itself* in this one. So every rule doing `color: var(--paper)`
+became near-black text on near-black — **invisible headings, with nothing erroring
+anywhere.** Nine rules across three pages, plus one in `evidence.html` that the test caught
+after the manual sweep had missed it.
 
-The terminal itself is a mac-style window with a translucent blurred title bar over a
-slate gradient: three red/amber/green dots, the agent's id as its name, and a state chip on
-the right that moves `IDLE` → `WAKING` → `RUNNING`, then `ASKING YOU` in amber while it
-waits on the customer, `SETTLING`, `AWAITING PAYMENT` while the customer is on Razorpay's
-page, and `COMPLETE` in green. A run that ends badly parks on the reason rather than a
-generic failure: `REFUSED`, `DECLINED`, `CANCELLED`, `STOPPED`, `NO ANSWER`, `UNPAID`,
-`NOTHING TO ORDER` or `ERROR`. Inside, timestamped lines in a fixed grammar:
+The lesson, and it generalises: **a token whose meaning is a ROLE survives being
+re-pointed; a token whose meaning was a VALUE does not.** `--ok` and `--accent` came
+through untouched. `--paper` did not. There is now a test that no rule anywhere paints text
+with a ground token, which also turned up nine button labels reading dark-on-violet instead
+of the white `.btn` uses.
 
-| kind | colour | used for |
-| --- | --- | --- |
-| `step` | blue, prefixed `>` | an action the agent is taking |
-| `ok` | green | something cleared |
-| `warn` | amber | escalation, counter-offer, a simulated capture |
-| `err` | red | refused |
-| `quiet` | dim grey | context, and the blinking cursor |
-| `head` | purple | a section heading |
+### What a CSS swap cannot reach
 
-Bold text inside a line renders white, so amounts and ids stand out of the sentence.
+Four things, and they are the same four the previous restyle recorded, which is why they
+were gone looking for rather than discovered on camera:
 
-**The customer is never shown her limits.** The terminal used to print
-*"Her limits: max ₹500 per order, human check from ₹400"* straight from the catalog feed,
-and then quote her threshold verbatim out of the escalation reason. `catalog.py` still
-publishes those numbers, because a well-behaved buyer *agent* can use them to self-limit —
-but a human reading this screen is the other side of the negotiation, and a customer who
-learns the threshold has been handed the rule to game. `customerSafeReason()` rewrites the
-two limit-bearing reasons exactly as `adapter_mcp._customer_safe_reason()` does
-server-side, and everything that says nothing about her limits passes through untouched.
+- **Colour inlined in JS.** `order.html` calls `setState("RUNNING", "#56d364")` and a dozen
+  variants — the terminal's state chip is coloured from JavaScript, not CSS. 65 hex
+  literals in that file alone were remapped by role.
+- **`dashboard.py` carries its own stylesheet.** The audit page is server-rendered and
+  loads no CSS file, so the tokens are declared a second time inside it — and the fonts a
+  third, pointing at the same two files off `/static`. That duplication is deliberate and
+  worth knowing: change a token in `shared.css` and this one needs the same edit.
+- **`.badge` had to *become* the new stamp rather than be replaced**, because it is what a
+  dozen template literals across the consoles emit.
+- **The pinned-ticket motif lived in `merchant.html`, not `shared.css`** — the queue cards
+  had their own rotation and a brass-pin `::before`. Tilt reads as a print artefact on
+  paper and as a mistake on glass, so it became a status edge: amber where a human is being
+  asked, coral where a hard rule refused.
 
-**Lines that quote one of the merchant's hard limits are marked differently** — a left rule
-down the line, the rule's name (`budget cap`, `human confirmation threshold`, `mandate`,
-`hard cap`, `soft cap`, `flexible margin`) underlined with a dotted purple line, and every
-amount in that line rendered bold with a coloured glow: green where the arithmetic cleared,
-red where it did not. See "Showing the boundary, not describing it".
+### Page by page
 
-Below the terminal an **ask panel** slides in whenever the agent needs its own human, with
-the question in amber. It is rebuilt per question: a soft-cap confirmation shows
-**YES / NO** against the amount, while an off-menu miss shows a free-text box placeholdered
-*"e.g. one masala dosa and a coffee"* with **Send / Cancel**. When Twilio is configured the
-same panel reads *"Waiting for your WhatsApp reply…"* and either channel resolves it —
-answering on screen posts through the real `/webhook/sms-reply`, so the offline path
-exercises the live one.
+Every console page carries the same topbar: wordmark with a violet gradient mark, a role
+chip reading **Buyer** or **Merchant**, and links across to the other side, the audit trail
+and home. (Below 900px the role chip hides and below 640px the bar wraps — it is one flex
+row with no room to spare, and at 618px the links climbed straight over the chip. Found in
+a narrow viewport, not at the desktop width everything gets designed at.)
 
-The same panel is where the **payment link** appears once the cart is agreed: *"Your order
-is ready. Pay ₹440 on Razorpay's own page."* with a **Pay ₹440** link and **Not now**. It
-is a plain anchor the customer clicks — this page structurally cannot submit a payment for
-them, which is the same boundary the MCP adapter has. The terminal then polls Razorpay
-until the link reads paid, and says so.
+- **`/`** — landing page, full aurora, blur-in headline, two door cards into the consoles.
+- **`/buyer`** — one-time account setup: who you are, card on file (number and CVV never
+  leave the browser), and the three caps — hard, soft, and the default for a standing order.
+- **`/buyer/order`** — the studio a judge watches. A 420px control rail (mandate card with
+  the caps drawn as meters, order box, dish picker that is a real basket, standing orders)
+  beside the four-step stepper and the typing terminal, with the bento underneath.
+- **`/merchant`** — one-time shop setup: identity, the two limits the core decides against,
+  and today's menu with a per-dish "agents may order" toggle.
+- **`/merchant/orders`** — the cockpit. Sticky command bar with four count-up KPIs
+  (today's revenue, active agents, interventions, and the share of settled revenue that
+  came from standing orders), then three tabs: live ops and escalations beside a WhatsApp
+  phone mock-up; AI growth and yield; trust and the audit ledger. Plus a fourth for
+  disputes.
+- **`/audit`** — the full trail, server-rendered by `dashboard.py`, with a `SIMULATED`
+  stamp for any `sim_` reference and a red **"no Razorpay call made"** on anything the
+  rules stopped, so the claim is checkable rather than takeable on trust.
+- **`/evidence/<id>`** — one order's whole record, with an `@media print` sheet so Ctrl+P
+  is the PDF exporter.
+- **`/catalog`** is raw JSON, deliberately — it is what a buyer agent fetches.
 
-Bottom-centre, a **refund toast**: a dark maroon card with a `↺` mark reading *"Order #N
-rejected by the kitchen. ₹480 automatically refunded via the Razorpay API."*, or a green
-`✓` version when she accepts. It also writes the same fact into the terminal, so a video
-catches it either way.
-
-### `/merchant` — the shop's one-time setup
-
-Heading **"Set up your shop"**, with the same already-configured banner pattern (*"Your shop
-is set up."* → **Go to orders**). Three sections:
-
-- **Your shop** — name, address, phone. The hint says the phone is *"where escalation alerts
-  are sent when an order needs you."*
-- **What you'll accept from an agent** — **Largest order you'll take** (*"Anything bigger is
-  refused outright."*) and **Ask me from** (*"Orders this size or above wait for your yes."*).
-  These two numbers are what `negotiation.py` decides against.
-- **Today's menu** — a grid with column headers Dish · Category · Price · Stock, one row per
-  dish, each row carrying an **"agents may order"** checkbox and a `×` to remove it.
-  **+ Add a dish** appends a blank row. A dish currently on an inventory sale shows a small
-  amber line under it: *"on sale — you usually charge ₹150"*, so she is never reading a
-  number she did not type without knowing why.
-
-**Save and continue** validates before saving; a refused save shows the reason as a toast
-and leaves the previous shop untouched.
-
-### `/merchant/orders` — the cockpit
-
-A **sticky command bar** sits under the topbar and stays there as she scrolls: a pulsing
-green **live** pill on the left, and three KPIs on the right — **Today's revenue** in
-emerald (real `pay_` captures only, dated today, refunds excluded), **Active agents**, and
-**Interventions** in amber (escalations raised today). Below it her mandate strip, then
-three tabs. The first carries a count badge that turns amber when anything is waiting.
-
-**Tab 1 — Live ops & escalations.** Two columns.
-
-*Left, "Waiting on you":* one card per order, refreshed every two seconds, with a coloured
-left edge — amber for a threshold escalation, rose for a hard-rule refusal. Each carries a
-status badge (**NEEDS YOUR OK** / **REFUSED BY RULE**), the protocol pill, the agent id in
-monospace, its trust tier, the cart and total, and the reason in the core's own words.
-
-Under that is the **threshold bar**: her two limits drawn to scale on one track, with this
-order's total filling it — green below her confirmation threshold, amber above it, rose for
-a hard-rule refusal — and two tick marks showing exactly where *asked from* and *cap* fall.
-The legend reads `this order ₹440 · asked from ₹400 · cap ₹500`. Every number in it comes
-from the server; the colour follows the decision the core already made.
-
-An ordinary escalation offers **Approve as asked** / **Decline** / **Counter with less** —
-the last expands a per-dish stepper (`− 2 +`) and a **Send this smaller order back** button.
-A hard-rule refusal offers only **Decline and close**, above a note explaining that the
-system will not let it be approved here and that this is deliberate.
-
-An entry that is **already paid for** — the pay-first flow, from either door — is decided
-through the shared lifecycle rather than the adapter's own session, and **"Counter with
-less" is not offered**: the money is already taken, so the only answers are accept or
-decline-and-refund. Its reason line says so.
-
-*Right, "Amma's phone":* an actual phone mock-up — rounded dark bezel, dark screen, a
-WhatsApp-style header with an `AK` avatar reading *"Amma's Kitchen bot · WhatsApp · mock
-transport"* (or *"live via Twilio"*). Messages render as chat bubbles newest-last, each
-opening with who it was written for — **→ TO AMMA** or **→ TO THE CUSTOMER**, the latter
-tinted and dashed — the recipient in monospace, and a pill: **APPROVED** / **REJECTED** /
-**AWAITING REPLY** for hers, or *"answer in the buyer console"* for the customer's. A send
-that failed shows *"delivery failed: …"* in rose inside the bubble.
-
-At the bottom, **quick-reply buttons that follow the question actually asked**: a green
-**1 · Approve** and a rose **2 · Reject** under a merchant escalation, or **YES / NO**
-under a customer question, with a line above saying which side is being asked and how many
-of her orders are outstanding. Plus a free-text box for anything else (`1 #42`). The note
-underneath says plainly that this posts to the same `/webhook/sms-reply` Twilio calls, so
-the loop on screen is the real one, and that replies are parsed by a regex rather than a
-model.
-
-**Tab 2 — AI growth & yield.** Three cards. The **AI Strategist** with an indigo left edge,
-a window dropdown (last 24 hours / 7 days / 30 days) and **Read my numbers**; the answer
-renders as two lines, the observation in body text and the action beneath it in indigo
-bold, over a row of stat tiles (revenue settled, orders needing confirmation, declined
-after payment, add-ons taken) with amber tiles for anything customers asked for that she
-does not sell. Then **Dynamic yield** with its **Optimize yield** button, whose result is a
-list of before/after price tags — `Veg Thali  ₹150  →  ₹127  · 20 left, discounted, plenty
-in stock` — the old price struck through in grey, the new one in an emerald pill. Then
-**Asked for, but not on your menu**, rendered as amber demand chips with a count badge
-(`2 pizzas ③`) rather than a table, because there are usually only a handful.
-
-**Tab 3 — Trust & audit ledger.** A stat row (recent decisions · escalated to you · stopped
-before Razorpay · captured), the **Buyer agents & earned trust** table (agent · tier ·
-completed orders), and the **decision ledger**: a search box that filters by agent, dish or
-decision, a three-way segmented control (**All / Settled / Stopped by a rule**), and the
-table itself — # · agent · protocol · cart · total · decision · **settlement**. The
-settlement column is the one to look at: an emerald **PAID** pill for a real capture, an
-amber **SIMULATED** pill for a `sim_` reference, a sky **REFUNDED** pill, and a rose
-**NO RAZORPAY CALL** pill for anything the rules stopped.
-
-### `/audit` — the full trail
-
-Server-rendered by `dashboard.py` rather than fetched, on a light page of its own, with a
-meta refresh so rows appear live while buyer agents run in another terminal. Heading
-*"Amma's Kitchen — Agent Audit Trail"*, subtitle *"Every decision this system has made, and
-whether money moved."* Then the merchant mandate in force, six stat cards (decisions
-logged · approved · escalated to human · rejected by human · payments captured · revenue
-captured), the per-agent trust table, and the decision log: **# · Time (UTC) · Agent ·
-Protocol · Cart · Total · Decision · Reason · Payment**.
-
-The Payment column reads `PAID` for a real capture, **`SIMULATED` for a `sim_` reference**,
-and for anything the rules stopped it says, in red, **"no Razorpay call made"** — so the
-claim that refused orders never touch money is something a viewer can check rather than
-take on trust. An MCP row also renders the customer's own words beside the system's reason
-as *"customer wanted: …"*.
-
-### `/catalog` and `/docs`
-
-`/catalog` is raw JSON, deliberately — it is what a buyer agent fetches, and showing it
-unstyled makes that point. `/docs` is FastAPI's own generated API reference for the three
-REST protocols.
+The mockup this was ported from is committed at `design/reference_mockup.html` and the
+brief at `design/motion_terminal_brief.md`.
 
 ## Two parties, two mandates (added after the consoles were built)
 
@@ -1311,7 +1200,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**464 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**483 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

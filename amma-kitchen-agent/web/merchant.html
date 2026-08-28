@@ -9,10 +9,10 @@
   /* THE BOARD. This page is where the machine works, so it sits on the
      coffee ground while the customer's pages stay on paper. The queue is
      drawn as chits pinned to it. */
-  body { background: var(--coffee-2); color: var(--paper); }
-  .page h1 { color: var(--paper); }
-  .page > .lede { color: #A69B87; }
-  .page h2 { color: var(--paper); }
+  body { background: var(--bg); color: var(--ink); }
+  .page h1 { color: var(--ink); }
+  .page > .lede { color: #948FA8; }
+  .page h2 { color: var(--ink); }
 
   /* ---- sticky command bar: identity, live dot, and the three numbers
          Amma actually cares about while she is working ---- */
@@ -31,31 +31,31 @@
   }
   .kpi:first-child { border-left: 0; }
   .kpi .n { font-family: var(--font-display); font-size: 22px; font-weight: 700;
-            letter-spacing: -.02em; line-height: 1.15; color: var(--paper); }
+            letter-spacing: -.02em; line-height: 1.15; color: var(--ink); }
   .kpi .l { font-size: 10.5px; font-weight: 650; letter-spacing: .05em;
-            text-transform: uppercase; color: #9A8E7B; font-family: var(--font-mono); }
-  .kpi.rev .n { color: #8FBF7F; }
-  .kpi.act .n { color: #D9A05B; }
-  .kpi.std .n { color: #C9A227; }
+            text-transform: uppercase; color: #948FA8; font-family: var(--font-mono); }
+  .kpi.rev .n { color: #3DE8A0; }
+  .kpi.act .n { color: #FFB020; }
+  .kpi.std .n { color: #FFB020; }
 
   /* ---- tabs ---- */
   .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--coffee-border); margin-bottom: 22px; }
   .tabs button {
     appearance: none; border: 0; background: transparent; cursor: pointer;
-    font-family: var(--font-body); font-size: 14px; font-weight: 600; color: #9A8E7B;
+    font-family: var(--font-body); font-size: 14px; font-weight: 600; color: #948FA8;
     padding: 11px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px;
     display: inline-flex; align-items: center; gap: 8px;
     transition: color .15s ease, border-color .15s ease;
   }
-  .tabs button:hover { color: var(--paper); }
+  .tabs button:hover { color: var(--ink); }
   .tabs button.on { color: var(--gold); border-bottom-color: var(--gold); }
   .tab-count {
     font-size: 10.5px; font-weight: 700; min-width: 18px; padding: 1px 6px;
-    border-radius: 999px; background: var(--coffee); color: #C9BFA9;
+    border-radius: 999px; background: var(--coffee); color: #C9C2E0;
     font-family: var(--font-mono);
   }
-  .tabs button.on .tab-count { background: var(--gold); color: var(--coffee); }
-  .tab-count.hot { background: var(--rust); color: var(--paper); }
+  .tabs button.on .tab-count { background: var(--gold); color: #fff; }
+  .tab-count.hot { background: var(--rust); color: var(--ink); }
   .panel { display: none; }
   .panel.on { display: block; animation: fade .2s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
@@ -65,26 +65,20 @@
   @media (max-width: 1020px) { .ops { grid-template-columns: 1fr; } }
 
   /* Pinned to the board: a paper chit, tacked up at a slight angle with
-     a brass pin. Alternate cards lean the other way so a stack of them
-     reads as paper rather than as rows. */
+     status edge -- amber where a human is being asked, coral where a hard
+     rule refused. The tilt and the brass pin went with the paper. */
   .queue-card {
-    margin-bottom: 24px; background: var(--paper-card); color: var(--ink);
-    border: 0; border-radius: var(--radius-chit); padding: 20px 22px;
-    box-shadow: 0 14px 24px rgba(0, 0, 0, .4);
-    transform: rotate(-1.6deg); transition: transform .18s ease;
+    margin-bottom: 16px; background: var(--card); color: var(--ink);
+    border: 1px solid var(--line); border-left: 2px solid var(--amber);
+    border-radius: var(--radius-lg); padding: 20px 22px;
+    transition: border-color .18s ease;
   }
-  .queue-card:nth-child(even) { transform: rotate(1.3deg); }
-  .queue-card:hover { transform: rotate(0deg); box-shadow: 0 18px 30px rgba(0, 0, 0, .45); }
-  .queue-card::before {
-    content: ''; position: absolute; top: -7px; left: 32px;
-    width: 13px; height: 13px; border-radius: 50%; border: 0;
-    background: radial-gradient(circle at 32% 30%, #F0D68A, var(--gold-deep));
-    box-shadow: 0 2px 5px rgba(0, 0, 0, .45);
-  }
-  .queue-card.hard::before { background: radial-gradient(circle at 32% 30%, #E0A79A, var(--brick)); }
-  .queue-card .muted { color: var(--ink-soft); }
+  .queue-card.hard { border-left-color: var(--coral); }
+  .queue-card:hover { border-color: var(--line-2); border-left-color: var(--amber); }
+  .queue-card.hard:hover { border-left-color: var(--coral); }
+  .queue-card .muted { color: var(--muted); }
   .queue-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
-  .queue-cart { font-family: var(--font-display); font-size: 20px; font-weight: 700;
+  .queue-cart { font-size: 19px; font-weight: 700;
                 letter-spacing: -.01em; }
 
   /* the threshold bar: her two limits drawn to scale, with this order on them */
@@ -120,40 +114,40 @@
     display: flex; flex-direction: column; height: 505px;
   }
   .phone-top {
-    padding: 11px 15px; background: #2E1B0E; border-bottom: 1px solid var(--dark-line);
+    padding: 11px 15px; background: #0B0716; border-bottom: 1px solid var(--dark-line);
     display: flex; align-items: center; gap: 9px;
   }
   .phone-av {
     width: 30px; height: 30px; border-radius: 50%; flex: none;
-    background: #4F7942; color: var(--paper); display: grid; place-items: center;
+    background: #3DE8A0; color: var(--ink); display: grid; place-items: center;
     font-size: 13px; font-weight: 700;
   }
-  .phone-who { font-size: 13px; font-weight: 620; color: #F1ECDF; line-height: 1.2; }
-  .phone-sub { font-size: 10.5px; color: #A2947E; }
+  .phone-who { font-size: 13px; font-weight: 620; color: #F5F3FA; line-height: 1.2; }
+  .phone-sub { font-size: 10.5px; color: #948FA8; }
   .phone-feed { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
   .phone-feed::-webkit-scrollbar { width: 6px; }
-  .phone-feed::-webkit-scrollbar-thumb { background: #4A3320; border-radius: 4px; }
+  .phone-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 4px; }
   .bubble {
     max-width: 92%; align-self: flex-start;
-    background: var(--coffee-2); color: var(--paper); border-radius: 10px;
+    background: var(--coffee-2); color: var(--ink); border-radius: 10px;
     padding: 12px 14px; font-size: 13px; line-height: 1.5; white-space: pre-wrap;
   }
   .bubble-meta { display: flex; justify-content: space-between; gap: 9px; align-items: center; margin-top: 6px; }
-  .bubble-to { font-family: var(--mono); font-size: 10px; color: #A2947E; }
-  .bubble-fail { color: #D98070; font-size: 10.5px; margin-top: 5px; }
+  .bubble-to { font-family: var(--mono); font-size: 10px; color: #948FA8; }
+  .bubble-fail { color: #FF7A5C; font-size: 10.5px; margin-top: 5px; }
   /* A message written for the customer, shown here because in a demo the
      two people are usually the same phone. Tinted and labelled so it is
      never mistaken for something Amma is being asked. */
-  .bubble.to-customer { background: #22331D; border: 1px dashed #4A5C3F; }
+  .bubble.to-customer { background: #0E2B22; border: 1px dashed #1E5B44; }
   .bubble-tag {
     font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-    color: #C2A97E; margin-bottom: 6px; display: block;
+    color: #FFC96B; margin-bottom: 6px; display: block;
   }
-  .bubble.to-customer .bubble-tag { color: #C2A97E; }
-  .qr-hint { font-size: 10.5px; color: #A2947E; margin: 0 0 8px; text-align: center; }
+  .bubble.to-customer .bubble-tag { color: #FFC96B; }
+  .qr-hint { font-size: 10.5px; color: #948FA8; margin: 0 0 8px; text-align: center; }
   .bubble .badge { font-size: 9.5px; padding: 1px 7px; }
-  .phone-empty { color: #A2947E; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
-  .phone-input { border-top: 1px solid var(--dark-line); background: #2E1B0E; padding: 11px; }
+  .phone-empty { color: #948FA8; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
+  .phone-input { border-top: 1px solid var(--dark-line); background: #0B0716; padding: 11px; }
   .quick-replies { display: flex; flex-direction: column; margin-bottom: 9px; }
   .quick-replies button {
     flex: 1; appearance: none; cursor: pointer; font-family: inherit;
@@ -161,17 +155,17 @@
     border: 1px solid transparent; transition: filter .14s ease;
   }
   .quick-replies button:hover { filter: brightness(1.12); }
-  .qr-yes { background: rgba(79,121,66,.22); color: #8FBF7F; border-color: rgba(79,121,66,.5); }
-  .qr-no  { background: rgba(155,58,44,.22); color: #D98070; border-color: rgba(155,58,44,.5); }
+  .qr-yes { background: rgba(61, 232, 160,.22); color: #3DE8A0; border-color: rgba(61, 232, 160,.5); }
+  .qr-no  { background: rgba(255, 122, 92,.22); color: #FF7A5C; border-color: rgba(255, 122, 92,.5); }
   .phone-row { display: flex; gap: 7px; }
   .phone-row input {
-    flex: 1; background: #1C0F06; border: 1px solid var(--dark-line); color: #F1ECDF;
+    flex: 1; background: #070410; border: 1px solid var(--dark-line); color: #F5F3FA;
     border-radius: 9px; padding: 8px 11px; font-size: 12.5px;
   }
-  .phone-row input:focus { border-color: #6B5940; box-shadow: none; }
-  .phone-row input::placeholder { color: #6B5940; }
+  .phone-row input:focus { border-color: #948FA8; box-shadow: none; }
+  .phone-row input::placeholder { color: #948FA8; }
   .phone-send {
-    appearance: none; cursor: pointer; border: 0; background: var(--gold); color: var(--coffee);
+    appearance: none; cursor: pointer; border: 0; background: var(--gold); color: #fff;
     border-radius: 9px; padding: 0 14px; font-size: 12.5px; font-weight: 650; font-family: inherit;
   }
 
@@ -221,7 +215,7 @@
     border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px; font-weight: 600;
   }
   .demand-chip .n {
-    background: var(--warn); color: var(--paper); border-radius: 999px;
+    background: var(--warn); color: var(--ink); border-radius: 999px;
     font-size: 11px; font-weight: 700; padding: 1px 8px;
   }
 
@@ -230,23 +224,26 @@
   /* The tables on this page sit on the board, so they invert. */
   #panel-ledger .card, #panel-ledger .card-flush { background: var(--coffee); border-color: var(--coffee-border); }
   #panel-ledger .card::before { display: none; }
-  #panel-ledger th { background: var(--coffee-2); color: #A2947E; border-bottom-color: var(--coffee-border); }
-  #panel-ledger td { color: #C9BFA9; border-bottom-color: var(--coffee-border); font-family: var(--font-mono); font-size: 12px; }
+  #panel-ledger th { background: var(--coffee-2); color: #948FA8; border-bottom-color: var(--coffee-border); }
+  #panel-ledger td { color: #C9C2E0; border-bottom-color: var(--coffee-border); font-family: var(--font-mono); font-size: 12px; }
   #panel-ledger tbody tr:hover { background: rgba(241, 236, 223, .04); }
-  #panel-ledger .muted { color: #A2947E; }
-  #panel-ledger .empty { color: #A2947E; }
-  #panel-ledger .insight-stat { background: var(--coffee); border-color: var(--coffee-border); color: #C9BFA9; }
-  #panel-ledger .insight-stat b { color: var(--paper); font-family: var(--font-display); }
-  #panel-ledger .note { color: #A2947E; }
-  #panel-ledger input { background: var(--coffee-2); border-color: var(--coffee-border); color: var(--paper); }
+  #panel-ledger .muted { color: #948FA8; }
+  #panel-ledger .empty { color: #948FA8; }
+  #panel-ledger .insight-stat { background: var(--coffee); border-color: var(--coffee-border); color: #C9C2E0; }
+  #panel-ledger .insight-stat b { color: var(--ink); font-family: var(--font-display); }
+  #panel-ledger .note { color: #948FA8; }
+  #panel-ledger input { background: var(--coffee-2); border-color: var(--coffee-border); color: var(--ink); }
   #panel-ledger .seg { background: var(--coffee-2); border-color: var(--coffee-border); }
-  #panel-ledger .seg button { color: #9A8E7B; }
-  #panel-ledger .seg button.on { background: var(--gold); color: var(--coffee); }
+  #panel-ledger .seg button { color: #948FA8; }
+  #panel-ledger .seg button.on { background: var(--gold); color: #fff; }
   .filters input { max-width: 260px; }
   .settle { font-size: 10.5px; }
 </style>
 </head>
 <body>
+
+  <div class="aurora aurora-quiet" aria-hidden="true"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
+
 
   <div class="topbar">
     <div class="brand">
@@ -447,6 +444,51 @@
 <script>
 const $ = (id) => document.getElementById(id);
 const rupee = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+
+/* ------------------------------------------------------- motion helpers
+
+   Both of these come from the design pass, and both are pinned to real
+   values here rather than the mockup's fixed ones.
+
+   The entrance animation is gated on having appeared before. This board
+   polls every two seconds; rows that blur in on every refresh would be
+   unusable to work from, which is the difference between an animation
+   and a flicker. SEEN is keyed by whatever identifies the row, so a
+   genuinely new escalation still arrives with the entrance and an
+   existing one just sits there. */
+
+const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const SEEN = new Set();
+
+function firstPaint(key) {
+  if (REDUCED_MOTION || SEEN.has(key)) return "";
+  SEEN.add(key);
+  return " enter";
+}
+
+function spot(e, el) {
+  const r = el.getBoundingClientRect();
+  el.style.setProperty("--mx", (e.clientX - r.left) + "px");
+  el.style.setProperty("--my", (e.clientY - r.top) + "px");
+}
+
+function countUp(el, target, { duration = 1000, prefix = "", suffix = "" } = {}) {
+  if (!el) return;
+  const fmt = (n) => prefix + (prefix === "₹" ? Number(n).toLocaleString("en-IN") : n) + suffix;
+  // Once per value. This board refetches constantly, and a KPI that
+  // restarts from zero every two seconds is noise.
+  if (el.dataset.counted === String(target)) return;
+  el.dataset.counted = String(target);
+  if (REDUCED_MOTION) { el.textContent = fmt(target); return; }
+
+  const start = performance.now();
+  const tick = (now) => {
+    const p = Math.min(1, (now - start) / duration);
+    el.textContent = fmt(Math.round((1 - Math.pow(1 - p, 3)) * target));
+    if (p < 1) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
 const HARD_RULE = (reason) => !reason.includes("human confirmation threshold");
 
 let MANDATE = null;
@@ -549,7 +591,7 @@ async function renderDisputes() {
         const cart = JSON.parse(d.cart_json || "[]")
           .map((l) => `${l.qty}×${titleize(l.item)}`).join(", ");
         return `
-          <div class="card queue-card" style="transform:none">
+          <div class="card queue-card">
             <div class="queue-head">
               <span class="badge badge-stop">disputed</span>
               <span class="proto">${esc(d.protocol.toUpperCase())}</span>
@@ -758,7 +800,8 @@ async function renderQueue() {
     }).join("");
 
     return `
-      <div class="card queue-card ${hard ? "hard" : ""}">
+      <div class="card queue-card spot ${hard ? "hard" : ""}${firstPaint("q" + p.session_id)}"
+           onmousemove="spot(event,this)">
         <div class="queue-head">
           <span class="badge ${hard ? "badge-stop" : "badge-warn"}">${hard ? "REFUSED BY RULE" : "NEEDS YOUR OK"}</span>
           <span class="proto">${p.protocol.toUpperCase()}</span>
@@ -855,7 +898,7 @@ async function sendReduced(sessionId, protocol) {
 
 async function renderAgents() {
   const { agents } = await api("/api/agents");
-  $("kpiAgents").textContent = agents.length;
+  countUp($("kpiAgents"), agents.length);
   if (!changed("agents", agents)) return;
   $("agentRows").innerHTML = agents.length
     ? agents.map((a) => `
@@ -899,14 +942,12 @@ async function renderEvents(fromCache) {
   const today = new Date().toISOString().slice(0, 10);
   const settled = events.filter((e) => e.payment_id && !e.payment_id.startsWith("sim_"));
   const refunded = new Set(events.filter((e) => e.decision === "REFUNDED").map((e) => e.order_ref));
-  $("kpiRevenue").textContent = rupee(
-    settled
-      .filter((e) => (e.ts || "").startsWith(today) && !refunded.has(e.id))
-      .reduce((sum, e) => sum + e.total_inr, 0)
-  );
-  $("kpiInterventions").textContent = events.filter(
+  countUp($("kpiRevenue"), settled
+    .filter((e) => (e.ts || "").startsWith(today) && !refunded.has(e.id))
+    .reduce((sum, e) => sum + e.total_inr, 0), { prefix: "₹" });
+  countUp($("kpiInterventions"), events.filter(
     (e) => e.decision === "ESCALATE" && (e.ts || "").startsWith(today)
-  ).length;
+  ).length);
 
   /* Standing orders are revenue that arrived without anybody placing an
      order, so it is worth her seeing separately from the rest. Computed
@@ -918,8 +959,8 @@ async function renderEvents(fromCache) {
   const standingTotal = banked
     .filter((e) => e.source === "routine")
     .reduce((sum, e) => sum + e.total_inr, 0);
-  $("kpiStanding").textContent = bankedTotal
-    ? Math.round((standingTotal / bankedTotal) * 100) + "%" : "0%";
+  countUp($("kpiStanding"),
+    bankedTotal ? Math.round((standingTotal / bankedTotal) * 100) : 0, { suffix: "%" });
   $("kpiStanding").title = standingTotal
     ? `${rupee(standingTotal)} of ${rupee(bankedTotal)} settled came from customers' standing orders`
     : "No standing orders have settled yet";
@@ -957,7 +998,7 @@ async function renderEvents(fromCache) {
         const cls = e.decision === "APPROVE" ? "badge-ok"
           : e.decision === "REJECTED" ? "badge-stop"
           : e.decision === "PAYMENT_NOT_COMPLETED" ? "badge-mute" : "badge-warn";
-        return `<tr>
+        return `<tr class="${firstPaint("e" + e.id).trim()}">
           <td class="mono muted">${e.id}</td>
           <td class="mono">${esc(e.agent_id)}</td>
           <td><span class="proto">${esc(e.protocol.toUpperCase())}</span></td>
