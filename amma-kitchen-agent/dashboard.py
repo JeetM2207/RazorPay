@@ -31,19 +31,28 @@ router = APIRouter()
 # a viewer verify at a glance rather than take on trust.
 _NON_PAYING_DECISIONS = ("ESCALATE", "REJECTED", "COUNTER_OFFER", "PAYMENT_NOT_COMPLETED")
 
-_DECISION_STYLES = {
-    "APPROVE": ("#0b7a3b", "#e6f6ec", "APPROVE"),
-    "COUNTER_OFFER": ("#8a5a00", "#fdf3e0", "COUNTER OFFER"),
-    "ESCALATE": ("#9a4a00", "#fdeee0", "ESCALATE"),
-    "REJECTED": ("#a01b2b", "#fdeaec", "REJECTED (human)"),
-    "PAYMENT_NOT_COMPLETED": ("#4a4a52", "#eeeef1", "PAYMENT NOT COMPLETED"),
+# Which stamp each decision gets. The mapping is the project's four
+# semantics, unchanged: cleared, waiting on a human, refused by a hard
+# rule, informational -- only the ink is new.
+_DECISION_STAMPS = {
+    "APPROVE": ("leaf", "APPROVE"),
+    "PAID": ("leaf", "PAID"),
+    "AUTO_CONFIRMED": ("leaf", "AUTO CONFIRMED"),
+    "MERCHANT_ACCEPTED": ("leaf", "ACCEPTED"),
+    "COUNTER_OFFER": ("rust", "COUNTER OFFER"),
+    "ESCALATE": ("rust", "ESCALATE"),
+    "AWAITING_PAYMENT": ("rust", "AWAITING PAYMENT"),
+    "PENDING_MERCHANT_APPROVAL": ("rust", "PENDING HER OK"),
+    "REJECTED": ("brick", "REJECTED (human)"),
+    "MERCHANT_REJECTED": ("brick", "REJECTED"),
+    "REFUNDED": ("brick", "REFUNDED"),
+    "REFUND_FAILED": ("brick", "REFUND FAILED"),
+    "MERCHANT_TIMEOUT_REFUNDED": ("brick", "TIMED OUT"),
+    "PAYMENT_NOT_COMPLETED": ("steel", "PAYMENT NOT COMPLETED"),
+    "UNMATCHED_DEMAND": ("steel", "ASKED FOR"),
 }
 
-_TIER_STYLES = {
-    "NEW": ("#4a4a52", "#eeeef1"),
-    "STANDARD": ("#0b5f9a", "#e5f1fa"),
-    "TRUSTED": ("#0b7a3b", "#e6f6ec"),
-}
+_TIER_STAMPS = {"NEW": "steel", "STANDARD": "gold", "TRUSTED": "leaf"}
 
 
 def _format_cart(cart_json: str) -> str:
@@ -59,13 +68,13 @@ def _format_cart(cart_json: str) -> str:
 
 
 def _decision_badge(decision: str) -> str:
-    fg, bg, label = _DECISION_STYLES.get(decision, ("#4a4a52", "#eeeef1", decision))
-    return f"<span class='badge' style='color:{fg};background:{bg}'>{html.escape(label)}</span>"
+    tone, label = _DECISION_STAMPS.get(decision, ("steel", decision.replace("_", " ")))
+    return f"<span class='stamp {tone}'>{html.escape(label)}</span>"
 
 
 def _tier_badge(tier: str) -> str:
-    fg, bg = _TIER_STYLES.get(tier, ("#4a4a52", "#eeeef1"))
-    return f"<span class='badge' style='color:{fg};background:{bg}'>{html.escape(tier)}</span>"
+    tone = _TIER_STAMPS.get(tier, "steel")
+    return f"<span class='stamp {tone}'>{html.escape(tier)}</span>"
 
 
 def _payment_cell(event: dict) -> str:
@@ -74,18 +83,18 @@ def _payment_cell(event: dict) -> str:
         # It must never render the same as money that actually moved.
         simulated = event["payment_id"].startswith("sim_")
         label = "SIMULATED" if simulated else "PAID"
-        cls = "pending" if simulated else "paid"
+        tone = "rust" if simulated else "leaf"
         return (
-            f"<span class='{cls}'>{label}</span>"
+            f"<span class='stamp {tone}'>{label}</span>"
             f"<div class='mono muted'>{html.escape(event['payment_id'])}</div>"
         )
     if event["payment_link_id"]:
         return (
-            "<span class='pending'>awaiting payment</span>"
+            "<span class='stamp rust'>awaiting payment</span>"
             f"<div class='mono muted'>{html.escape(event['payment_link_id'])}</div>"
         )
     if event["decision"] in _NON_PAYING_DECISIONS:
-        return "<span class='none'>no Razorpay call made</span>"
+        return "<span class='stamp brick'>no Razorpay call</span>"
     return "<span class='muted'>&mdash;</span>"
 
 
@@ -199,69 +208,96 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 {refresh_tag}
 <title>Amma's Kitchen &mdash; Audit Trail</title>
 <style>
+  /* Same tokens as web/shared.css, inlined because this page is rendered
+     server-side and loads no stylesheet. Every family is a system stack:
+     nothing here reaches the network. */
+  :root {{
+    --paper:#F1ECDF; --paper-card:#FBF8F0; --paper-border:#DAD0B8;
+    --ink:#2B1D14; --ink-soft:#6B5940;
+    --coffee:#2E1B0E; --gold:#B8791A; --gold-deep:#8F5C10;
+    --leaf:#4F7942; --rust:#A85C2A; --brick:#9B3A2C; --steel:#5C7A8A;
+    --radius-chit: 3px 16px 3px 16px;
+    --font-display: Georgia, 'Iowan Old Style', Charter, 'Times New Roman', serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+  }}
   * {{ box-sizing: border-box; }}
   body {{
     margin: 0; padding: 32px;
-    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f6f7f9; color: #1a1a1f;
+    font: 15px/1.55 var(--font-body);
+    background: var(--paper); color: var(--ink);
   }}
-  h1 {{ margin: 0 0 4px; font-size: 26px; letter-spacing: -0.3px; }}
-  h2 {{ margin: 32px 0 12px; font-size: 15px; text-transform: uppercase;
-        letter-spacing: 0.6px; color: #5a5a66; }}
-  .sub {{ margin: 0 0 24px; color: #5a5a66; }}
+  h1 {{ margin: 0 0 4px; font-family: var(--font-display); font-size: 30px; letter-spacing: -.01em; }}
+  h2 {{ margin: 32px 0 12px; font-family: var(--font-mono); font-size: 11px;
+        text-transform: uppercase; letter-spacing: .12em; color: var(--gold-deep); }}
+  .sub {{ margin: 0 0 24px; color: var(--ink-soft); }}
   .mandate {{
     display: inline-block; padding: 8px 14px; margin-bottom: 20px;
-    background: #fff; border: 1px solid #e2e4e9; border-radius: 8px;
-    font-size: 13px; color: #4a4a52;
+    background: var(--paper-card); border: 1px solid var(--paper-border); border-radius: 8px;
+    font-size: 13px; color: var(--ink-soft);
   }}
-  .mandate b {{ color: #1a1a1f; }}
+  .mandate b {{ color: var(--ink); }}
   .cards {{ display: flex; flex-wrap: wrap; gap: 12px; }}
   .card {{
-    flex: 1 1 150px; background: #fff; border: 1px solid #e2e4e9;
-    border-radius: 10px; padding: 16px 18px;
+    flex: 1 1 150px; background: var(--paper-card); border: 1px solid var(--paper-border);
+    border-radius: var(--radius-chit); padding: 16px 18px; position: relative;
   }}
-  .card .num {{ font-size: 24px; font-weight: 650; letter-spacing: -0.5px; }}
-  .card .lbl {{ font-size: 12px; color: #5a5a66; margin-top: 2px; }}
-  .wrap {{ overflow-x: auto; background: #fff;
-           border: 1px solid #e2e4e9; border-radius: 10px; }}
+  .card::before {{
+    content: ''; position: absolute; top: 0; left: 18px; right: 18px; height: 0;
+    border-top: 1.5px dashed var(--paper-border);
+  }}
+  .card .num {{ font-family: var(--font-display); font-size: 26px; font-weight: 700;
+                letter-spacing: -.02em; }}
+  .card .lbl {{ font-size: 12px; color: var(--ink-soft); margin-top: 2px; }}
+  .wrap {{ overflow-x: auto; background: var(--paper-card);
+           border: 1px solid var(--paper-border); border-radius: var(--radius-chit); }}
   table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
   th {{
-    text-align: left; padding: 11px 14px; background: #fafbfc;
-    border-bottom: 1px solid #e2e4e9; font-size: 11.5px;
-    text-transform: uppercase; letter-spacing: 0.5px; color: #5a5a66;
+    text-align: left; padding: 11px 14px; background: #F6F1E5;
+    border-bottom: 1px solid var(--paper-border); font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--ink-soft);
     white-space: nowrap;
   }}
-  td {{ padding: 11px 14px; border-bottom: 1px solid #f0f1f4; vertical-align: top; }}
+  td {{ padding: 11px 14px; border-bottom: 1px solid var(--paper-border); vertical-align: top; }}
   tr:last-child td {{ border-bottom: none; }}
-  .mono {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-           font-size: 12px; }}
-  .muted {{ color: #8a8a96; }}
+  .mono {{ font-family: var(--font-mono); font-size: 12px; }}
+  /* Every raw technical value reads as one: ids, references, timestamps. */
+  td.mono, td .mono, .num-cell {{ font-family: var(--font-mono); }}
+  .muted {{ color: #8B7A61; }}
   .nowrap {{ white-space: nowrap; }}
   .num-cell {{ text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }}
-  .reason {{ max-width: 400px; color: #3a3a44; }}
+  .reason {{ max-width: 400px; color: var(--ink); }}
   .buyer-said, .deliver-to {{
     margin-top: 6px; padding-left: 9px; font-size: 12.5px; line-height: 1.45;
-    border-left: 2px solid #d8d5cd; color: #55524c;
+    border-left: 2px solid var(--paper-border); color: var(--ink-soft);
   }}
-  .buyer-said {{ border-left-color: #b9a6e0; }}
-  .deliver-to {{ border-left-color: #a8c6dd; }}
+  .buyer-said {{ border-left-color: var(--gold); }}
+  .deliver-to {{ border-left-color: var(--steel); }}
   .who {{
     font-size: 10.5px; font-weight: 700; letter-spacing: .5px;
-    text-transform: uppercase; color: #8a857c; margin-right: 4px;
+    text-transform: uppercase; color: var(--ink-soft); margin-right: 4px;
   }}
-  .badge {{
-    display: inline-block; padding: 3px 9px; border-radius: 20px;
-    font-size: 11.5px; font-weight: 600; white-space: nowrap;
+  /* The stamp: a rubber-stamped verdict, same component as the consoles. */
+  .stamp {{
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: var(--font-mono); text-transform: uppercase; letter-spacing: .07em;
+    font-size: 10.5px; font-weight: 700;
+    padding: 4px 11px; border-radius: 999px;
+    border: 1.5px solid currentColor;
+    transform: rotate(-2.5deg); white-space: nowrap;
   }}
+  .stamp.leaf {{ color: var(--leaf); }}
+  .stamp.rust {{ color: var(--rust); }}
+  .stamp.brick {{ color: var(--brick); }}
+  .stamp.steel {{ color: var(--steel); }}
+  .stamp.gold {{ color: var(--gold-deep); }}
   .proto {{
-    display: inline-block; padding: 3px 8px; border-radius: 5px;
-    background: #eef0f4; color: #4a4a52; font-size: 11px;
-    font-weight: 650; letter-spacing: 0.4px;
+    display: inline-block; padding: 2px 8px; border-radius: 5px;
+    background: #FAF1E0; border: 1px solid #E7CE9F; color: var(--gold-deep);
+    font-family: var(--font-mono); font-size: 10px;
+    font-weight: 700; letter-spacing: .07em;
   }}
-  .paid {{ color: #0b7a3b; font-weight: 650; font-size: 12px; }}
-  .pending {{ color: #8a5a00; font-size: 12px; }}
-  .none {{ color: #a01b2b; font-size: 12px; font-weight: 600; }}
-  .note {{ margin-top: 14px; font-size: 13px; color: #5a5a66; }}
+  .note {{ margin-top: 14px; font-size: 13px; color: var(--ink-soft); }}
 </style>
 </head>
 <body>

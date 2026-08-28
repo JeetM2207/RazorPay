@@ -226,15 +226,36 @@ except the Razorpay keys degrades to a working offline path.
 ## What the screens actually look like
 
 Written out because a reader should not have to run the thing to know what a judge sees.
-Everything is vanilla HTML/CSS/JS on `shared.css` — no build step, no framework, no CDN
-and no web fonts, so it renders identically offline and on camera. The palette is a
-payments palette: near-white `#f8fafc` ground, white cards on `#e2e8f0` hairlines, slate
-ink, a single indigo accent `#4f46e5` reserved for primary actions, and dark slate
-`#0f172a`/`#1e293b` wherever the machine is speaking rather than the product — the
-terminal, the phone, the card face. Four semantics are used the same way on every surface:
-**emerald `#059669`** cleared / paid, **amber `#b45309`** waiting on a human, **rose
-`#e11d48`** refused by a hard rule, **sky `#0284c7`** informational. Badges are rounded
-pills, cards lift on hover, the page is a 1400px responsive grid.
+Everything is vanilla HTML/CSS/JS on `shared.css` — **no build step, no framework, no CDN
+and no web fonts** — so it renders identically offline and on camera, which is the whole
+point during a live demo. Every family is a system stack; a check of the network tab on
+each page shows requests to `127.0.0.1` and nothing else.
+
+**The motif is a kitchen ticket.** An order in this system *is* a chit: warm paper, a torn
+dashed edge along the top, and a rubber-stamped verdict at an angle. That is not
+decoration — it is what the audit trail actually is, one physical record per decision — and
+the surfaces say so before anyone reads a word. Two grounds, and the split is deliberate:
+**paper for the customer**, who is holding the ticket, and **coffee wherever the machine is
+speaking** — the agent terminal, the merchant's board, the phone, the card face.
+
+| Token | Value | Used for |
+| --- | --- | --- |
+| `--paper` / `--paper-card` | `#F1ECDF` / `#FBF8F0` | page ground, chit face |
+| `--paper-border` | `#DAD0B8` | hairlines and the torn edge |
+| `--ink` / `--ink-soft` | `#2B1D14` / `#6B5940` | body text, secondary text |
+| `--coffee` / `--coffee-2` | `#2E1B0E` / `#1C0F06` | the machine speaking |
+| `--coffee-border` | `#4A3320` | hairlines on the dark ground |
+| `--gold` / `--gold-deep` | `#B8791A` / `#8F5C10` | **primary action** |
+| `--leaf` | `#4F7942` | **paid / cleared** |
+| `--rust` | `#A85C2A` | **waiting on a human** |
+| `--brick` | `#9B3A2C` | **refused by a hard rule** |
+| `--steel` | `#5C7A8A` | **informational** |
+| `--radius-chit` | `3px 16px 3px 16px` | the asymmetric torn corner |
+
+Which status owns which slot is unchanged from the palette before it — only the ink moved.
+`.chit` is the card, `.stamp` the verdict; on the merchant's board the queue renders as
+chits *pinned* to it, tacked at alternating angles with a brass pin, which is why her
+screen reads as a spike of tickets rather than a table of rows.
 
 Every console page carries the same topbar: **Amma's Kitchen** wordmark, a role chip
 reading **Buyer** or **Merchant**, and links across to the other side, the audit trail and
@@ -1535,6 +1556,34 @@ from `REFUNDED`: the customer is owed money and the screen must not say otherwis
 Seen order refs live in `localStorage`, so reloading the page does not replay the day's
 outcomes as if they had just happened, and a first pass marks what is already finished
 before the poll starts.
+
+## What the restyle had to go and find
+
+Porting the design system was mostly `shared.css`, but four things were not in a
+stylesheet at all and would have been left behind by a search-and-replace on the CSS:
+
+- **Colour inlined in JS.** `order.html` calls `setState("RUNNING", "#56d364")` and a dozen
+  variants — the terminal's state chip is coloured from JavaScript, not CSS, so those hex
+  literals had to be found and remapped or the chip would have kept flashing slate green on
+  a coffee ground. Same for the refund toast's marks.
+- **`dashboard.py` carries its own stylesheet.** The audit page is rendered server-side and
+  loads no CSS file, so the tokens are declared a second time inside it. That duplication is
+  deliberate and worth knowing about: change a token in `shared.css` and this one needs the
+  same edit.
+- **`.badge` had to *become* the stamp rather than be replaced.** It is what the consoles'
+  JS emits, in a dozen template literals across `renderQueue`, `renderEvents`,
+  `renderAgents` and `renderSms`. Renaming it to `.stamp` would have meant editing all of
+  them and breaking anything missed, so `.badge` was restyled in place and `.stamp` added
+  beside it for the markup that is written by hand.
+- **The old variable names are kept as aliases.** `--accent`, `--ok`, `--warn`, `--stop`,
+  `--info`, `--surface`, `--line` and the rest now point at the new tokens. Every
+  page-local rule and inline `var(--ok)` therefore picked up the new palette without being
+  rewritten — which is what kept a restyle of this size from turning into a rewrite.
+
+Two smaller adjustments: the dimmest terminal grey measured 4.04:1 on coffee, a shade under
+AA for body text, and was lightened to 5.5:1 — "quiet" still has to be readable on camera.
+And `dashboard.py`'s `.paid` / `.pending` / `.none` classes became dead the moment stamps
+replaced them, so they were removed rather than left as CSS nothing emits.
 
 ## Two bugs the browser found that the suite could not
 

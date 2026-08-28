@@ -12,7 +12,7 @@
   .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
   .pane-num {
     width: 22px; height: 22px; border-radius: 7px; flex: none;
-    background: var(--accent); color: #fff; font-size: 12px; font-weight: 700;
+    background: var(--gold); color: var(--coffee); font-size: 12px; font-weight: 700;
     display: grid; place-items: center;
   }
   .pane-title { font-size: 12px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--ink-2); }
@@ -22,7 +22,7 @@
   .who { display: flex; align-items: center; gap: 12px; }
   .avatar {
     width: 40px; height: 40px; border-radius: 12px; flex: none;
-    background: var(--accent); color: #fff;
+    background: var(--gold); color: var(--coffee);
     display: grid; place-items: center; font-weight: 700; font-size: 16px;
   }
   .who-name { font-weight: 650; letter-spacing: -.01em; }
@@ -31,13 +31,13 @@
   .card-on-file {
     display: flex; align-items: center; gap: 11px; margin-top: 15px;
     padding: 12px 14px; border-radius: 11px;
-    background: linear-gradient(135deg, #1e293b, #0f172a); color: #e2e8f0;
+    background: linear-gradient(135deg, #2E1B0E, #1C0F06); color: #F1ECDF;
   }
   .mini-chip {
     width: 26px; height: 19px; border-radius: 4px; flex: none;
-    background: linear-gradient(135deg, #fcd34d, #b45309);
+    background: linear-gradient(135deg, #F0D68A, #8F5C10);
   }
-  .card-on-file .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #94a3b8; }
+  .card-on-file .lbl { font-size: 10px; letter-spacing: .08em; text-transform: uppercase; color: #9A8E7B; }
   .card-on-file .num { font-family: var(--mono); font-size: 13.5px; letter-spacing: .06em; }
 
   /* two caps, drawn so you can see how much room is left */
@@ -47,34 +47,34 @@
   .cap-top .v { font-weight: 650; }
   .cap-track { height: 7px; border-radius: 999px; background: var(--surface-3); position: relative; overflow: hidden; }
   .cap-fill { position: absolute; inset: 0 auto 0 0; border-radius: 999px; }
-  .cap-soft .cap-fill { background: var(--warn); }
-  .cap-hard .cap-fill { background: var(--stop); }
+  .cap-soft .cap-fill { background: var(--rust); }
+  .cap-hard .cap-fill { background: var(--brick); }
   .cap-note { font-size: 11.5px; color: var(--ink-3); margin-top: 5px; }
 
   /* ---- dish grid ---- */
   .dish-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; margin-top: 4px; }
   @media (max-width: 460px) { .dish-grid { grid-template-columns: 1fr; } }
   .dish {
-    border: 1px solid var(--line); border-radius: 11px; padding: 11px 12px;
+    border: 1px solid var(--paper-border); border-radius: var(--radius-chit); padding: 12px 14px;
     background: var(--surface); display: flex; flex-direction: column; gap: 7px;
     transition: border-color .15s ease, box-shadow .15s ease;
   }
   .dish:hover { border-color: var(--accent-line); box-shadow: var(--shadow-sm); }
-  .dish.off { opacity: .5; }
-  .dish-name { font-size: 13.5px; font-weight: 620; line-height: 1.3; }
+  .dish.off { opacity: .45; }
+  .dish-name { font-size: 14px; font-weight: 700; line-height: 1.3; }
   .dish-cat {
     font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
     color: var(--ink-3);
   }
   .dish-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; }
-  .dish-price { font-weight: 700; font-size: 14px; }
+  .dish-price { font-family: var(--font-mono); font-weight: 700; font-size: 14px; }
   .dish-was { font-size: 11px; color: var(--ink-3); text-decoration: line-through; margin-right: 4px; font-weight: 500; }
   .dish-add {
     appearance: none; cursor: pointer; font: inherit; font-size: 12px; font-weight: 650;
     color: var(--accent); background: var(--accent-soft);
     border: 1px solid var(--accent-line); border-radius: 7px; padding: 3px 10px;
   }
-  .dish-add:hover { background: var(--accent); color: #fff; }
+  .dish-add:hover { background: var(--gold); color: var(--coffee); }
   .dish-add:disabled { opacity: .5; cursor: default; background: var(--surface-3); color: var(--ink-3); border-color: var(--line); }
 
   .dish-qty {
@@ -86,7 +86,7 @@
     color: var(--accent); font: inherit; font-size: 13px; font-weight: 700;
     width: 24px; height: 24px; line-height: 1;
   }
-  .dish-qty button:hover { background: var(--accent); color: #fff; }
+  .dish-qty button:hover { background: var(--gold); color: var(--coffee); }
   .dish-qty .n {
     min-width: 24px; text-align: center; font-size: 12.5px; font-weight: 700;
     color: var(--accent); background: var(--surface);
@@ -109,11 +109,11 @@
 
   /* ---- transactions drawer ---- */
   .tx-btn { width: 100%; margin-top: 12px; }
-  .tx-back { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; }
+  .tx-back { position: fixed; inset: 0; background: rgba(28,15,6,.45); z-index: 70; }
   .tx-panel {
     position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 94vw); z-index: 71;
     background: var(--surface); border-left: 1px solid var(--line);
-    box-shadow: -22px 0 60px -28px rgba(15,23,42,.5);
+    box-shadow: -22px 0 60px -28px rgba(28,15,6,.5);
     display: flex; flex-direction: column;
     animation: slideIn .24s cubic-bezier(.2,.9,.3,1);
   }
@@ -160,7 +160,7 @@
     background: var(--line); z-index: 0;
   }
   .stp:first-child::before { display: none; }
-  .stp.done::before, .stp.on::before { background: var(--accent); }
+  .stp.done::before, .stp.on::before { background: var(--gold); }
   .stp-dot {
     width: 27px; height: 27px; border-radius: 50%; z-index: 1;
     display: grid; place-items: center; font-size: 12px; font-weight: 700;
@@ -168,73 +168,73 @@
     border: 2px solid var(--line); transition: all .25s ease;
   }
   .stp.on .stp-dot {
-    background: var(--accent); border-color: var(--accent); color: #fff;
-    box-shadow: 0 0 0 5px rgba(79, 70, 229, .15);
+    background: var(--gold); border-color: var(--gold); color: var(--coffee);
+    box-shadow: 0 0 0 5px rgba(184, 121, 26, .2);
   }
-  .stp.done .stp-dot { background: var(--ok); border-color: var(--ok); color: #fff; }
-  .stp.fail .stp-dot { background: var(--stop); border-color: var(--stop); color: #fff; }
+  .stp.done .stp-dot { background: var(--leaf); border-color: var(--leaf); color: var(--paper); }
+  .stp.fail .stp-dot { background: var(--brick); border-color: var(--brick); color: var(--paper); }
   .stp-label {
     font-size: 11px; font-weight: 620; color: var(--ink-3); text-align: center;
     letter-spacing: -.005em; line-height: 1.3;
   }
-  .stp.on .stp-label { color: var(--accent); }
+  .stp.on .stp-label { color: var(--gold-deep); }
   .stp.done .stp-label { color: var(--ink-2); }
   .stp.fail .stp-label { color: var(--stop); }
 
   /* ---- terminal ---- */
   .terminal {
-    background: linear-gradient(160deg, #111827 0%, #0b1220 60%, #0f172a 100%);
-    border: 1px solid rgba(148, 163, 184, .18); border-radius: var(--radius-lg);
+    background: linear-gradient(160deg, #2E1B0E 0%, #1C0F06 60%, #1C0F06 100%);
+    border: 1px solid rgba(74, 51, 32, .9); border-radius: var(--radius-lg);
     overflow: hidden; display: flex; flex-direction: column; height: 620px;
-    box-shadow: 0 24px 60px -24px rgba(15, 23, 42, .55),
-                inset 0 1px 0 rgba(255, 255, 255, .05);
+    box-shadow: 0 24px 60px -24px rgba(28, 15, 6, .55),
+                inset 0 1px 0 rgba(241, 236, 223, .05);
   }
   .term-bar {
     display: flex; align-items: center; gap: 8px;
     padding: 11px 15px;
-    background: rgba(30, 41, 59, .55);
+    background: rgba(46, 27, 14, .72);
     backdrop-filter: blur(8px);
-    border-bottom: 1px solid rgba(148, 163, 184, .14);
+    border-bottom: 1px solid rgba(74, 51, 32, .8);
   }
   .term-dot { width: 10px; height: 10px; border-radius: 50%; }
   .term-name {
-    margin-left: 6px; color: #8b949e; font-size: 12px;
+    margin-left: 6px; color: #9A8E7B; font-size: 12px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
   .term-state { margin-left: auto; font-size: 11px; font-weight: 700; letter-spacing: .5px; }
   .term-body {
     flex: 1; overflow-y: auto; padding: 16px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 12.5px; line-height: 1.75; color: #c9d1d9;
+    font-size: 12.5px; line-height: 1.75; color: #B8AFA0;
   }
   .term-body::-webkit-scrollbar { width: 9px; }
-  .term-body::-webkit-scrollbar-thumb { background: #334155; border-radius: 5px; }
+  .term-body::-webkit-scrollbar-thumb { background: #4A3320; border-radius: 5px; }
 
   .ln { display: flex; gap: 9px; white-space: pre-wrap; word-break: break-word; }
   .ln + .ln { margin-top: 3px; }
-  .ln .t { color: #4a525c; flex: none; }
+  .ln .t { color: #7A6A52; flex: none; }
   .ln .m { flex: 1; }
-  .ln.info .m  { color: #c9d1d9; }
-  .ln.step .m  { color: #79c0ff; }
-  .ln.ok .m    { color: #56d364; }
-  .ln.warn .m  { color: #e3b341; }
-  .ln.err .m   { color: #f85149; }
-  .ln.quiet .m { color: #6e7681; }
-  .ln.head .m  { color: #d2a8ff; font-weight: 600; }
-  .ln .m b     { color: #fff; font-weight: 600; }
+  .ln.info .m  { color: #B8AFA0; }
+  .ln.step .m  { color: #8FB3C4; }
+  .ln.ok .m    { color: #8FBF7F; }
+  .ln.warn .m  { color: #D9A05B; }
+  .ln.err .m   { color: #D98070; }
+  .ln.quiet .m { color: #A2947E; }
+  .ln.head .m  { color: #D9A441; font-weight: 600; }
+  .ln .m b     { color: var(--paper); font-weight: 700; }
 
   /* A line quoting one of the merchant's hard limits is a line where
      plain Python overruled everything else. Marked so a viewer can see
      the boundary rather than take it on trust. */
-  .ln.rule { border-left: 2px solid #58506b; padding-left: 8px; margin-left: -10px; }
+  .ln.rule { border-left: 2px solid #5A4630; padding-left: 8px; margin-left: -10px; }
   .ln .lim {
-    color: #b6a6e0; border-bottom: 1px dotted #6b5f8c;
+    color: #D9B77A; border-bottom: 1px dotted #7A6440;
     text-transform: lowercase; letter-spacing: .2px;
   }
   .ln .num { font-weight: 800; }
-  .ln .num.pass { color: #3fb950; text-shadow: 0 0 12px rgba(63,185,80,.5); }
-  .ln .num.fail { color: #ff7b72; text-shadow: 0 0 12px rgba(255,123,114,.5); }
-  .ln .num.calc { color: #e6edf3; }
+  .ln .num.pass { color: #8FBF7F; text-shadow: 0 0 12px rgba(63,185,80,.5); }
+  .ln .num.fail { color: #D98070; text-shadow: 0 0 12px rgba(255,123,114,.5); }
+  .ln .num.calc { color: #F1ECDF; }
 
   /* The refund toast. Bigger than the ordinary one because it is the
      answer to "you took money for an order she might refuse". */
@@ -243,35 +243,35 @@
     z-index: 60; max-width: min(560px, 92vw);
     display: flex; gap: 13px; align-items: flex-start;
     padding: 15px 19px; border-radius: 13px;
-    background: #1b1420; border: 1px solid #7d3b46;
+    background: #2B1410; border: 1px solid #7A3A2C;
     box-shadow: 0 18px 44px rgba(0,0,0,.45), 0 0 0 1px rgba(255,123,114,.14);
-    color: #ffd9d5; font-size: 14px; line-height: 1.5;
+    color: #E8D5C8; font-size: 14px; line-height: 1.5;
     animation: refundIn .32s cubic-bezier(.2,.9,.3,1.2);
   }
   .refund-toast .rt-mark {
     flex: none; width: 30px; height: 30px; border-radius: 50%;
-    background: rgba(255,123,114,.16); color: #ff7b72;
+    background: rgba(217,128,112,.18); color: #D98070;
     display: grid; place-items: center; font-size: 16px; font-weight: 700;
   }
-  .refund-toast b { color: #fff; }
-  .refund-toast .rt-sub { display: block; margin-top: 3px; color: #b9a4a4; font-size: 12.5px; }
-  .refund-toast.ok { background: #131e18; border-color: #2f6b45; color: #c7f0d6; }
-  .refund-toast.ok .rt-mark { background: rgba(63,185,80,.16); color: #3fb950; }
-  .refund-toast.ok .rt-sub { color: #8fb69f; }
+  .refund-toast b { color: var(--paper); }
+  .refund-toast .rt-sub { display: block; margin-top: 3px; color: #B09A8A; font-size: 12.5px; }
+  .refund-toast.ok { background: #1E2A18; border-color: #3E6B34; color: #CFE3C4; }
+  .refund-toast.ok .rt-mark { background: rgba(143,191,127,.18); color: #8FBF7F; }
+  .refund-toast.ok .rt-sub { color: #93AE86; }
   @keyframes refundIn {
     from { opacity: 0; transform: translate(-50%, 14px) scale(.97); }
     to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
   }
 
   .cursor {
-    display: inline-block; width: 7px; height: 14px; background: #56d364;
+    display: inline-block; width: 7px; height: 14px; background: #8FBF7F;
     vertical-align: -2px; animation: blink 1.05s step-end infinite;
   }
   @keyframes blink { 50% { opacity: 0; } }
 
-  .term-ask { border-top: 1px solid #23272e; background: #14181d; padding: 14px; }
+  .term-ask { border-top: 1px solid #4A3320; background: #241408; padding: 14px; }
   .term-ask p {
-    margin: 0 0 10px; color: #e3b341; font-size: 12.5px;
+    margin: 0 0 10px; color: #D9A05B; font-size: 12.5px;
     font-family: ui-monospace, Menlo, Consolas, monospace;
   }
 </style>
@@ -390,11 +390,11 @@
 
         <div class="terminal">
           <div class="term-bar">
-            <span class="term-dot" style="background:#ff5f57"></span>
-            <span class="term-dot" style="background:#febc2e"></span>
-            <span class="term-dot" style="background:#28c840"></span>
+            <span class="term-dot" style="background:#9B3A2C"></span>
+            <span class="term-dot" style="background:#A85C2A"></span>
+            <span class="term-dot" style="background:#4F7942"></span>
             <span class="term-name" id="termName">buyer-agent</span>
-            <span class="term-state" id="termState" style="color:#6e7681">IDLE</span>
+            <span class="term-state" id="termState" style="color:#A2947E">IDLE</span>
           </div>
           <div class="term-body" id="term">
             <div class="ln quiet"><span class="t">--:--:--</span><span class="m">Agent asleep. Say what you want and deploy.</span></div>
@@ -694,7 +694,7 @@ function renderDishes() {
             ${onSale ? `<span class="dish-was">${rupee(m.list_price_inr)}</span>` : ""}${rupee(m.price_inr)}
           </span>
           ${!m.agent_orderable
-            ? `<button class="dish-add" disabled title="in-person orders only">in person</button>`
+            ? `<span class="stamp brick">in person</span>`
             : qty
               ? `<span class="dish-qty">
                    <button data-bump="-1" data-id="${escHtml(m.id)}" aria-label="one fewer">&minus;</button>
@@ -738,7 +738,7 @@ async function deploy() {
   $("term").innerHTML = "";
   $("termAsk").style.display = "none";
   setStep(0);
-  setState("WAKING", "#e3b341");
+  setState("WAKING", "#D9A05B");
 
   const hardCap = PROFILE.hard_cap_inr;
   const softCap = PROFILE.soft_cap_inr;
@@ -747,7 +747,7 @@ async function deploy() {
   try {
     if (!prompt) throw new Error("You didn't say what to buy.");
 
-    setState("RUNNING", "#56d364");
+    setState("RUNNING", "#8FBF7F");
     await step(`Acting for <b>${PROFILE.name}</b>.`, "head", 520);
     await step(`Mandate on file: hard cap <b>${rupee(hardCap)}</b>, ask above <b>${rupee(softCap)}</b>.`, "quiet", 480);
     await step(`Card ••••${PROFILE.card_last4} pre-authorised (token ${PROFILE.card_token.slice(0, 14)}…).`, "quiet", 440);
@@ -795,7 +795,7 @@ async function deploy() {
       thinking.remove();
       log("&gt; Claude unavailable: " + err.message, "err");
       log("&gt; Cannot draft a cart without interpreting the request. Stopping.", "err");
-      setState("STOPPED", "#f85149"); stepFailed();
+      setState("STOPPED", "#D98070"); stepFailed();
       return;
     }
     thinking.remove();
@@ -828,7 +828,7 @@ async function deploy() {
       items = retry.items || [];
       if (!items.length) {
         log("&gt; Still nothing on the menu. Stopping rather than guessing.", "err");
-        setState("NOTHING TO ORDER", "#f85149"); stepFailed();
+        setState("NOTHING TO ORDER", "#D98070"); stepFailed();
         return;
       }
     }
@@ -856,7 +856,7 @@ async function deploy() {
     if (gate.decision === "REFUSE") {
       log(`&gt; <b>${rupee(gate.total_inr)}</b> breaks the mandate: ${gate.reason}.`, "err");
       log("&gt; Amma's Kitchen was never contacted. This was not her decision to make.", "err");
-      setState("REFUSED", "#f85149"); stepFailed();
+      setState("REFUSED", "#D98070"); stepFailed();
       return;
     }
 
@@ -865,12 +865,12 @@ async function deploy() {
       const ok = await askApprovalOverWhatsApp(cartLabel(items), gate.total_inr, softCap);
       if (ok === null) {
         log("&gt; No answer. Stopping — nothing was sent to Amma's Kitchen.", "err");
-        setState("NO ANSWER", "#f85149"); stepFailed();
+        setState("NO ANSWER", "#D98070"); stepFailed();
         return;
       }
       if (!ok) {
         log("&gt; You said no. Nothing was sent to Amma's Kitchen.", "err");
-        setState("CANCELLED", "#f85149"); stepFailed();
+        setState("CANCELLED", "#D98070"); stepFailed();
         return;
       }
       log("&gt; You approved. Proceeding.", "ok");
@@ -897,7 +897,7 @@ async function deploy() {
     await settle(mandate, hardCap);
   } catch (err) {
     log("&gt; " + err.message, "err");
-    setState("ERROR", "#f85149"); stepFailed();
+    setState("ERROR", "#D98070"); stepFailed();
   } finally {
     running = false;
     $("deployBtn").disabled = false;
@@ -917,7 +917,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   if (!PROFILE.phone) {
     log("&gt; No phone number on your account, so I can't ask what you'd like instead.", "err");
     log("&gt; Add one in Account settings and I'll be able to check next time.", "quiet");
-    setState("NOTHING TO ORDER", "#f85149"); stepFailed();
+    setState("NOTHING TO ORDER", "#D98070"); stepFailed();
     return null;
   }
 
@@ -934,7 +934,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
     });
   } catch (err) {
     log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
-    setState("NOTHING TO ORDER", "#f85149"); stepFailed();
+    setState("NOTHING TO ORDER", "#D98070"); stepFailed();
     return null;
   }
 
@@ -943,7 +943,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
     `&gt; Messaging you on WhatsApp at <b>${conversation.phone}</b> with what she does have.`,
     "warn"
   );
-  setState("ASKING YOU", "#e3b341");
+  setState("ASKING YOU", "#D9A05B");
 
   if (!live) {
     // No Twilio configured. Show the message that would have gone out and
@@ -954,11 +954,11 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   const reply = await waitForWhatsAppReply(live);
   if (!reply) {
     log("&gt; No answer yet. Stopping — deploy me again when you've decided.", "err");
-    setState("NO ANSWER", "#f85149"); stepFailed();
+    setState("NO ANSWER", "#D98070"); stepFailed();
     return null;
   }
 
-  setState("RUNNING", "#56d364");
+  setState("RUNNING", "#8FBF7F");
   return reply;
 }
 
@@ -994,7 +994,7 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
   const live = conversation.transport === "twilio";
   log(`&gt; Asking you on WhatsApp at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
   if (!live) log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
-  setState("ASKING YOU", "#e3b341");
+  setState("ASKING YOU", "#D9A05B");
 
   return await waitForApproval(live, totalInr);
 }
@@ -1134,7 +1134,7 @@ async function handleMerchantResponse(mandate, hardCap) {
       // A hard rule of hers -- no payment may be taken for an order that
       // cannot be fulfilled. The server refuses this, not the page.
       log(`&gt; ${err.message}`, "err");
-      setState("REFUSED", "#f85149"); stepFailed();
+      setState("REFUSED", "#D98070"); stepFailed();
       return null;
     }
   }
@@ -1167,7 +1167,7 @@ async function settle(mandate, hardCap) {
 
   await step(`Authorised by you up to ${rupee(hardCap)}; this is ${rupee(total)}.`, "step", 500);
   setStep(4);
-  setState("SETTLING", "#e3b341");
+  setState("SETTLING", "#D9A05B");
 
   /* A real Razorpay payment link, and the customer pays it themselves.
      The agent's job ends here, exactly as Claude's does on the MCP path.
@@ -1186,20 +1186,20 @@ async function settle(mandate, hardCap) {
   log(`&gt; Payment link issued. Mandate hash <b>${pm.matched_mandate_hash.slice(0, 16)}…</b> binds it to this exact cart.`, "quiet");
   log(`&gt; I cannot pay for you: the OTP, UPI PIN or CVV is entered by you, on Razorpay's own page.`, "quiet");
   showPaymentLink(pm.payment_link_url, total);
-  setState("AWAITING PAYMENT", "#e3b341");
+  setState("AWAITING PAYMENT", "#D9A05B");
 
   const paid = await waitForPayment(pm.payment_link_id);
   hidePaymentLink();
   if (!paid) {
     log("&gt; Payment link is still unpaid. Nothing has been charged.", "warn");
-    setState("UNPAID", "#e3b341");
+    setState("UNPAID", "#D9A05B");
     return;
   }
 
   log("&gt; Razorpay confirms the payment captured.", "ok");
   log("&gt; Amma has been notified. If she cannot make it, the refund is automatic.", "ok");
   log("&gt; Watch this screen — you will be told either way.", "quiet");
-  setState("COMPLETE", "#56d364");
+  setState("COMPLETE", "#8FBF7F");
   stepsDone();
 }
 

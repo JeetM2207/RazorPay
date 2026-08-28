@@ -6,11 +6,19 @@
 <title>Merchant console — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css">
 <style>
+  /* THE BOARD. This page is where the machine works, so it sits on the
+     coffee ground while the customer's pages stay on paper. The queue is
+     drawn as chits pinned to it. */
+  body { background: var(--coffee-2); color: var(--paper); }
+  .page h1 { color: var(--paper); }
+  .page > .lede { color: #A69B87; }
+  .page h2 { color: var(--paper); }
+
   /* ---- sticky command bar: identity, live dot, and the three numbers
          Amma actually cares about while she is working ---- */
   .cockpit {
     position: sticky; top: 0; z-index: 45;
-    background: var(--surface); border-bottom: 1px solid var(--line);
+    background: var(--coffee); border-bottom: 1px solid var(--coffee-border);
   }
   .cockpit-inner {
     max-width: 1400px; margin: 0 auto; padding: 12px 24px;
@@ -19,32 +27,34 @@
   .kpis { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
   .kpi {
     display: flex; flex-direction: column; gap: 1px;
-    padding: 6px 15px; border-left: 1px solid var(--line);
+    padding: 6px 15px; border-left: 1px solid var(--coffee-border);
   }
   .kpi:first-child { border-left: 0; }
-  .kpi .n { font-size: 18px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+  .kpi .n { font-family: var(--font-display); font-size: 22px; font-weight: 700;
+            letter-spacing: -.02em; line-height: 1.15; color: var(--paper); }
   .kpi .l { font-size: 10.5px; font-weight: 650; letter-spacing: .05em;
-            text-transform: uppercase; color: var(--ink-3); }
-  .kpi.rev .n { color: var(--ok); }
-  .kpi.act .n { color: var(--warn); }
+            text-transform: uppercase; color: #9A8E7B; font-family: var(--font-mono); }
+  .kpi.rev .n { color: #8FBF7F; }
+  .kpi.act .n { color: #D9A05B; }
 
   /* ---- tabs ---- */
-  .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--coffee-border); margin-bottom: 22px; }
   .tabs button {
     appearance: none; border: 0; background: transparent; cursor: pointer;
-    font-family: inherit; font-size: 14px; font-weight: 600; color: var(--ink-3);
+    font-family: var(--font-body); font-size: 14px; font-weight: 600; color: #9A8E7B;
     padding: 11px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px;
     display: inline-flex; align-items: center; gap: 8px;
     transition: color .15s ease, border-color .15s ease;
   }
-  .tabs button:hover { color: var(--ink-2); }
-  .tabs button.on { color: var(--accent); border-bottom-color: var(--accent); }
+  .tabs button:hover { color: var(--paper); }
+  .tabs button.on { color: var(--gold); border-bottom-color: var(--gold); }
   .tab-count {
     font-size: 10.5px; font-weight: 700; min-width: 18px; padding: 1px 6px;
-    border-radius: 999px; background: var(--surface-3); color: var(--ink-2);
+    border-radius: 999px; background: var(--coffee); color: #C9BFA9;
+    font-family: var(--font-mono);
   }
-  .tabs button.on .tab-count { background: var(--accent-soft); color: var(--accent); }
-  .tab-count.hot { background: var(--warn-soft); color: var(--warn); }
+  .tabs button.on .tab-count { background: var(--gold); color: var(--coffee); }
+  .tab-count.hot { background: var(--rust); color: var(--paper); }
   .panel { display: none; }
   .panel.on { display: block; animation: fade .2s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
@@ -53,10 +63,28 @@
   .ops { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr); gap: 20px; align-items: start; }
   @media (max-width: 1020px) { .ops { grid-template-columns: 1fr; } }
 
-  .queue-card { margin-bottom: 14px; border-left: 3px solid var(--warn); }
-  .queue-card.hard { border-left-color: var(--stop); }
+  /* Pinned to the board: a paper chit, tacked up at a slight angle with
+     a brass pin. Alternate cards lean the other way so a stack of them
+     reads as paper rather than as rows. */
+  .queue-card {
+    margin-bottom: 24px; background: var(--paper-card); color: var(--ink);
+    border: 0; border-radius: var(--radius-chit); padding: 20px 22px;
+    box-shadow: 0 14px 24px rgba(0, 0, 0, .4);
+    transform: rotate(-1.6deg); transition: transform .18s ease;
+  }
+  .queue-card:nth-child(even) { transform: rotate(1.3deg); }
+  .queue-card:hover { transform: rotate(0deg); box-shadow: 0 18px 30px rgba(0, 0, 0, .45); }
+  .queue-card::before {
+    content: ''; position: absolute; top: -7px; left: 32px;
+    width: 13px; height: 13px; border-radius: 50%; border: 0;
+    background: radial-gradient(circle at 32% 30%, #F0D68A, var(--gold-deep));
+    box-shadow: 0 2px 5px rgba(0, 0, 0, .45);
+  }
+  .queue-card.hard::before { background: radial-gradient(circle at 32% 30%, #E0A79A, var(--brick)); }
+  .queue-card .muted { color: var(--ink-soft); }
   .queue-head { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-bottom: 11px; }
-  .queue-cart { font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+  .queue-cart { font-family: var(--font-display); font-size: 20px; font-weight: 700;
+                letter-spacing: -.01em; }
 
   /* the threshold bar: her two limits drawn to scale, with this order on them */
   .thresh { margin: 14px 0 4px; }
@@ -82,48 +110,49 @@
   /* ---- the phone ---- */
   .phone {
     position: sticky; top: 130px;
-    background: var(--dark); border-radius: 26px; padding: 11px;
-    box-shadow: var(--shadow-lg); border: 1px solid var(--dark-line);
+    background: var(--coffee); border-radius: 20px; padding: 14px;
+    border: 1px solid var(--coffee-border);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
   }
   .phone-screen {
-    background: #0b1220; border-radius: 18px; overflow: hidden;
+    background: var(--coffee); border-radius: 12px; overflow: hidden;
     display: flex; flex-direction: column; height: 505px;
   }
   .phone-top {
-    padding: 11px 15px; background: #111c2e; border-bottom: 1px solid var(--dark-line);
+    padding: 11px 15px; background: #2E1B0E; border-bottom: 1px solid var(--dark-line);
     display: flex; align-items: center; gap: 9px;
   }
   .phone-av {
     width: 30px; height: 30px; border-radius: 50%; flex: none;
-    background: #1f7a4d; color: #fff; display: grid; place-items: center;
+    background: #4F7942; color: var(--paper); display: grid; place-items: center;
     font-size: 13px; font-weight: 700;
   }
-  .phone-who { font-size: 13px; font-weight: 620; color: #e2e8f0; line-height: 1.2; }
-  .phone-sub { font-size: 10.5px; color: #64748b; }
+  .phone-who { font-size: 13px; font-weight: 620; color: #F1ECDF; line-height: 1.2; }
+  .phone-sub { font-size: 10.5px; color: #A2947E; }
   .phone-feed { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
   .phone-feed::-webkit-scrollbar { width: 6px; }
-  .phone-feed::-webkit-scrollbar-thumb { background: #26364d; border-radius: 4px; }
+  .phone-feed::-webkit-scrollbar-thumb { background: #4A3320; border-radius: 4px; }
   .bubble {
-    max-width: 88%; align-self: flex-start;
-    background: #1c2b41; color: #e2e8f0; border-radius: 13px 13px 13px 4px;
-    padding: 9px 12px; font-size: 12.5px; line-height: 1.45; white-space: pre-wrap;
+    max-width: 92%; align-self: flex-start;
+    background: var(--coffee-2); color: var(--paper); border-radius: 10px;
+    padding: 12px 14px; font-size: 13px; line-height: 1.5; white-space: pre-wrap;
   }
   .bubble-meta { display: flex; justify-content: space-between; gap: 9px; align-items: center; margin-top: 6px; }
-  .bubble-to { font-family: var(--mono); font-size: 10px; color: #64748b; }
-  .bubble-fail { color: #fda4af; font-size: 10.5px; margin-top: 5px; }
+  .bubble-to { font-family: var(--mono); font-size: 10px; color: #A2947E; }
+  .bubble-fail { color: #D98070; font-size: 10.5px; margin-top: 5px; }
   /* A message written for the customer, shown here because in a demo the
      two people are usually the same phone. Tinted and labelled so it is
      never mistaken for something Amma is being asked. */
-  .bubble.to-customer { background: #16233a; border: 1px dashed #33507a; }
+  .bubble.to-customer { background: #22331D; border: 1px dashed #4A5C3F; }
   .bubble-tag {
     font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-    color: #7dd3fc; margin-bottom: 6px; display: block;
+    color: #C2A97E; margin-bottom: 6px; display: block;
   }
-  .bubble.to-customer .bubble-tag { color: #7dd3fc; }
-  .qr-hint { font-size: 10.5px; color: #64748b; margin: 0 0 8px; text-align: center; }
+  .bubble.to-customer .bubble-tag { color: #C2A97E; }
+  .qr-hint { font-size: 10.5px; color: #A2947E; margin: 0 0 8px; text-align: center; }
   .bubble .badge { font-size: 9.5px; padding: 1px 7px; }
-  .phone-empty { color: #64748b; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
-  .phone-input { border-top: 1px solid var(--dark-line); background: #111c2e; padding: 11px; }
+  .phone-empty { color: #A2947E; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
+  .phone-input { border-top: 1px solid var(--dark-line); background: #2E1B0E; padding: 11px; }
   .quick-replies { display: flex; flex-direction: column; margin-bottom: 9px; }
   .quick-replies button {
     flex: 1; appearance: none; cursor: pointer; font-family: inherit;
@@ -131,17 +160,17 @@
     border: 1px solid transparent; transition: filter .14s ease;
   }
   .quick-replies button:hover { filter: brightness(1.12); }
-  .qr-yes { background: rgba(5,150,105,.17); color: #34d399; border-color: rgba(5,150,105,.4); }
-  .qr-no  { background: rgba(225,29,72,.15); color: #fda4af; border-color: rgba(225,29,72,.4); }
+  .qr-yes { background: rgba(79,121,66,.22); color: #8FBF7F; border-color: rgba(79,121,66,.5); }
+  .qr-no  { background: rgba(155,58,44,.22); color: #D98070; border-color: rgba(155,58,44,.5); }
   .phone-row { display: flex; gap: 7px; }
   .phone-row input {
-    flex: 1; background: #0b1220; border: 1px solid var(--dark-line); color: #e2e8f0;
+    flex: 1; background: #1C0F06; border: 1px solid var(--dark-line); color: #F1ECDF;
     border-radius: 9px; padding: 8px 11px; font-size: 12.5px;
   }
-  .phone-row input:focus { border-color: #475569; box-shadow: none; }
-  .phone-row input::placeholder { color: #475569; }
+  .phone-row input:focus { border-color: #6B5940; box-shadow: none; }
+  .phone-row input::placeholder { color: #6B5940; }
   .phone-send {
-    appearance: none; cursor: pointer; border: 0; background: var(--accent); color: #fff;
+    appearance: none; cursor: pointer; border: 0; background: var(--accent); color: var(--paper);
     border-radius: 9px; padding: 0 14px; font-size: 12.5px; font-weight: 650; font-family: inherit;
   }
 
@@ -191,12 +220,27 @@
     border-radius: 999px; padding: 6px 8px 6px 14px; font-size: 13px; font-weight: 600;
   }
   .demand-chip .n {
-    background: var(--warn); color: #fff; border-radius: 999px;
+    background: var(--warn); color: var(--paper); border-radius: 999px;
     font-size: 11px; font-weight: 700; padding: 1px 8px;
   }
 
   /* ---- tab 3 ---- */
   .filters { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  /* The tables on this page sit on the board, so they invert. */
+  #panel-ledger .card, #panel-ledger .card-flush { background: var(--coffee); border-color: var(--coffee-border); }
+  #panel-ledger .card::before { display: none; }
+  #panel-ledger th { background: var(--coffee-2); color: #A2947E; border-bottom-color: var(--coffee-border); }
+  #panel-ledger td { color: #C9BFA9; border-bottom-color: var(--coffee-border); font-family: var(--font-mono); font-size: 12px; }
+  #panel-ledger tbody tr:hover { background: rgba(241, 236, 223, .04); }
+  #panel-ledger .muted { color: #A2947E; }
+  #panel-ledger .empty { color: #A2947E; }
+  #panel-ledger .insight-stat { background: var(--coffee); border-color: var(--coffee-border); color: #C9BFA9; }
+  #panel-ledger .insight-stat b { color: var(--paper); font-family: var(--font-display); }
+  #panel-ledger .note { color: #A2947E; }
+  #panel-ledger input { background: var(--coffee-2); border-color: var(--coffee-border); color: var(--paper); }
+  #panel-ledger .seg { background: var(--coffee-2); border-color: var(--coffee-border); }
+  #panel-ledger .seg button { color: #9A8E7B; }
+  #panel-ledger .seg button.on { background: var(--gold); color: var(--coffee); }
   .filters input { max-width: 260px; }
   .settle { font-size: 10.5px; }
 </style>

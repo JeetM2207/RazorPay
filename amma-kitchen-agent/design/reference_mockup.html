@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amma's Kitchen — Design Direction</title>
+<style>
+  :root{
+    --paper:#F1ECDF;
+    --paper-card:#FBF8F0;
+    --paper-border:#DAD0B8;
+    --ink:#2B1D14;
+    --ink-soft:#6B5940;
+    --coffee:#2E1B0E;
+    --coffee-2:#1C0F06;
+    --coffee-border:#4A3320;
+    --gold:#B8791A;
+    --gold-deep:#8F5C10;
+    --leaf:#4F7942;
+    --rust:#A85C2A;
+    --brick:#9B3A2C;
+    --steel:#5C7A8A;
+    --radius-chit: 3px 16px 3px 16px;
+    --font-display: Georgia, 'Iowan Old Style', Charter, 'Times New Roman', serif;
+    --font-body: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Consolas, 'Liberation Mono', monospace;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:inherit;}
+
+  /* ---------- topbar ---------- */
+  .topbar{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 32px; border-bottom:1px solid var(--paper-border);
+    background:var(--paper-card);
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-mark{
+    width:34px;height:34px;border-radius:50%;
+    background:var(--coffee);
+    display:flex;align-items:center;justify-content:center;
+    color:var(--paper); font-family:var(--font-display); font-weight:700; font-size:15px;
+    flex-shrink:0;
+  }
+  .brand-name{ font-family:var(--font-display); font-weight:700; font-size:19px; letter-spacing:-0.01em; }
+  .role-toggle{
+    display:flex; background:var(--paper); border:1px solid var(--paper-border);
+    border-radius:999px; padding:3px; gap:2px;
+  }
+  .role-toggle button{
+    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
+    border:none; background:transparent; color:var(--ink-soft);
+    padding:7px 16px; border-radius:999px; cursor:pointer; font-weight:600;
+  }
+  .role-toggle button.active{ background:var(--coffee); color:var(--paper); }
+  .navlinks{ display:flex; gap:22px; font-size:13px; color:var(--ink-soft); }
+
+  .view{ display:none; padding:36px 32px 60px; max-width:1320px; margin:0 auto; }
+  .view.active{ display:block; }
+
+  .page-head{ margin-bottom:28px; }
+  .eyebrow{
+    font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.12em;
+    color:var(--gold-deep); margin-bottom:8px;
+  }
+  h1{ font-family:var(--font-display); font-size:32px; margin:0 0 6px; letter-spacing:-0.01em; }
+  .sub{ color:var(--ink-soft); font-size:14.5px; max-width:640px; line-height:1.5; }
+
+  /* ---------- chit component (the signature element) ---------- */
+  .chit{
+    background:var(--paper-card);
+    border:1px solid var(--paper-border);
+    border-radius:var(--radius-chit);
+    padding:22px 24px;
+    position:relative;
+    box-shadow:0 1px 0 rgba(43,29,20,0.04);
+  }
+  .chit::before{
+    content:'';
+    position:absolute; top:0; left:24px; right:24px; height:0;
+    border-top:1.5px dashed var(--paper-border);
+  }
+  .stamp{
+    display:inline-flex; align-items:center; gap:6px;
+    font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.07em;
+    font-size:10.5px; font-weight:700;
+    padding:4px 11px; border-radius:999px;
+    border:1.5px solid currentColor;
+    transform:rotate(-2.5deg);
+    white-space:nowrap;
+  }
+  .stamp.leaf{ color:var(--leaf); }
+  .stamp.rust{ color:var(--rust); }
+  .stamp.brick{ color:var(--brick); }
+  .stamp.steel{ color:var(--steel); }
+  .stamp.gold{ color:var(--gold-deep); }
+
+  /* ================= BUYER VIEW ================= */
+  .buyer-grid{ display:grid; grid-template-columns:1.15fr 1fr; gap:24px; align-items:start; }
+
+  .field-label{ font-size:11.5px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.06em; margin-bottom:4px; }
+  .customer-row{ display:flex; gap:12px; align-items:flex-start; margin-bottom:18px; }
+  .avatar{
+    width:38px;height:38px;border-radius:50%; background:var(--gold); color:var(--coffee);
+    display:flex;align-items:center;justify-content:center; font-weight:700; font-family:var(--font-display);
+    flex-shrink:0;
+  }
+  .customer-name{ font-weight:600; font-size:15px; }
+  .customer-addr{ font-size:13px; color:var(--ink-soft); margin-top:2px; line-height:1.4; }
+
+  .card-file{
+    background:var(--coffee); color:var(--paper);
+    border-radius:10px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center;
+    font-family:var(--font-mono); font-size:13.5px; margin-bottom:18px;
+  }
+  .card-file .tag{ font-size:10px; letter-spacing:0.08em; background:var(--leaf); color:var(--paper); padding:2px 8px; border-radius:999px; text-transform:uppercase; }
+
+  .gauge-wrap{ margin-bottom:14px; }
+  .gauge-top{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
+  .gauge-top .lbl{ color:var(--ink-soft); }
+  .gauge-top .val{ font-family:var(--font-mono); font-weight:600; }
+  .gauge{ height:7px; background:var(--paper-border); border-radius:999px; overflow:hidden; }
+  .gauge > div{ height:100%; border-radius:999px; }
+  .gauge.hard > div{ background:var(--brick); width:38%; }
+  .gauge.soft > div{ background:var(--rust); width:64%; }
+  .gauge-note{ font-size:11px; color:var(--ink-soft); margin-top:4px; }
+
+  textarea.order-input{
+    width:100%; font-family:var(--font-body); font-size:14px; padding:12px 14px;
+    border:1px solid var(--paper-border); border-radius:8px; background:var(--paper);
+    resize:vertical; min-height:56px; color:var(--ink);
+  }
+  .deploy-btn{
+    width:100%; margin-top:12px; padding:13px; border:none; border-radius:8px;
+    background:var(--gold); color:var(--coffee); font-weight:700; font-size:14px;
+    cursor:pointer; letter-spacing:0.01em;
+  }
+  .deploy-note{ font-size:11.5px; color:var(--ink-soft); margin-top:8px; line-height:1.5; }
+
+  /* agent console — "the machine speaking", integrated not alien */
+  .agent-console{
+    background:var(--coffee); border:1px solid var(--coffee-border); border-radius:var(--radius-chit);
+    padding:0; overflow:hidden; color:var(--paper);
+  }
+  .agent-head{
+    display:flex; justify-content:space-between; align-items:center;
+    padding:14px 18px; border-bottom:1px solid var(--coffee-border);
+    font-family:var(--font-mono); font-size:12px;
+  }
+  .agent-head .dot{ width:8px; height:8px; border-radius:50%; background:var(--leaf); display:inline-block; margin-right:6px; }
+  .agent-steps{ display:flex; }
+  .astep{ flex:1; text-align:center; padding:16px 8px; border-right:1px solid var(--coffee-border); font-size:11px; }
+  .astep:last-child{ border-right:none; }
+  .astep .n{ font-family:var(--font-mono); color:var(--gold); display:block; margin-bottom:4px; }
+  .agent-screen{
+    background:var(--coffee-2); margin:0 18px 18px; border-radius:6px; padding:18px;
+    font-family:var(--font-mono); font-size:12.5px; color:#B8AFA0; min-height:120px;
+  }
+
+  .menu-section{ margin-top:26px; }
+  .menu-head{ display:flex; justify-content:space-between; align-items:baseline; margin-bottom:12px; }
+  .menu-head h3{ font-family:var(--font-display); font-size:19px; margin:0; }
+  .menu-count{ font-family:var(--font-mono); font-size:11px; color:var(--ink-soft); }
+  .menu-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
+  .dish{ background:var(--paper-card); border:1px solid var(--paper-border); border-radius:var(--radius-chit); padding:14px 16px; }
+  .dish-cat{ font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--ink-soft); }
+  .dish-name{ font-weight:700; margin:2px 0 8px; }
+  .dish-bottom{ display:flex; justify-content:space-between; align-items:center; }
+  .dish-price{ font-family:var(--font-mono); font-weight:700; }
+  .dish-strike{ font-size:11px; color:var(--ink-soft); text-decoration:line-through; margin-right:4px; }
+  .add-btn{ border:1px solid var(--gold-deep); color:var(--gold-deep); background:transparent; border-radius:999px; padding:5px 12px; font-size:12px; font-weight:600; cursor:pointer; }
+  .dish.muted{ opacity:0.45; }
+
+  /* ================= MERCHANT VIEW (the board) ================= */
+  #merchantView.active{ background:var(--coffee-2); }
+  .board-stats{ display:flex; gap:14px; margin-bottom:26px; }
+  .stat{ background:var(--coffee); border:1px solid var(--coffee-border); border-radius:10px; padding:14px 18px; color:var(--paper); flex:1; }
+  .stat .num{ font-family:var(--font-display); font-size:24px; font-weight:700; }
+  .stat .lbl{ font-family:var(--font-mono); font-size:10px; text-transform:uppercase; color:#9A8E7B; letter-spacing:0.05em; margin-top:2px; }
+
+  .board-grid{ display:grid; grid-template-columns:1.3fr 1fr; gap:24px; align-items:start; }
+  .pinboard{ position:relative; }
+  .pin-title{ font-family:var(--font-display); font-size:20px; color:var(--paper); margin-bottom:16px; }
+  .pin-title .muted{ color:#8A7C68; font-size:13px; font-family:var(--font-body); font-weight:400; }
+
+  .pinned{
+    background:var(--paper-card); border-radius:var(--radius-chit); padding:18px 20px;
+    margin-bottom:22px; position:relative; box-shadow:0 14px 24px rgba(0,0,0,0.4);
+  }
+  .pinned.rot-l{ transform:rotate(-1.6deg); }
+  .pinned.rot-r{ transform:rotate(1.3deg); }
+  .pin-dot{
+    position:absolute; top:-7px; left:32px; width:13px; height:13px; border-radius:50%;
+    background:radial-gradient(circle at 32% 30%, #f0d68a, var(--gold-deep));
+    box-shadow:0 2px 5px rgba(0,0,0,0.45);
+  }
+  .pin-row{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+  .pin-agent{ font-family:var(--font-mono); font-size:12px; color:var(--ink-soft); }
+  .pin-cart{ font-size:14.5px; font-weight:600; margin-bottom:4px; }
+  .pin-total{ font-family:var(--font-display); font-size:22px; font-weight:700; margin-top:6px; }
+  .pin-reason{ font-size:12.5px; color:var(--ink-soft); margin-top:6px; line-height:1.4; }
+  .pin-actions{ display:flex; gap:10px; margin-top:14px; }
+  .pin-actions button{ flex:1; padding:9px; border-radius:7px; font-weight:700; font-size:13px; cursor:pointer; border:none; }
+  .btn-yes{ background:var(--leaf); color:var(--paper-card); }
+  .btn-no{ background:transparent; color:var(--brick); border:1.5px solid var(--brick) !important; }
+
+  .phone{
+    background:var(--coffee); border:1px solid var(--coffee-border); border-radius:20px;
+    padding:16px; color:var(--paper);
+  }
+  .phone-head{ display:flex; align-items:center; gap:8px; font-size:12px; margin-bottom:12px; color:#B8AFA0; }
+  .phone-head .dot{ width:7px; height:7px; border-radius:50%; background:var(--leaf); }
+  .bubble{
+    background:var(--coffee-2); border-radius:10px; padding:12px 14px; font-size:13px; line-height:1.5; margin-bottom:10px;
+  }
+  .bubble.out{ background:#22331D; }
+
+  .log-strip{ margin-top:24px; }
+  .log-row{
+    display:grid; grid-template-columns:100px 1fr 90px 110px; align-items:center; gap:14px;
+    padding:11px 4px; border-bottom:1px solid var(--coffee-border); font-size:12.5px; color:#C9BFA9;
+  }
+  .log-row .t{ font-family:var(--font-mono); color:#8A7C68; font-size:11px; }
+  .log-row .amt{ font-family:var(--font-mono); text-align:right; font-weight:600; color:var(--paper); }
+
+  .askpanel{
+    background:var(--paper-card); border-radius:var(--radius-chit); padding:18px 20px; margin-top:22px;
+  }
+  .askpanel h4{ margin:0 0 4px; font-family:var(--font-display); font-size:16px; }
+  .askpanel p{ font-size:12.5px; color:var(--ink-soft); margin:0 0 12px; line-height:1.4; }
+  .tag-pill{ display:inline-flex; align-items:center; gap:8px; background:var(--paper); border:1px solid var(--paper-border); border-radius:999px; padding:5px 12px 5px 12px; font-size:12.5px; margin-right:8px; }
+  .tag-pill .count{ background:var(--rust); color:var(--paper-card); border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <div class="brand-mark">AK</div>
+      <div class="brand-name">Amma's Kitchen</div>
+    </div>
+    <div class="role-toggle">
+      <button class="active" onclick="showView('buyer', this)">Buyer</button>
+      <button onclick="showView('merchant', this)">Merchant</button>
+    </div>
+    <div class="navlinks"><a href="#">Audit trail</a><a href="#">Account</a><a href="#">Home</a></div>
+  </div>
+
+  <!-- ============ BUYER VIEW ============ -->
+  <div class="view active" id="buyerView">
+    <div class="page-head">
+      <div class="eyebrow">Your order</div>
+      <h1>What would you like?</h1>
+      <div class="sub">Say it in your own words. Your agent takes it from there, and shows you everything it does.</div>
+    </div>
+
+    <div class="buyer-grid">
+      <div>
+        <div class="chit" style="margin-bottom:18px;">
+          <div class="customer-row">
+            <div class="avatar">J</div>
+            <div>
+              <div class="customer-name">Jeet Manseta</div>
+              <div class="customer-addr">Sharad Appartment, Sardar Nagar West, Opposite Railway Track</div>
+            </div>
+          </div>
+          <div class="card-file">
+            <span>•••• 1007</span>
+            <span class="tag">Tokenised</span>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge-top"><span class="lbl">Hard cap — never exceeded</span><span class="val">₹600</span></div>
+            <div class="gauge hard"><div></div></div>
+          </div>
+          <div class="gauge-wrap">
+            <div class="gauge-top"><span class="lbl">Soft cap — asks you first</span><span class="val">₹300</span></div>
+            <div class="gauge soft"><div></div></div>
+            <div class="gauge-note">Anything above the soft cap comes back to you before it's bought.</div>
+          </div>
+          <div class="field-label" style="margin-top:16px;">What do you want your AI to buy?</div>
+          <textarea class="order-input">Order 1 paneer bhurji and 4 tandoori roti</textarea>
+          <button class="deploy-btn">Deploy Agent</button>
+          <div class="deploy-note">The agent negotiates on its own and pays with your saved card. It comes back to you only if something crosses your soft cap.</div>
+        </div>
+      </div>
+
+      <div class="agent-console">
+        <div class="agent-head">
+          <span><span class="dot"></span>agent-an1yp</span>
+          <span style="color:#8A7C68;">IDLE</span>
+        </div>
+        <div class="agent-steps">
+          <div class="astep"><span class="n">1</span>Discover<br>her catalog</div>
+          <div class="astep"><span class="n">2</span>Your limits<br>bounded check</div>
+          <div class="astep"><span class="n">3</span>Negotiate<br>her limits</div>
+          <div class="astep"><span class="n">4</span>Settle<br>Razorpay</div>
+        </div>
+        <div class="agent-screen">Agent asleep. Say what you want and deploy.</div>
+      </div>
+    </div>
+
+    <div class="menu-section">
+      <div class="menu-head">
+        <h3>On the menu today</h3>
+        <span class="menu-count">7 of 8 orderable</span>
+      </div>
+      <div class="menu-grid">
+        <div class="dish">
+          <div class="dish-cat">Meals</div>
+          <div class="dish-name">Veg Thali</div>
+          <div class="dish-bottom"><span class="dish-price"><span class="dish-strike">₹150</span>₹127</span><button class="add-btn">+ Add</button></div>
+        </div>
+        <div class="dish">
+          <div class="dish-cat">Meals</div>
+          <div class="dish-name">Chicken Biryani</div>
+          <div class="dish-bottom"><span class="dish-price"><span class="dish-strike">₹220</span>₹187</span><button class="add-btn">+ Add</button></div>
+        </div>
+        <div class="dish">
+          <div class="dish-cat">Snacks</div>
+          <div class="dish-name">Masala Dosa</div>
+          <div class="dish-bottom"><span class="dish-price">₹68</span><button class="add-btn">+ Add</button></div>
+        </div>
+        <div class="dish">
+          <div class="dish-cat">Beverages</div>
+          <div class="dish-name">Filter Coffee</div>
+          <div class="dish-bottom"><span class="dish-price">₹25</span><button class="add-btn">+ Add</button></div>
+        </div>
+        <div class="dish">
+          <div class="dish-cat">Desserts</div>
+          <div class="dish-name">Gulab Jamun</div>
+          <div class="dish-bottom"><span class="dish-price">₹51</span><button class="add-btn">+ Add</button></div>
+        </div>
+        <div class="dish muted">
+          <div class="dish-cat">Bulk catering</div>
+          <div class="dish-name">Party Catering Tray</div>
+          <div class="dish-bottom"><span class="dish-price">₹350</span><span class="stamp brick">In person</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MERCHANT VIEW ============ -->
+  <div class="view" id="merchantView">
+    <div class="page-head">
+      <div class="eyebrow" style="color:var(--gold);">Orders needing your decision</div>
+      <h1 style="color:var(--paper);">The board</h1>
+      <div class="sub" style="color:#A69B87;">These are the ones the system refused to decide on its own. Everything else already cleared inside the bounds you set, or was refused outright before it ever reached Razorpay.</div>
+    </div>
+
+    <div class="board-stats">
+      <div class="stat"><div class="num">₹0</div><div class="lbl">Today's revenue</div></div>
+      <div class="stat"><div class="num">59</div><div class="lbl">Active agents</div></div>
+      <div class="stat"><div class="num" style="color:var(--rust);">1</div><div class="lbl">Waiting on you</div></div>
+    </div>
+
+    <div class="board-grid">
+      <div class="pinboard">
+        <div class="pin-title">Waiting on you <span class="muted">— 1 pinned</span></div>
+        <div class="pinned rot-l">
+          <div class="pin-dot"></div>
+          <div class="pin-row">
+            <div><div class="pin-agent">agent-an1yp</div><div class="pin-cart">2× Veg Thali</div></div>
+            <span class="stamp rust">Escalate</span>
+          </div>
+          <div class="pin-total">₹480</div>
+          <div class="pin-reason">Over your ₹400 confirm threshold. Payment already captured — reject and it refunds automatically.</div>
+          <div class="pin-actions">
+            <button class="btn-yes">Accept</button>
+            <button class="btn-no" style="border:1.5px solid var(--brick);">Reject</button>
+          </div>
+        </div>
+
+        <div class="askpanel">
+          <h4>Asked for, but not on your menu</h4>
+          <p>Requests an agent brought you that you don't currently sell. Worth knowing before you decide what to cook next.</p>
+          <span class="tag-pill">2 pizzas <span class="count">3</span></span>
+          <span class="tag-pill">Filter coffee — cold <span class="count">1</span></span>
+        </div>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="phone-head"><span class="dot"></span>Amma's Kitchen bot · WhatsApp preview</div>
+          <div class="bubble">Your agent wants to order 2× Veg Thali for ₹480. That's above the ₹400 you asked to be checked on.</div>
+          <div class="bubble out">Reply YES to go ahead, or NO to cancel.</div>
+        </div>
+
+        <div class="log-strip">
+          <div class="log-row" style="color:#8A7C68; font-family:var(--font-mono); font-size:10.5px;">
+            <span>TIME</span><span>CART</span><span>TOTAL</span><span style="text-align:right;">DECISION</span>
+          </div>
+          <div class="log-row"><span class="t">05:12</span><span>2× Veg Thali</span><span class="amt">₹330</span><span class="stamp leaf" style="justify-self:end;">Approve</span></div>
+          <div class="log-row"><span class="t">05:08</span><span>1× Masala Dosa</span><span class="amt">₹68</span><span class="stamp leaf" style="justify-self:end;">Approve</span></div>
+          <div class="log-row"><span class="t">04:36</span><span>1× Party Tray</span><span class="amt">₹350</span><span class="stamp brick" style="justify-self:end;">Refused</span></div>
+          <div class="log-row"><span class="t">04:21</span><span>1× Paneer Bhurji, 5× Roti</span><span class="amt">₹400</span><span class="stamp gold" style="justify-self:end;">Paid</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+  function showView(name, btn){
+    document.getElementById('buyerView').classList.toggle('active', name==='buyer');
+    document.getElementById('merchantView').classList.toggle('active', name==='merchant');
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+</script>
+</body>
+</html>

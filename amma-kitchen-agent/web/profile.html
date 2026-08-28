@@ -24,19 +24,19 @@
   .section-head:first-of-type { margin-top: 0; padding-top: 0; border-top: none; }
 
   .cardface {
-    background: linear-gradient(135deg, #1e293b 0%, #0f172a 60%, #312e81 100%);
-    border-radius: 14px; padding: 19px; color: #fff; margin-bottom: 16px;
-    box-shadow: 0 12px 30px -14px rgba(15, 23, 42, .6);
+    background: linear-gradient(135deg, #2E1B0E 0%, #1C0F06 60%, #4A3320 100%);
+    border-radius: 14px; padding: 19px; color: var(--paper); margin-bottom: 16px;
+    box-shadow: 0 12px 30px -14px rgba(28, 15, 6, .55);
     position: relative; overflow: hidden;
   }
   .cardface::after {
     content: ""; position: absolute; right: -40px; top: -60px;
     width: 170px; height: 170px; border-radius: 50%;
-    background: rgba(99, 102, 241, .18);
+    background: rgba(184, 121, 26, .2);
   }
   .cardface .chip {
     width: 36px; height: 26px; border-radius: 5px; margin-bottom: 18px;
-    background: linear-gradient(135deg, #fcd34d, #b45309);
+    background: linear-gradient(135deg, #F0D68A, #8F5C10);
   }
   .cardface .num {
     font-family: ui-monospace, Menlo, Consolas, monospace;
@@ -44,15 +44,15 @@
   }
   .cardface .meta {
     display: flex; justify-content: space-between; margin-top: 13px;
-    font-size: 10.5px; color: #94a3b8; text-transform: uppercase; letter-spacing: .08em;
+    font-size: 10.5px; color: #9A8E7B; text-transform: uppercase; letter-spacing: .08em;
   }
 
   .safety {
     display: flex; gap: 10px; padding: 13px 15px; border-radius: 11px;
     background: var(--info-soft); border: 1px solid var(--info-line);
-    font-size: 12.5px; color: #075985; line-height: 1.5; margin-bottom: 17px;
+    font-size: 12.5px; color: #3F5A66; line-height: 1.5; margin-bottom: 17px;
   }
-  .safety b { color: #0c4a6e; }
+  .safety b { color: #33505C; }
 
   .saved-banner {
     display: flex; align-items: center; gap: 12px; justify-content: space-between;
@@ -92,7 +92,7 @@
         <a class="btn btn-sm btn-ok" href="/buyer/order" style="text-decoration:none">Go to ordering</a>
       </div>
 
-      <div class="card">
+      <div class="card chit">
         <div class="section-head">Who you are</div>
 
         <div class="field">
@@ -117,7 +117,7 @@
         <div class="section-head">Card on file</div>
 
         <div class="safety">
-          <span>&#128274;</span>
+          <span>&#4F7942;</span>
           <span>
             <b>Test mode.</b> Use the Razorpay test card below &mdash; it's pre-filled.
             Your card number never leaves this browser and is never stored: only the
