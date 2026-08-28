@@ -141,6 +141,8 @@ amma-kitchen-agent/
   merchant_config.py      # what Amma actually configured; what the core decides against
   negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
   upsell_ranking.py       # which add-on suits this cart; pure, derived from her menu
+  routines.py             # standing orders + the confidence gate deciding whether one
+                          #   may fire unasked; charges via the shared orchestrator
   trust.py                # per-agent trust tier from audit history; widens margin only
   orchestrator.py         # shared plumbing: trust -> core -> audit -> Razorpay
 
@@ -177,7 +179,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 428 tests; test_negotiation.py still matters most
+  tests/                  # 453 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1308,7 +1310,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**428 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**453 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1684,6 +1686,125 @@ survive a restart.
 `disputed_at` is a single timestamp, deliberately: being disputed is a fact about a record,
 not a stage in a workflow. It is not a lifecycle transition either — a status row would
 become the order's latest status and shove it out of whatever state it is really in.
+
+## Standing orders: deciding when *not* to act
+
+Everything before this waits to be asked. A standing order is the first thing in the
+project that acts on its own -- "my usual, every weekday at eight" -- and that is a
+different kind of authority from anything the two mandates covered. `buyer_mandate.py`
+bounds *what* an agent may spend once the customer has asked for something. A routine
+bounds *whether it should act at all when nobody has asked*.
+
+The scheduling is the boring half. The interesting half is the **confidence gate**, and
+the property it exists to hold: **a routine that is no longer the thing the customer
+agreed to stops being pre-authorised and becomes an ordinary request that has to be
+confirmed.** There is deliberately no "fire anyway, just this once" path -- a gate
+failure always means ask, and `test_a_gate_failure_charges_nothing_at_all` asserts not
+one audit row is written when it refuses.
+
+### Why this one may charge the card directly
+
+Every other flow in this project ends at a Razorpay payment link the human pays
+themselves, and the MCP section explains at length why that boundary is structural. A
+standing order settles through `autonomous_payment.execute()` instead, with no link and
+nobody clicking anything -- and the reason that is not a hole in the boundary is worth
+stating precisely.
+
+The two are different kinds of consent. A checkout link collects consent **at the moment
+of purchase**, for a cart the customer is looking at right now. A standing order collects
+it **in advance**, for a specific cart, on a specific schedule, under a specific cap --
+which is the shape of every card-on-file recurring arrangement that already exists.
+Nothing is being waved through: the authorisation was given, it was recorded, and the
+gate's entire job is to check that what is about to be charged is still the thing that was
+authorised. The moment it is not, the pre-authorisation does not apply and the flow falls
+back to asking.
+
+Consistent with the rest of the project, the capture on this account is labelled `sim_`
+and excluded from revenue, because S2S is not enabled -- see "Autonomous settlement".
+
+### The five checks, and why each one is there
+
+`confidence_gate()` returns **every** failure, not the first. Someone being asked to
+approve something deserves to be told everything that looks different; a gate that
+short-circuits hides the rest and makes the question look smaller than it is.
+
+| check | fails when | why it is a check and not an assumption |
+| --- | --- | --- |
+| `active` | the routine is paused | pausing is the customer's own brake; a paused routine that still fired would make the control decorative |
+| `on_menu` | an item is gone, unticked for agents, or out of stock | the merchant edits her menu whenever she likes, and a routine is a standing claim about a menu that may no longer exist |
+| `price_drift` | the price moved more than 15% from setup | the customer agreed to a cart at a price, and a dish that doubled is not that cart any more -- but a tolerance has to *be* a tolerance, or every sale Amma runs turns into a question, so 7% still fires |
+| `routine_cap` | today's total is over the cap set for this routine | its own limit, separate from the buyer's hard cap and never above it |
+| `time_window` | wrong day, or more than 45 minutes off the hour | firing hours early or late is itself evidence something has gone wrong upstream, independent of whether the cart looks fine |
+
+Two of those are about the merchant changing something under a customer who is not
+watching, two are about the routine drifting from what was agreed, and one is about the
+system itself misbehaving. That spread is the point.
+
+### Where it plugs in
+
+**Every standing-order charge goes through `orchestrator.negotiate_and_record()` like
+everything else.** There is no second charging path and no bypass -- the cart is priced by
+the same core, refused by the same rules, and written to the same trail. `negotiation.py`
+is untouched and has never heard of routines; a test asserts `routines.py` does not import
+it. The audit row simply carries `source="routine"` and `routine_id`, so a standing order
+is legible in the ledger without being special anywhere in the decision path.
+
+That composition is load-bearing, not decorative: a routine passing its own gate is **not**
+permission for Amma to sell something she does not sell to agents. Her rules still run
+underneath, and there is a test for exactly that.
+
+### What the customer sees, and what the record says
+
+The buyer console's **Standing orders** panel reuses the basket that is already there --
+there is deliberately not a second item picker. Each routine shows its cart, days, time
+and cap, with **Pause**, **Remove**, and **Simulate next occurrence**. The merchant's
+cockpit gains one KPI, **From standing orders**: the share of settled, non-refunded
+revenue that arrived without anybody placing an order. It is computed over the whole
+ledger window rather than today, because a weekly routine would read 0% on six days out of
+seven and that would say nothing.
+
+`routines.suggest_from_history()` reads repeated carts out of the audit trail and offers
+them. It **only ever suggests**. Nothing in this project creates a standing order the
+customer did not explicitly turn on, because a system that starts charging for a pattern
+it noticed is precisely the thing people are right to be afraid of.
+
+An order placed by a routine has no `buyer_reasoning`, because nobody was there to state
+one -- that is what a standing order *is*. The evidence pack does not leave the field empty
+and does not invent a sentence in the customer's voice: `routines.describe()` states the
+arrangement as a fact, *"Standing order: repeats Tue at 08:00, set up on 2026-08-28 and
+unchanged since"*, and labels the source as `routine` rather than `customer`.
+
+### Three things a live run caught that the tests could not
+
+The suite was green through all three. Each was only visible over a real request or in a
+real browser -- the same lesson as every other section here.
+
+- **The message blamed the wrong thing.** A routine held back by the **clock** asked the
+  customer to approve spending *"above the Rs.200 you asked to be checked on"*. The amount
+  was fine. `_ask_first` was reusing `buyer_sms.ask_approval`, whose middle sentence is
+  hardcoded to the soft cap -- correct for the one case it was written for, and false for
+  almost every gate failure, since the reason is usually not the amount at all.
+  `ask_approval` now takes an optional `why`; callers that genuinely are asking about the
+  soft cap pass nothing and get the original wording, and there is a test pinning both.
+- **The evidence pack reported a hole that was not there.** It looked for `hard_cap_inr`
+  and, finding none, said *"no customer limit on file"* -- but a standing order has no
+  checkout at which a hard cap could be typed. The cap the customer set when they turned
+  the routine on **is** what they authorised. The pack now names that limit specifically,
+  and a control test asserts the new branch does not swallow the honest "not recorded"
+  answer every other path still needs to give.
+- **The result of a simulation appeared and vanished in the same tick.** Firing updates
+  `last_fired_at`, so the list is rebuilt -- destroying the element the answer had just
+  been written into. The answer is now written *after* the redraw. No unit test could see
+  this; the DOM had to be driven.
+
+### The honest gap, again
+
+**Nothing schedules any of this.** The project has no scheduler -- the same gap already
+recorded for `mcp_orders.expire()` -- and inventing one was out of scope.
+`check_and_fire()` is complete and tested, and something has to call it; for the demo that
+something is the **Simulate next occurrence** button, with an optional `at` so a future
+occurrence can be checked without waiting for the day to come round. The capability is
+there; the clock is not, and the button says "simulate" rather than pretending otherwise.
 
 ## Before a demo, run the check
 

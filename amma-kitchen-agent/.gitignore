@@ -10,3 +10,6 @@ __pycache__/
 uvicorn*.log
 merchant_config.json
 *.log
+
+# Standing orders are per-install state, like the shop config above.
+routines.json

@@ -107,6 +107,27 @@
     text-decoration: underline;
   }
 
+  /* ---- standing orders ---- */
+  .routine { border-top: 1px dashed var(--paper-border); padding: 14px 0; }
+  .routine:first-of-type { border-top: 0; padding-top: 4px; }
+  .routine-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+  .routine-cart { font-weight: 700; font-size: 14px; }
+  .routine-when { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); margin-top: 3px; }
+  .routine-acts { display: flex; gap: 7px; flex-wrap: wrap; margin-top: 11px; }
+  .routine-out { font-size: 12px; margin-top: 9px; line-height: 1.5; }
+  .routine-out .fail { color: var(--brick); }
+  .routine-out .ok { color: var(--leaf); }
+  .daybox { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+  .daybox label {
+    margin: 0; text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 600;
+    border: 1px solid var(--paper-border); border-radius: 999px; padding: 5px 11px;
+    cursor: pointer; color: var(--ink-soft); background: var(--paper);
+  }
+  .daybox input { display: none; }
+  .daybox label.on { background: var(--gold); border-color: var(--gold); color: var(--coffee); }
+  .routine-form { border-top: 1px dashed var(--paper-border); margin-top: 14px; padding-top: 15px; }
+  .routine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px; }
+
   /* ---- transactions drawer ---- */
   .tx-btn { width: 100%; margin-top: 12px; }
   .tx-back { position: fixed; inset: 0; background: rgba(28,15,6,.45); z-index: 70; }
@@ -364,6 +385,43 @@
 
         <div class="card" style="margin-top:16px">
           <div class="card-head">
+            <h2 class="card-title">Standing orders</h2>
+            <span class="badge badge-mute" id="routineCount">none</span>
+          </div>
+          <p class="note" style="margin:0 0 12px">
+            Your agent will place these automatically, within the cap you set, without
+            asking first &mdash; unless something looks different from usual, in which case
+            it messages you and waits.
+          </p>
+          <div id="routineList"></div>
+
+          <div class="routine-form">
+            <div class="sec-label" style="font-size:11.5px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em">
+              New standing order
+            </div>
+            <p class="note" style="margin:6px 0 0">
+              Add the dishes to the box above, then pick the days and time.
+              <span id="routineBasket" class="mono"></span>
+            </p>
+            <div class="daybox" id="routineDays"></div>
+            <div class="routine-grid">
+              <div>
+                <label for="routineTime">Time</label>
+                <input type="text" id="routineTime" value="08:00" placeholder="08:00" autocomplete="off">
+              </div>
+              <div>
+                <label for="routineCap">Cap for this routine</label>
+                <input type="text" id="routineCap" inputmode="numeric" autocomplete="off">
+              </div>
+            </div>
+            <button class="btn btn-sm" id="routineCreate" style="width:100%; margin-top:12px">
+              Turn on this standing order
+            </button>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
             <h2 class="card-title">On the menu today</h2>
             <span class="badge badge-mute" id="dishCount">—</span>
           </div>
@@ -616,6 +674,9 @@ async function boot() {
 
   MENU = (await api("/api/menu")).items;
   renderDishes();
+  renderDayPicker();
+  syncRoutineForm();
+  renderRoutines();
 }
 
 /* Her live menu, straight from /api/menu. An item she has unticked is
@@ -674,6 +735,7 @@ function syncPicked() {
   pickerWroteBox = text;
 
   const count = pickedCount();
+  if (typeof syncRoutineForm === "function") syncRoutineForm();
   $("cartBar").innerHTML = count
     ? `<span>${count} item${count === 1 ? "" : "s"} &middot; ${rupee(pickedTotal())}</span>` +
       `<button class="cart-clear" id="cartClear">Clear</button>`
@@ -1402,6 +1464,156 @@ function closeTransactions() {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeTransactions();
+});
+
+/* ------------------------------------------------------- standing orders
+
+   A standing order is consent given once, in advance, for a specific
+   cart on a specific schedule inside a specific cap -- so it may charge
+   the card directly rather than issuing a fresh link, the same shape as
+   card-on-file recurring billing.
+
+   What earns that is the confidence gate on the server: if the routine
+   has stopped being the thing that was agreed to -- paused, an item gone,
+   the price moved, over its cap, or firing at the wrong time -- it stops
+   being pre-authorised and becomes an ordinary request that has to be
+   confirmed. There is no path here that charges anyway. */
+
+const ROUTINE_DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+
+function renderDayPicker() {
+  $("routineDays").innerHTML = ROUTINE_DAYS.map((d) => `
+    <label id="day-${d}"><input type="checkbox" value="${d}">${d[0].toUpperCase() + d.slice(1)}</label>
+  `).join("");
+  for (const label of $("routineDays").querySelectorAll("label")) {
+    label.addEventListener("click", () => {
+      const box = label.querySelector("input");
+      box.checked = !box.checked;
+      label.classList.toggle("on", box.checked);
+    });
+  }
+}
+
+function chosenDays() {
+  return [...$("routineDays").querySelectorAll("input")].filter((b) => b.checked).map((b) => b.value);
+}
+
+/* The basket above IS the item picker -- there is deliberately not a
+   second one. */
+function syncRoutineForm() {
+  const items = Object.entries(PICKED).filter(([, q]) => q > 0);
+  const total = pickedTotal();
+  $("routineBasket").textContent = items.length
+    ? `Using: ${pickedText().replace(/^Order /, "")} · ${rupee(total)}`
+    : "Nothing in the box yet.";
+  if (items.length && !$("routineCap").dataset.touched) {
+    // Her own default from signup wins; otherwise a little headroom over
+    // this cart, so a small price move doesn't trip the gate on day one.
+    $("routineCap").value = PROFILE.routine_cap_inr || Math.round(total * 1.1);
+  }
+}
+
+async function renderRoutines() {
+  let data;
+  try {
+    data = await api(`/api/routines?agent_id=${encodeURIComponent(PROFILE.agent_id)}`);
+  } catch { return; }
+
+  const list = data.routines || [];
+  $("routineCount").textContent = list.length
+    ? `${list.length} active` : "none";
+
+  $("routineList").innerHTML = list.length
+    ? list.map((r) => {
+        const cart = r.items.map((i) => `${i.qty}× ${escHtml(i.item_id).replace(/_/g, " ")}`).join(", ");
+        const days = r.days.map((d) => d[0].toUpperCase() + d.slice(1)).join(", ");
+        const paused = r.status !== "active";
+        return `
+          <div class="routine" data-routine="${escHtml(r.id)}">
+            <div class="routine-top">
+              <div>
+                <div class="routine-cart">${cart}</div>
+                <div class="routine-when">
+                  ${escHtml(days)} at ${escHtml(r.time)} · cap ${rupee(r.routine_cap_inr)}
+                  ${r.last_fired_at ? ` · last ran ${escHtml(r.last_fired_at.slice(0, 10))}` : ""}
+                </div>
+              </div>
+              <span class="stamp ${paused ? "steel" : "leaf"}">${paused ? "paused" : "active"}</span>
+            </div>
+            <div class="routine-acts">
+              <button class="btn btn-sm btn-ghost" data-act="toggle">${paused ? "Resume" : "Pause"}</button>
+              <button class="btn btn-sm btn-ghost" data-act="simulate">Simulate next occurrence</button>
+              <button class="btn btn-sm btn-ghost" data-act="delete">Remove</button>
+            </div>
+            <div class="routine-out" id="out-${escHtml(r.id)}"></div>
+          </div>`;
+      }).join("")
+    : `<div class="note" style="margin:0">No standing orders yet.</div>`;
+}
+
+$("routineList").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act]");
+  if (!btn) return;
+  const id = btn.closest("[data-routine]").dataset.routine;
+  btn.disabled = true;
+
+  /* The answer is written AFTER the list is redrawn, not before. Firing
+     changes `last_fired_at`, so the list has to be rebuilt — and rebuilding
+     it destroys the element the answer was written into. A browser caught
+     that; the result appeared and vanished in the same tick. */
+  let answer = null;
+  try {
+    if (btn.dataset.act === "delete") {
+      await api(`/api/routines/${id}`, { method: "DELETE" });
+    } else if (btn.dataset.act === "toggle") {
+      const now = btn.textContent.trim() === "Pause" ? "paused" : "active";
+      await api(`/api/routines/${id}/status?status=${now}`, { method: "POST" });
+    } else {
+      $("out-" + id).innerHTML = `<span class="muted">Running the confidence gate…</span>`;
+      const res = await api(`/api/routines/${id}/simulate`, { method: "POST" });
+      answer = res.fired
+        ? `<span class="ok"><b>Placed automatically.</b> ${rupee(res.total_inr)} charged to
+             your card on file — every check passed, so you were not asked. A message has
+             gone to your phone.</span>`
+        : `<span class="fail"><b>Not placed. You have been asked first, and nothing has been
+             charged.</b><br>` +
+          (res.failures || []).map((f) => `· ${escHtml(f.why)}`).join("<br>") +
+          `</span>`;
+    }
+  } catch (err) {
+    answer = `<span class="fail">${escHtml(err.message)}</span>`;
+  }
+
+  await renderRoutines();
+  const out = $("out-" + id);
+  if (answer && out) out.innerHTML = answer;
+});
+
+$("routineCap").addEventListener("input", () => { $("routineCap").dataset.touched = "1"; });
+
+$("routineCreate").addEventListener("click", async () => {
+  const items = Object.entries(PICKED).filter(([, q]) => q > 0)
+    .map(([item_id, qty]) => ({ item_id, qty }));
+  if (!items.length) return toast("Add the dishes to the box above first.", true);
+  const days = chosenDays();
+  if (!days.length) return toast("Pick at least one day.", true);
+
+  try {
+    await api("/api/routines", {
+      method: "POST",
+      body: JSON.stringify({
+        items, days, time: $("routineTime").value.trim(),
+        agent_id: PROFILE.agent_id, phone: PROFILE.phone,
+        routine_cap_inr: parseInt($("routineCap").value, 10) || null,
+      }),
+    });
+    toast("Standing order on. Your agent will place it automatically inside that cap.");
+    clearPicked();
+    delete $("routineCap").dataset.touched;
+    renderRoutines();
+  } catch (err) {
+    toast(err.message, true);
+  }
 });
 
 $("deployBtn").addEventListener("click", deploy);

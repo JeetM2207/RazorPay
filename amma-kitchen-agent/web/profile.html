@@ -167,6 +167,16 @@
           </div>
         </div>
 
+        <div class="field">
+          <label for="routineCapDefault">Default cap for a standing order</label>
+          <input type="text" id="routineCapDefault" inputmode="numeric">
+          <div class="hint">
+            A standing order is one you set up once and your agent then places on its own,
+            without asking. This is the most it may spend on any single one of them &mdash;
+            separate from, and never above, your hard cap.
+          </div>
+        </div>
+
         <button class="btn" id="saveBtn" style="width:100%; margin-top:8px">
           Save and continue
         </button>
@@ -237,6 +247,10 @@ function save() {
   if (!/^\d{2}\/\d{2}$/.test(expiry)) return toast("Expiry should look like 12/28.", true);
   if (hardCap <= 0) return toast("Set a hard cap above zero.", true);
   if (softCap > hardCap) return toast("Your soft cap can't be above your hard cap.", true);
+  const routineCap = parseInt($("routineCapDefault").value, 10) || 0;
+  if (routineCap > hardCap) {
+    return toast("A standing order can't be allowed to spend above your hard cap.", true);
+  }
 
   if (digits !== TEST_CARD) {
     const ok = confirm(
@@ -259,6 +273,7 @@ function save() {
     card_token: "tok_demo_" + Math.random().toString(36).slice(2, 12),
     hard_cap_inr: hardCap,
     soft_cap_inr: softCap,
+    routine_cap_inr: routineCap,
     agent_id: "agent-" + Math.random().toString(36).slice(2, 7),
     created_at: new Date().toISOString(),
   };
@@ -281,6 +296,7 @@ async function boot() {
   const defaults = await res.json();
   $("hardCap").value = defaults.spend_cap_inr;
   $("softCap").value = defaults.confirm_above_inr;
+  $("routineCapDefault").value = defaults.confirm_above_inr;
 
   const existing = localStorage.getItem(PROFILE_KEY);
   if (existing) {
@@ -292,6 +308,7 @@ async function boot() {
     $("cardExpiry").value = p.card_expiry || "12/28";
     $("hardCap").value = p.hard_cap_inr;
     $("softCap").value = p.soft_cap_inr;
+    if (p.routine_cap_inr) $("routineCapDefault").value = p.routine_cap_inr;
     $("saveBtn").textContent = "Update and continue";
   }
   paintCard();

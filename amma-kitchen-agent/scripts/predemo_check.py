@@ -314,6 +314,37 @@ def check_state() -> None:
         report("PASS", "paid orders awaiting her answer", "none")
 
 
+def check_routines() -> None:
+    """A standing order that cannot fire is a demo beat that silently
+    does not happen. Every routine is run through the gate as it stands
+    right now, so the reason is on screen before the pitch rather than
+    during it."""
+    import routines
+
+    all_r = routines.all_routines()
+    if not all_r:
+        report("WARN", "standing orders", "none set up -- the routine beat has nothing to show")
+        return
+
+    blocked = []
+    for r in all_r:
+        if r["status"] != "active":
+            continue
+        gate = routines.confidence_gate(r)
+        # A wrong-day failure is not a problem: it is what the gate is FOR,
+        # and the console simulates a real occurrence anyway.
+        real = [f for f in gate["failures"] if f["check"] != "time_window"]
+        if real:
+            blocked.append(f"{r['id']}: " + "; ".join(f["check"] for f in real))
+
+    if blocked:
+        report("WARN", "standing orders",
+               f"{len(all_r)} set up, but " + " | ".join(blocked))
+    else:
+        report("PASS", "standing orders",
+               f"{len(all_r)} set up, all clear apart from the schedule itself")
+
+
 def main() -> int:
     print("Amma's Kitchen -- pre-demo check\n")
     if not check_server():
@@ -327,6 +358,7 @@ def main() -> int:
     check_messaging()
     check_mcp(public_url)
     check_state()
+    check_routines()
 
     fails = _RESULTS.count("FAIL")
     warns = _RESULTS.count("WARN")

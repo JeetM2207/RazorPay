@@ -71,7 +71,27 @@ def _missing(what: str, why: str) -> dict:
 def _buyer_reasoning(row: dict) -> dict:
     text = (row.get("buyer_reasoning") or "").strip()
     if text:
-        return {"available": True, "text": text}
+        return {"available": True, "text": text, "source": "customer"}
+
+    # A standing order has no stated reason because nobody was there to
+    # state one -- that is the whole point of it. What it does have is the
+    # arrangement the customer set up, so the pack says what that IS,
+    # generated from the routine's own record. Nothing here is written to
+    # sound like something the customer said.
+    if row.get("source") == "routine" and row.get("routine_id"):
+        try:
+            import routines
+
+            routine = routines.get(row["routine_id"])
+            if routine:
+                return {"available": True, "text": routines.describe(routine),
+                        "source": "routine"}
+        except Exception:
+            pass
+        return {"available": True, "source": "routine",
+                "text": "Placed by a standing order the customer set up in advance. "
+                        "The routine's own record is no longer available."}
+
     return _missing(
         "the customer's stated reason for the order",
         f"the {row['protocol'].upper()} path does not ask for it; only the MCP tools "
@@ -163,6 +183,31 @@ def _within_buyer_cap(row: dict, snapshot: dict | None) -> dict:
     """Was the total inside what the customer authorised at the time?"""
     buyer = (snapshot or {}).get("buyer")
     total = row["total_inr"]
+
+    # A standing order's authorisation is not a hard cap typed at checkout
+    # -- there was no checkout. It is the cap the customer set on that
+    # routine when they turned it on, which is the only number they ever
+    # agreed to for it. That is a customer limit on file, and the pack
+    # says which limit it is rather than pretending none exists.
+    routine_cap = (buyer or {}).get("routine_cap_inr")
+    if routine_cap and row.get("source") == "routine":
+        cap = int(routine_cap)
+        within = total <= cap
+        return {
+            "question": "Was this order within the customer's authorised limit?",
+            "result": "yes" if within else "no",
+            "tone": "leaf" if within else "brick",
+            "label": "within the standing order's cap" if within
+                     else "over the standing order's cap",
+            "detail": (
+                f"Order total Rs.{total}. This was placed by a standing order the customer "
+                f"set up in advance with a cap of Rs.{cap} per occurrence, which is the "
+                "limit they authorised for it. Above that cap the routine does not charge "
+                "at all -- it asks first."
+            ),
+            "numbers": {"total_inr": total, "routine_cap_inr": cap},
+        }
+
     if not buyer or buyer.get("hard_cap_inr") in (None, ""):
         return {
             "question": "Was this order within the customer's authorised limit?",

@@ -18,6 +18,7 @@ Then:
 
 import os
 from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -411,6 +412,109 @@ def unmatched_demand() -> dict:
     her queue.
     """
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
+
+
+class RoutineItemIn(BaseModel):
+    item_id: str
+    qty: int
+
+
+class RoutineIn(BaseModel):
+    items: list[RoutineItemIn]
+    days: list[str]
+    time: str
+    agent_id: str
+    phone: str | None = None
+    routine_cap_inr: int | None = None
+    window_minutes: int = 45
+
+
+@app.get("/api/routines")
+def list_routines(agent_id: str | None = None) -> dict:
+    import routines as routines_mod
+
+    rows = routines_mod.all_routines()
+    if agent_id:
+        rows = [r for r in rows if r["agent_id"] == agent_id]
+    return {"routines": rows, "price_drift_tolerance": routines_mod.PRICE_DRIFT_TOLERANCE}
+
+
+@app.post("/api/routines")
+def create_routine(req: RoutineIn) -> dict:
+    """Turn a standing order on. Always explicit -- nothing in this system
+    creates one on the customer's behalf."""
+    import routines as routines_mod
+
+    try:
+        return routines_mod.create(
+            items=[{"item_id": i.item_id, "qty": i.qty} for i in req.items],
+            days=req.days, at_time=req.time, agent_id=req.agent_id, phone=req.phone,
+            routine_cap_inr=req.routine_cap_inr, window_minutes=req.window_minutes,
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+
+@app.post("/api/routines/{routine_id}/status")
+def set_routine_status(routine_id: str, status: str) -> dict:
+    import routines as routines_mod
+
+    try:
+        updated = routines_mod.set_status(routine_id, status)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+    if updated is None:
+        raise HTTPException(404, "no such standing order")
+    return updated
+
+
+@app.delete("/api/routines/{routine_id}")
+def delete_routine(routine_id: str) -> dict:
+    import routines as routines_mod
+
+    return {"deleted": routines_mod.delete(routine_id)}
+
+
+@app.post("/api/routines/{routine_id}/simulate")
+def simulate_routine(routine_id: str, at: str | None = None) -> dict:
+    """Run the confidence gate now, and fire or ask.
+
+    There is no scheduler in this project -- see CLAUDE.md. Something has
+    to call this, and for the demo that something is a button. `at` lets a
+    future occurrence be simulated without waiting for the day to come
+    round.
+    """
+    import routines as routines_mod
+
+    when = None
+    if at:
+        try:
+            when = datetime.fromisoformat(at)
+        except ValueError:
+            raise HTTPException(400, "`at` should be an ISO timestamp")
+    try:
+        return routines_mod.check_and_fire(routine_id, now=when)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.post("/api/routines/{routine_id}/confirm")
+def confirm_routine(routine_id: str, approved: bool = True) -> dict:
+    """The customer answered the prompt a gate failure raised."""
+    import routines as routines_mod
+
+    try:
+        return routines_mod.confirm_pending(routine_id, approved=approved)
+    except ValueError as exc:
+        raise HTTPException(404, str(exc))
+
+
+@app.get("/api/routines/suggestions")
+def routine_suggestions(agent_id: str) -> dict:
+    """Carts ordered repeatedly. A suggestion, never a routine."""
+    import routines as routines_mod
+
+    return {"suggestions": routines_mod.suggest_from_history(agent_id)}
 
 
 @app.get("/evidence/{order_id}")

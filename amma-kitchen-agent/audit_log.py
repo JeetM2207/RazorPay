@@ -66,6 +66,12 @@ _ADDED_COLUMNS = {
     "order_ref": "INTEGER",
     "limits_snapshot": "TEXT",
     "disputed_at": "TEXT",
+    # How the order came to exist. Almost everything is a live request
+    # from a customer or their assistant; `routine` marks the ones a
+    # standing order placed on a schedule, with nobody watching at the
+    # moment of charge. That distinction belongs in the record.
+    "source": "TEXT",
+    "routine_id": "TEXT",
 }
 
 
@@ -100,14 +106,16 @@ def record_event(
     db_path: str = DEFAULT_DB_PATH,
     order_ref: int | None = None,
     limits_snapshot: dict | None = None,
+    source: str | None = None,
+    routine_id: str | None = None,
 ) -> int:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
             "INSERT INTO audit_events "
             "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id, "
-            " order_ref, limits_snapshot) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " order_ref, limits_snapshot, source, routine_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).isoformat(),
                 agent_id,
@@ -119,6 +127,8 @@ def record_event(
                 payment_id,
                 order_ref,
                 json.dumps(limits_snapshot) if limits_snapshot else None,
+                source,
+                routine_id,
             ),
         )
         return cursor.lastrowid

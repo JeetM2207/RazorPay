@@ -50,6 +50,8 @@ def negotiate_and_record(
     protocol: str,
     cart: list[tuple[str, int]],
     buyer_mandate: dict | None = None,
+    source: str | None = None,
+    routine_id: str | None = None,
 ) -> dict:
     db_path = audit_log.DEFAULT_DB_PATH
     # Read the merchant's LIVE configuration, so edits she makes on the
@@ -73,6 +75,11 @@ def negotiate_and_record(
         # exists. negotiation.py is untouched: this records what it was
         # given, it does not change what it decides.
         limits_snapshot=_limits_snapshot(adjusted_mandate, tier, buyer_mandate),
+        # How the order originated. A standing order still comes through
+        # here like everything else -- there is no second charging path --
+        # it just says so on the row.
+        source=source,
+        routine_id=routine_id,
     )
 
     response = {

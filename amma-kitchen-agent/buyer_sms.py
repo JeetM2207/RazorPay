@@ -165,12 +165,22 @@ def ask_approval(
     total_inr: int,
     soft_cap_inr: int,
     shop_name: str = "Amma's Kitchen",
+    why: str | None = None,
 ) -> Conversation:
-    """Ask the customer to approve an order above their own soft cap.
+    """Ask the customer to approve an order they have not authorised.
 
     Deliberately worded YES/NO rather than 1/2. The merchant's escalation
     messages use 1/2, and on a shared number distinct vocabularies make
     an ambiguous reply far less likely -- see the routing note at the top.
+
+    `why` exists because the soft cap is not the only thing that can make
+    an order need asking about. A standing order is stopped by its own
+    confidence gate, and that gate's reason is usually not the amount at
+    all -- it can be the clock, a price that moved, or a dish the merchant
+    has stopped selling. Sending the soft-cap sentence in those cases
+    states a reason that is not true and points the customer at the wrong
+    thing. Callers genuinely asking about the soft cap pass nothing and
+    get the original wording unchanged.
     """
     normalised = normalise_phone(phone)
     if not normalised:
@@ -178,8 +188,11 @@ def ask_approval(
 
     body = (
         f"{shop_name}: your agent wants to order {cart_label} for Rs.{total_inr}.\n\n"
-        f"That's above the Rs.{soft_cap_inr} you asked to be checked on.\n\n"
-        "Reply YES to go ahead, or NO to cancel."
+        + (
+            f"{why}\n\n" if why
+            else f"That's above the Rs.{soft_cap_inr} you asked to be checked on.\n\n"
+        )
+        + "Reply YES to go ahead, or NO to cancel."
     )
     sent = notification_service.send_sms(body, to=normalised, audience="customer")
 

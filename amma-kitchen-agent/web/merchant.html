@@ -36,6 +36,7 @@
             text-transform: uppercase; color: #9A8E7B; font-family: var(--font-mono); }
   .kpi.rev .n { color: #8FBF7F; }
   .kpi.act .n { color: #D9A05B; }
+  .kpi.std .n { color: #C9A227; }
 
   /* ---- tabs ---- */
   .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--coffee-border); margin-bottom: 22px; }
@@ -268,6 +269,7 @@
         <div class="kpi rev"><span class="n" id="kpiRevenue">₹0</span><span class="l">Today's revenue</span></div>
         <div class="kpi"><span class="n" id="kpiAgents">0</span><span class="l">Active agents</span></div>
         <div class="kpi act"><span class="n" id="kpiInterventions">0</span><span class="l">Interventions</span></div>
+        <div class="kpi std"><span class="n" id="kpiStanding">0%</span><span class="l">From standing orders</span></div>
       </div>
     </div>
   </div>
@@ -905,6 +907,22 @@ async function renderEvents(fromCache) {
   $("kpiInterventions").textContent = events.filter(
     (e) => e.decision === "ESCALATE" && (e.ts || "").startsWith(today)
   ).length;
+
+  /* Standing orders are revenue that arrived without anybody placing an
+     order, so it is worth her seeing separately from the rest. Computed
+     over settled, non-refunded orders in the window the ledger already
+     holds -- not just today, because a weekly routine would read 0% on
+     six days out of seven and that would say nothing. */
+  const banked = settled.filter((e) => !refunded.has(e.id));
+  const bankedTotal = banked.reduce((sum, e) => sum + e.total_inr, 0);
+  const standingTotal = banked
+    .filter((e) => e.source === "routine")
+    .reduce((sum, e) => sum + e.total_inr, 0);
+  $("kpiStanding").textContent = bankedTotal
+    ? Math.round((standingTotal / bankedTotal) * 100) + "%" : "0%";
+  $("kpiStanding").title = standingTotal
+    ? `${rupee(standingTotal)} of ${rupee(bankedTotal)} settled came from customers' standing orders`
+    : "No standing orders have settled yet";
 
   const recent = events.slice(0, 25);
   const stats = {
