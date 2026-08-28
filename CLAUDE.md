@@ -1696,13 +1696,21 @@ behind by a failed checkout — the unit suite was green through all of them.
 python scripts/predemo_check.py
 ```
 
-Eleven checks, each one something that has actually broken: server and tunnel up, the
+Thirteen checks, each one something that has actually broken: server and tunnel up, the
 tunnel's domain actually allowed, a **signed** webhook `ping` accepted both locally and
 publicly (which is the only way to catch a running process holding a different secret
 than `.env`), Razorpay keys valid and link headroom left, a webhook registered *at the
 current tunnel*, which message transport is live, the MCP tools reachable over the public
 URL with wording that still matches the flow, no stuck checkout locks, and no paid order
-sitting undecided. It changes nothing — the `ping` is an event type the handler ignores
+sitting undecided.
+
+One of them is there because the same mistake has now cost an hour three times:
+**does the running server have every endpoint the code defines?** Python routes register
+at import, so a server started before a feature was written serves FastAPI's own bare 404
+for it -- while HTML and CSS, which are read per request, update without a restart. A
+half-updated server is therefore entirely possible and entirely confusing: the new screen
+appears and the endpoint behind it does not. The check compares the live route table
+against the one `app.py` builds on import and names the first missing path. It changes nothing — the `ping` is an event type the handler ignores
 before it claims anything.
 
 `scripts/unstick_checkouts.py` reports and (with `--release`) frees locks whose payment

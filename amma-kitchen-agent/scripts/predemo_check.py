@@ -53,6 +53,43 @@ def check_server() -> bool:
     return code == 200
 
 
+def check_routes() -> None:
+    """Is the RUNNING server running the code that is on disk?
+
+    Python routes are registered at import, so a server started before an
+    endpoint was written serves FastAPI's own bare 404 for it -- which
+    looks exactly like a bug in the page that called it. HTML and CSS are
+    read per request and update without a restart, so a half-updated
+    server is entirely possible and entirely confusing: the new screen
+    appears and the endpoint behind it does not.
+
+    This is the third time a stale process has cost an hour (a webhook
+    secret held from before .env was edited, then a whole feature's
+    routes), so it is checked rather than remembered.
+    """
+    try:
+        live = set(requests.get(f"{LOCAL}/openapi.json", timeout=10).json()["paths"])
+    except Exception as exc:
+        report("WARN", "server code freshness", f"could not read the route table: {str(exc)[:60]}")
+        return
+
+    try:
+        import app
+
+        on_disk = {r.path for r in app.app.routes if getattr(r, "path", None)}
+    except Exception as exc:
+        report("WARN", "server code freshness", f"could not import app.py: {str(exc)[:60]}")
+        return
+
+    missing = sorted(p for p in on_disk if p.startswith(("/api/", "/evidence")) and p not in live)
+    if missing:
+        report("FAIL", "server code freshness",
+               f"{len(missing)} endpoint(s) exist in the code but not in the running server "
+               f"-- restart uvicorn. First: {missing[0]}")
+    else:
+        report("PASS", "server code freshness", "the running server has every endpoint in the code")
+
+
 def check_tunnel() -> str | None:
     try:
         tunnels = requests.get("http://127.0.0.1:4040/api/tunnels", timeout=5).json()["tunnels"]
@@ -283,6 +320,7 @@ def main() -> int:
         print("\nStart the server first:  uvicorn app:app --port 8000")
         return 1
 
+    check_routes()
     public_url = check_tunnel()
     check_webhook_secret(public_url)
     check_razorpay(public_url)
