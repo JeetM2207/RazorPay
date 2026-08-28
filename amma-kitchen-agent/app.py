@@ -413,6 +413,68 @@ def unmatched_demand() -> dict:
     return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
 
 
+@app.get("/evidence/{order_id}")
+def evidence_page(order_id: int) -> FileResponse:
+    """The Proof of Authorization page for one order.
+
+    The id is in the path so the page is linkable and printable; the page
+    fetches the pack itself from the API below.
+    """
+    return FileResponse(WEB_DIR / "evidence.html")
+
+
+@app.get("/api/evidence/{order_id}")
+def evidence_pack(order_id: int) -> dict:
+    """The complete factual record of one order, assembled read-only.
+
+    Not a ruling and not a liability finding -- the two checks it carries
+    are arithmetic against the limits recorded at the time, stated with
+    their numbers shown.
+    """
+    import evidence
+
+    pack = evidence.build_evidence_pack(order_id, db_path=audit_log.DEFAULT_DB_PATH)
+    if pack is None:
+        raise HTTPException(404, f"no order #{order_id} in the audit trail")
+    return pack
+
+
+@app.post("/api/orders/{order_id}/dispute")
+def mark_order_disputed(order_id: int) -> dict:
+    """Flag an order as disputed. One timestamp, no workflow.
+
+    All this does is make the order's evidence pack the featured view for
+    it, and list it in the merchant's Disputes tab. Nothing is notified
+    and nothing else changes.
+    """
+    if audit_log.get_event(order_id, db_path=audit_log.DEFAULT_DB_PATH) is None:
+        raise HTTPException(404, f"no order #{order_id} in the audit trail")
+    audit_log.mark_disputed(order_id, db_path=audit_log.DEFAULT_DB_PATH)
+    return {"order_id": order_id, "disputed": True, "evidence_url": f"/evidence/{order_id}"}
+
+
+@app.get("/api/disputes")
+def disputes() -> dict:
+    """Orders someone has asked for the record on, newest first."""
+    rows = audit_log.get_disputed(db_path=audit_log.DEFAULT_DB_PATH)
+    return {
+        "disputes": [
+            {
+                "order_id": r["id"],
+                "disputed_at": r["disputed_at"],
+                "placed_at": r["ts"],
+                "agent_id": r["agent_id"],
+                "protocol": r["protocol"],
+                "cart_json": r["cart_json"],
+                "total_inr": r["total_inr"],
+                "decision": r["decision"],
+                "has_snapshot": bool(r.get("limits_snapshot")),
+            }
+            for r in rows
+        ]
+    }
+
+
 @app.get("/api/transactions")
 def transactions(limit: int = 60) -> dict:
     """Money out and money back, for the customer's own statement.

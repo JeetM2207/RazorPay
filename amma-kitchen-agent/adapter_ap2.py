@@ -46,12 +46,26 @@ class CartItemIn(BaseModel):
     qty: int
 
 
+class BuyerLimits(BaseModel):
+    """The customer's own caps, travelling with the request.
+
+    Optional, and honestly so: they live in the customer's browser, so a
+    caller that does not have them simply omits them and the order's
+    record says the customer's limit was not on file rather than carrying
+    an invented one. AP2's real design is exactly this -- a user's
+    spending authorization is data on the mandate object.
+    """
+    hard_cap_inr: int | None = None
+    soft_cap_inr: int | None = None
+
+
 class Intent(BaseModel):
     items: list[CartItemIn]
     # Part of the mandate itself (unlike buyer_agent_a's locally-hardcoded
     # limit) -- AP2's real design lets a user's spending authorization
     # travel as data on the mandate object.
     auto_confirm_limit_inr: int | None = None
+    buyer_limits: BuyerLimits | None = None
 
 
 class IntentMandateRequest(BaseModel):
@@ -70,7 +84,12 @@ class HumanConfirmRequest(BaseModel):
 def _apply_intent_decision(intent_id: str, cart: list[tuple[str, int]]) -> dict:
     mandate = _INTENT_MANDATES[intent_id]
     mandate.pop("human_overridden", None)
-    detail = orchestrator.negotiate_and_record(mandate["agent_id"], "ap2", cart)
+    detail = orchestrator.negotiate_and_record(
+        mandate["agent_id"], "ap2", cart,
+        # Snapshotted alongside the decision, so the order's record keeps
+        # saying what the customer had authorised even after they change it.
+        buyer_mandate=mandate.get("buyer_limits"),
+    )
     mandate["cart"] = cart
     mandate["detail"] = detail
     mandate["status"] = _STATUS_FOR_DECISION[detail["decision"]]
@@ -127,6 +146,7 @@ def create_intent_mandate(req: IntentMandateRequest) -> dict:
     _INTENT_MANDATES[intent_id] = {
         "agent_id": req.agent_id,
         "auto_confirm_limit_inr": req.intent.auto_confirm_limit_inr,
+        "buyer_limits": req.intent.buyer_limits.model_dump() if req.intent.buyer_limits else None,
     }
     return _apply_intent_decision(intent_id, cart)
 

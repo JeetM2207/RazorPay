@@ -160,6 +160,7 @@ amma-kitchen-agent/
   reconcile_payments.py   # safety net for webhooks that never arrived
   audit_log.py            # append-only log, queries, co-purchase history
   catalog.py              # agent-readable product feed (ACP-style)
+  evidence.py             # Proof of Authorization: one order's whole record, read-only
   llm_client.py stays the only model caller: NL->cart, and merchant insights
   dashboard.py            # audit trail as HTML
 
@@ -176,7 +177,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 413 tests; test_negotiation.py still matters most
+  tests/                  # 428 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1307,7 +1308,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**413 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**428 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1607,6 +1608,82 @@ from HEAD, and re-applied as a bounded replacement of just the function being ch
 The lesson is the one this project keeps relearning in a new costume: **a green suite says
 the Python is fine, and says nothing about whether the page runs.** Anything that touches
 `web/` gets opened in a browser and its console read before it is called done.
+
+## Proof of Authorization: the evidence a disputed agent order needs
+
+Chargeback liability for AI-agent purchases is an open problem across payments right now.
+When a customer says *"I never authorised this"*, the evidence that would settle it — what
+the customer's agent was allowed to spend, what the merchant's rules were at that moment,
+what the system decided and why, whether a human was asked and what they said — is
+scattered or was never recorded, so merchants absorb disputed agent transactions by
+default. The large platforms are starting to get tooling for this from the card networks.
+Amma gets nothing. This is that same protection, sized for her.
+
+It is **evidence assembly, not a verdict.** `evidence.py` reads the trail and returns an
+object; it decides nothing, and there is no liability field. A test asserts the words
+"liable", "fault", "verdict" and "ruling" appear nowhere in a generated pack — which caught
+the first version, where the two checks each carried a field literally named `verdict`.
+Renamed to `result`: a record that calls its own findings verdicts is not a record.
+
+### The fix that had to come first: snapshot, don't reference
+
+An order's audit row described the limits by *referencing* the live config. So the moment
+Amma edited her cap, every past order silently started describing limits that were never
+applied to it. Harmless on a dashboard, and fatal in a record someone is relying on to say
+what was authorised.
+
+`orchestrator.negotiate_and_record()` now writes a `limits_snapshot` beside the decision —
+her cap, her confirmation threshold, her allowed categories, the trust tier applied, and
+the customer's own caps when the caller knew them. Written **once, at the orchestrator**,
+so ACP, AP2, x402 and MCP all get it without any adapter being taught it exists.
+`negotiation.py` is untouched: this records what it was given, it does not change what it
+decides. A test creates an order, moves her cap from Rs.500 to Rs.900, and asserts the
+order's pack still reads Rs.500.
+
+**The customer's own caps are honest about their absence.** They live in the customer's
+browser and reach the server only on the path that checked them — the buyer console sends
+them with the AP2 intent, which is exactly AP2's own design for a spending authorization
+travelling as data on the mandate. An order placed through a path that never sees them says
+*"no customer limit on file"* rather than carrying an invented number.
+
+### What a pack contains
+
+The order and its cart; the limits in force at the time; the customer's stated reason
+(`buyer_reasoning`, which only the MCP tools require — an ACP order says so plainly rather
+than showing a placeholder); the system's decision and reason unchanged; the human
+confirmation trail; the payment and any refund; the whole append-only lifecycle; and two
+plain checks computed against the **snapshot**, never the live config:
+
+- *Was this order within the customer's authorised limit?* — with both numbers shown.
+- *Did it cross the merchant's confirmation threshold, and is an answer on file?* — and if
+  it crossed with no answer recorded, that is shown as the gap it is, in `brick`.
+
+**Finding the human's answer needed care.** When Amma answers an ACP/AP2/x402 escalation
+the orchestrator writes a *separate* audit row — an APPROVE carrying "human override of
+ESCALATE" — rather than editing the escalation, which is right, because the trail then
+shows both what the machine decided and that a human separately chose otherwise. It also
+means the answer is not an `order_ref` child, so the pack finds it the way it is actually
+linked: same agent, same cart, decided later. The first version missed it entirely and
+reported a confirmed order as a gap.
+
+The WhatsApp message text is included when it is still in the process's outbox, and
+labelled as the convenience it is — the durable record is the timestamped rows, which
+survive a restart.
+
+### Where it is linked from
+
+- **`/evidence/<order_id>`** — the page. Each section a `.chit`, the two checks as
+  `.stamp` badges, and an `@media print` sheet so **Ctrl+P** is the PDF exporter. No
+  library, no dependency, consistent with the no-build-step rule.
+- **Merchant console, fourth tab "Disputes"** — flag an order by number, open any order's
+  record, and a list of everything flagged.
+- **The decision ledger and `/audit`** — a *view record* link on every row, which is the
+  fastest way to reach one without staging a dispute.
+- **`order.html`** — one line by the order box saying every order keeps this record.
+
+`disputed_at` is a single timestamp, deliberately: being disputed is a fact about a record,
+not a stage in a workflow. It is not a lifecycle transition either — a status row would
+become the order's latest status and shove it out of whatever state it is really in.
 
 ## Before a demo, run the check
 

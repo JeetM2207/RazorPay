@@ -288,6 +288,9 @@
       </button>
       <button id="tab-growth" onclick="showTab('growth')">AI growth &amp; yield</button>
       <button id="tab-ledger" onclick="showTab('ledger')">Trust &amp; audit ledger</button>
+      <button id="tab-disputes" onclick="showTab('disputes')">
+        Disputes <span class="tab-count" id="disputeCount">0</span>
+      </button>
     </div>
 
     <!-- ══════════════════ TAB 1 ══════════════════ -->
@@ -377,6 +380,29 @@
       </div>
     </section>
 
+    <!-- ══════════════════ TAB 4 ══════════════════ -->
+    <section class="panel" id="panel-disputes">
+      <div class="card">
+        <h2 class="insight-title" style="margin-bottom:4px">Proof of Authorization</h2>
+        <p class="note" style="margin:0 0 14px">
+          If a customer ever says they did not authorise an order, this is the record that
+          answers it: what their agent was allowed to spend, what your rules were at that
+          moment, what the system decided and why, whether you were asked and what you
+          said, and what actually moved through Razorpay. Assembled from the trail you
+          already have &mdash; it states the facts, it does not decide who is at fault.
+        </p>
+        <div class="btn-row">
+          <input type="text" id="disputeId" placeholder="Order number, e.g. 249"
+                 inputmode="numeric" autocomplete="off" style="max-width:190px">
+          <button class="btn btn-sm" id="disputeBtn">Mark as disputed</button>
+          <button class="btn btn-sm btn-ghost" id="viewEvidenceBtn">Open its record</button>
+        </div>
+      </div>
+
+      <h2 style="margin-top:26px">Flagged for the record</h2>
+      <div id="disputeList"></div>
+    </section>
+
     <!-- ══════════════════ TAB 3 ══════════════════ -->
     <section class="panel" id="panel-ledger">
       <div class="stat-row" id="stats" style="display:flex; gap:11px; flex-wrap:wrap; margin-bottom:20px"></div>
@@ -408,7 +434,7 @@
         <table>
           <thead>
             <tr><th>#</th><th>Agent</th><th>Protocol</th><th>Cart</th>
-                <th class="right">Total</th><th>Decision</th><th>Settlement</th></tr>
+                <th class="right">Total</th><th>Decision</th><th>Settlement</th><th></th></tr>
           </thead>
           <tbody id="eventRows"></tbody>
         </table>
@@ -474,7 +500,7 @@ const DECISION_PATH = {
 /* ----------------------------------------------------------------- tabs */
 
 function showTab(name) {
-  for (const id of ["ops", "growth", "ledger"]) {
+  for (const id of ["ops", "growth", "ledger", "disputes"]) {
     $("panel-" + id).classList.toggle("on", id === name);
     $("tab-" + id).classList.toggle("on", id === name);
   }
@@ -503,7 +529,60 @@ async function boot() {
 }
 
 async function tick() {
-  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms(), renderDemand()]);
+  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms(),
+                     renderDemand(), renderDisputes()]);
+}
+
+/* -------------------------------------------------------- disputes */
+
+async function renderDisputes() {
+  const { disputes } = await api("/api/disputes");
+  const count = $("disputeCount");
+  count.textContent = disputes.length;
+  count.className = "tab-count" + (disputes.length ? " hot" : "");
+  if (!changed("disputes", disputes)) return;
+
+  $("disputeList").innerHTML = disputes.length
+    ? disputes.map((d) => {
+        const cart = JSON.parse(d.cart_json || "[]")
+          .map((l) => `${l.qty}×${titleize(l.item)}`).join(", ");
+        return `
+          <div class="card queue-card" style="transform:none">
+            <div class="queue-head">
+              <span class="badge badge-stop">disputed</span>
+              <span class="proto">${esc(d.protocol.toUpperCase())}</span>
+              <span class="mono muted">${esc(d.agent_id)}</span>
+              ${d.has_snapshot ? "" : `<span class="badge badge-warn">limits not snapshotted</span>`}
+            </div>
+            <div class="queue-cart">Order #${d.order_id} &mdash; ${esc(cart)} &mdash; ${rupee(d.total_inr)}</div>
+            <div class="muted" style="font-size:13px">
+              placed ${esc((d.placed_at || "").slice(0, 16).replace("T", " "))} UTC ·
+              flagged ${esc((d.disputed_at || "").slice(0, 16).replace("T", " "))} UTC
+            </div>
+            <div class="btn-row" style="margin-top:13px">
+              <a class="btn btn-sm" href="/evidence/${d.order_id}" target="_blank" rel="noopener">
+                Open Proof of Authorization
+              </a>
+            </div>
+          </div>`;
+      }).join("")
+    : `<div class="card"><div class="empty">
+         Nothing flagged. Mark an order above, or use <b>view record</b> on any row of the
+         decision ledger &mdash; every order has a record whether or not anyone asks for it.
+       </div></div>`;
+}
+
+async function flagDispute() {
+  const id = ($("disputeId").value || "").trim();
+  if (!id) return toast("Type an order number first.", true);
+  try {
+    const res = await api(`/api/orders/${encodeURIComponent(id)}/dispute`, { method: "POST" });
+    toast(`Order #${res.order_id} flagged. Its record is ready.`);
+    $("disputeId").value = "";
+    tick();
+  } catch (err) {
+    toast(err.message, true);
+  }
 }
 
 /* -------------------------------------------------------------- demand */
@@ -868,10 +947,19 @@ async function renderEvents(fromCache) {
           <td class="right">${rupee(e.total_inr)}</td>
           <td><span class="badge ${cls}">${esc(e.decision.replace(/_/g, " "))}</span></td>
           <td class="nowrap">${settlementPill(e)}</td>
+          <td class="nowrap"><a href="/evidence/${e.id}" target="_blank" rel="noopener">view record</a></td>
         </tr>`;
       }).join("")
-    : `<tr><td colspan="7" class="empty">Nothing matches that filter.</td></tr>`;
+    : `<tr><td colspan="8" class="empty">Nothing matches that filter.</td></tr>`;
 }
+
+$("disputeBtn").addEventListener("click", flagDispute);
+$("viewEvidenceBtn").addEventListener("click", () => {
+  const id = ($("disputeId").value || "").trim();
+  if (!id) return toast("Type an order number first.", true);
+  window.open(`/evidence/${encodeURIComponent(id)}`, "_blank", "noopener");
+});
+$("disputeId").addEventListener("keydown", (e) => { if (e.key === "Enter") flagDispute(); });
 
 $("smsSendBtn").addEventListener("click", sendSmsReply);
 $("smsReply").addEventListener("keydown", (e) => {

@@ -196,6 +196,9 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
         f"<td>{_decision_badge(event['decision'])}</td>"
         f"<td class='reason'>{_reasons_cell(event)}</td>"
         f"<td>{_payment_cell(event)}</td>"
+        # Every order has a Proof of Authorization record whether or not
+        # anyone has asked for it; this is the shortest way to reach one.
+        f"<td class='nowrap'><a href='/evidence/{event['id']}'>view record</a></td>"
         f"</tr>"
         for event in events
     ) or "<tr><td colspan='9' class='muted'>No decisions recorded yet. Run a buyer agent.</td></tr>"
@@ -332,7 +335,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
       <thead>
         <tr>
           <th>#</th><th>Time (UTC)</th><th>Agent</th><th>Protocol</th>
-          <th>Cart</th><th>Total</th><th>Decision</th><th>Reason</th><th>Payment</th>
+          <th>Cart</th><th>Total</th><th>Decision</th><th>Reason</th><th>Payment</th><th></th>
         </tr>
       </thead>
       <tbody>{event_rows}</tbody>

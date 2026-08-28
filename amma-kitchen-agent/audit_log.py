@@ -43,12 +43,29 @@ CREATE TABLE IF NOT EXISTS audit_events (
 # NEW row carrying the status in `decision`, not an edit of an old one,
 # so reading top to bottom shows payment -> decision -> merchant action
 # -> outcome in the order they actually happened.
+# `limits_snapshot` is the one column here that exists for a reason other
+# than convenience. Everything else in this row describes what happened;
+# that column describes WHAT WAS TRUE AT THE TIME -- the merchant's cap,
+# her confirmation threshold, the categories she allowed, and the
+# customer's own caps if the caller knew them.
+#
+# Without it, an order's record referenced the live config, so the moment
+# Amma edited her cap every past order silently started describing limits
+# that were never applied to it. That is fine for a dashboard and fatal
+# for evidence: the whole value of a record is that it says what the rule
+# WAS, not what the rule is now.
+#
+# `disputed_at` is a single timestamp, deliberately. A disputed order is
+# one whose evidence pack someone wants to look at -- not a ticket with a
+# workflow.
 _ADDED_COLUMNS = {
     "buyer_reasoning": "TEXT",
     "delivery_name": "TEXT",
     "delivery_phone": "TEXT",
     "delivery_address": "TEXT",
     "order_ref": "INTEGER",
+    "limits_snapshot": "TEXT",
+    "disputed_at": "TEXT",
 }
 
 
@@ -82,13 +99,15 @@ def record_event(
     payment_id: str | None = None,
     db_path: str = DEFAULT_DB_PATH,
     order_ref: int | None = None,
+    limits_snapshot: dict | None = None,
 ) -> int:
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
             "INSERT INTO audit_events "
-            "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id, order_ref) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id, "
+            " order_ref, limits_snapshot) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(timezone.utc).isoformat(),
                 agent_id,
@@ -99,6 +118,7 @@ def record_event(
                 total_inr,
                 payment_id,
                 order_ref,
+                json.dumps(limits_snapshot) if limits_snapshot else None,
             ),
         )
         return cursor.lastrowid
@@ -550,3 +570,49 @@ def transactions(db_path: str = DEFAULT_DB_PATH, limit: int = 60) -> list[dict]:
             })
 
     return out[:limit]
+
+
+# ------------------------------------------------- disputes (read + one flag)
+
+def mark_disputed(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> bool:
+    """Flag an order as disputed. One timestamp, no workflow.
+
+    Deliberately NOT a lifecycle transition: a status row would become the
+    order's latest status and shove it out of whatever state it is really
+    in. Being disputed is a fact about the record, not a stage of it.
+    """
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        cursor = conn.execute(
+            "UPDATE audit_events SET disputed_at = ? WHERE id = ? AND disputed_at IS NULL",
+            (datetime.now(timezone.utc).isoformat(), order_ref),
+        )
+        if cursor.rowcount:
+            return True
+        # Already flagged is success, not failure -- the caller wanted it
+        # disputed and it is disputed.
+        row = conn.execute(
+            "SELECT disputed_at FROM audit_events WHERE id = ?", (order_ref,)
+        ).fetchone()
+        return bool(row and row[0])
+
+
+def get_disputed(db_path: str = DEFAULT_DB_PATH, limit: int = 50) -> list[dict]:
+    """Orders someone has asked for the record on, newest first."""
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT * FROM audit_events WHERE disputed_at IS NOT NULL "
+            "ORDER BY disputed_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_event(event_id: int, db_path: str = DEFAULT_DB_PATH) -> dict | None:
+    init_db(db_path)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM audit_events WHERE id = ?", (event_id,)).fetchone()
+        return dict(row) if row else None

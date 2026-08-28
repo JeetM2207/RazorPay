@@ -8,6 +8,7 @@ idea this file exists.
 """
 
 import uuid
+from datetime import datetime, timezone
 
 import audit_log
 import merchant_config
@@ -17,7 +18,39 @@ import trust
 import upsell_ranking
 
 
-def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int]]) -> dict:
+def _limits_snapshot(mandate, tier, buyer_mandate: dict | None) -> dict:
+    """What the rules WERE, written beside the decision they produced.
+
+    Recorded rather than referenced, and that distinction is the whole
+    point. Amma edits her cap whenever she likes; the moment she does, an
+    order that referenced the live config starts describing limits that
+    were never applied to it. Harmless on a dashboard, fatal in a record
+    somebody is relying on to say what was authorised.
+
+    The buyer's own caps are only present when the caller knew them. They
+    live in the customer's browser and reach the server on the path that
+    checked them, so an order placed through a protocol that never sees
+    them says so plainly rather than carrying an invented number.
+    """
+    return {
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "merchant": {
+            "budget_cap_inr": mandate.budget_cap_inr,
+            "human_confirm_threshold_inr": mandate.human_confirm_threshold_inr,
+            "allowed_categories": list(mandate.allowed_categories),
+            "flexible_margin_pct": mandate.flexible_margin_pct,
+            "trust_tier_applied": tier.value,
+        },
+        "buyer": buyer_mandate or None,
+    }
+
+
+def negotiate_and_record(
+    agent_id: str,
+    protocol: str,
+    cart: list[tuple[str, int]],
+    buyer_mandate: dict | None = None,
+) -> dict:
     db_path = audit_log.DEFAULT_DB_PATH
     # Read the merchant's LIVE configuration, so edits she makes on the
     # setup page are the limits actually enforced here.
@@ -36,6 +69,10 @@ def negotiate_and_record(agent_id: str, protocol: str, cart: list[tuple[str, int
         reason=result.reason,
         total_inr=result.total_inr,
         db_path=db_path,
+        # Written here, once, so every adapter gets it without knowing it
+        # exists. negotiation.py is untouched: this records what it was
+        # given, it does not change what it decides.
+        limits_snapshot=_limits_snapshot(adjusted_mandate, tier, buyer_mandate),
     )
 
     response = {

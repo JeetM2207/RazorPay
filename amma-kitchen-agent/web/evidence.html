@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof of Authorization — Amma's Kitchen</title>
+<link rel="stylesheet" href="/static/shared.css?v=2">
+<style>
+  .sheet { max-width: 860px; margin: 0 auto; padding: 24px; }
+  .doc-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 18px; flex-wrap: wrap; }
+  .doc-meta { font-family: var(--font-mono); font-size: 11.5px; color: var(--ink-soft); text-align: right; }
+  .chit + .chit { margin-top: 16px; }
+  .sec-title {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--gold-deep); margin-bottom: 12px;
+  }
+  .row { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; font-size: 13.5px; }
+  .row + .row { border-top: 1px dashed var(--paper-border); }
+  .row .k { color: var(--ink-soft); }
+  .row .v { font-family: var(--font-mono); font-weight: 600; text-align: right; }
+  .prose { font-size: 13.5px; line-height: 1.6; }
+  .absent {
+    border-left: 3px solid var(--brick); padding: 10px 14px; background: var(--brick-soft);
+    font-size: 13px; line-height: 1.55; border-radius: 0 8px 8px 0;
+  }
+  .absent b { color: var(--brick); }
+
+  .check { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; }
+  .check + .check { border-top: 1px dashed var(--paper-border); }
+  .check-body { flex: 1; }
+  .check-q { font-weight: 700; font-size: 13.5px; margin-bottom: 3px; }
+  .check-d { font-size: 13px; color: var(--ink-soft); line-height: 1.55; }
+
+  .tl { position: relative; padding-left: 20px; }
+  .tl-row { position: relative; padding: 8px 0 8px 0; font-size: 13px; }
+  .tl-row::before {
+    content: ''; position: absolute; left: -14px; top: 14px;
+    width: 7px; height: 7px; border-radius: 50%; background: var(--gold);
+  }
+  .tl-row::after {
+    content: ''; position: absolute; left: -11px; top: 21px; bottom: -8px; width: 1px;
+    background: var(--paper-border);
+  }
+  .tl-row:last-child::after { display: none; }
+  .tl-when { font-family: var(--font-mono); font-size: 11px; color: var(--ink-soft); }
+  .tl-what { font-weight: 600; }
+  .tl-why { color: var(--ink-soft); font-size: 12.5px; line-height: 1.5; }
+
+  .msg {
+    background: var(--coffee); color: var(--paper); border-radius: 10px;
+    padding: 12px 14px; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap;
+    margin-bottom: 8px;
+  }
+  .msg-to { font-family: var(--font-mono); font-size: 10px; color: #A2947E; margin-bottom: 5px; }
+
+  .disclaimer {
+    margin-top: 20px; font-size: 12px; color: var(--ink-soft); line-height: 1.6;
+    border-top: 1px dashed var(--paper-border); padding-top: 14px;
+  }
+
+  /* Print to PDF with the browser's own dialog. No library, no build
+     step -- the merchant already has a PDF exporter, it is Ctrl+P. */
+  @media print {
+    .topbar, .no-print { display: none !important; }
+    body { background: #fff; }
+    .sheet { max-width: none; padding: 0; }
+    .chit { break-inside: avoid; box-shadow: none; border-color: #bbb; }
+    .msg { background: #fff; color: #000; border: 1px solid #bbb; }
+    .msg-to { color: #555; }
+    a { text-decoration: none; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="topbar">
+    <div class="brand">
+      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-role">Record</span>
+    </div>
+    <div class="topbar-links">
+      <a href="/merchant/orders">Merchant console</a>
+      <a href="/audit">Full audit trail</a>
+      <a href="/">Home</a>
+    </div>
+  </div>
+
+  <div class="sheet" id="sheet">
+    <div class="empty">Assembling the record…</div>
+  </div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const rupee = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g,
+  (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const when = (ts) => esc(String(ts || "").slice(0, 19).replace("T", " ")) + " UTC";
+
+const ORDER_ID = Number(location.pathname.split("/").filter(Boolean).pop());
+
+/* Absence is a first-class outcome here. A record with a clearly marked
+   hole in it is worth something; one with a plausible guess in it is
+   worth less than nothing. */
+function absent(field) {
+  return `<div class="absent"><b>Not available.</b> ${esc(field.what)} — ${esc(field.why)}.</div>`;
+}
+
+function rows(pairs) {
+  return pairs
+    .filter(([, v]) => v !== null && v !== undefined && v !== "")
+    .map(([k, v]) => `<div class="row"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`)
+    .join("");
+}
+
+function render(p) {
+  const o = p.order;
+  const cart = (o.cart || []).map((l) => `${l.qty} × ${esc(l.item).replace(/_/g, " ")}`).join(", ");
+  const lim = p.limits_in_force;
+  const hasLimits = lim && lim.available !== false;
+
+  const parts = [];
+
+  parts.push(`
+    <div class="doc-head">
+      <div>
+        <div class="eyebrow">Proof of Authorization</div>
+        <h1>Order #${p.order_id}</h1>
+        <p class="lede" style="margin-bottom:0">
+          The complete factual record of this order: what was authorised, by whom, under
+          which limits, and what moved through Razorpay.
+        </p>
+      </div>
+      <div class="doc-meta">
+        assembled ${when(p.generated_at)}<br>
+        ${p.disputed_at ? `flagged disputed ${when(p.disputed_at)}` : "not flagged as disputed"}
+      </div>
+    </div>
+    <div class="btn-row no-print" style="margin:18px 0 22px">
+      <button class="btn btn-sm" onclick="window.print()">Print / save as PDF</button>
+      ${p.disputed_at ? "" : `<button class="btn btn-sm btn-ghost" id="disputeBtn">Mark as disputed</button>`}
+    </div>`);
+
+  // 1 & 2 — the order, and the limits that were in force
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">The order</div>
+      ${rows([
+        ["Placed", when(o.placed_at)],
+        ["Buyer agent", esc(o.agent_id)],
+        ["Protocol", esc((o.protocol || "").toUpperCase())],
+        ["Cart", esc(cart)],
+        ["Total", rupee(o.total_inr)],
+        ["Deliver to", o.delivery.name ? esc(o.delivery.name) : null],
+        ["Phone", o.delivery.phone ? esc(o.delivery.phone) : null],
+        ["Address", o.delivery.address ? esc(o.delivery.address) : null],
+      ])}
+    </div>`);
+
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">Limits in force at the time</div>
+      ${!hasLimits ? absent(lim) : `
+        ${rows([
+          ["Merchant — largest order accepted", rupee(lim.merchant.budget_cap_inr)],
+          ["Merchant — asks from", rupee(lim.merchant.human_confirm_threshold_inr)],
+          ["Merchant — categories allowed", esc((lim.merchant.allowed_categories || []).join(", "))],
+          ["Trust tier applied", esc(lim.merchant.trust_tier_applied || "—")],
+        ])}
+        ${lim.buyer
+          ? rows([
+              ["Customer — hard cap", rupee(lim.buyer.hard_cap_inr)],
+              ["Customer — soft cap", lim.buyer.soft_cap_inr ? rupee(lim.buyer.soft_cap_inr) : null],
+            ])
+          : `<div class="absent" style="margin-top:12px"><b>Customer's own limits not on file.</b>
+               They are held by the customer's agent and were not supplied on this path.</div>`}
+        <p class="note">
+          Recorded alongside the decision, not looked up now — so this still says what the
+          rules were when the order was placed, whatever they have been changed to since.
+        </p>`}
+    </div>`);
+
+  // 3 — what the customer said they wanted
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">The customer's stated reason</div>
+      ${p.buyer_reasoning.available
+        ? `<div class="prose">“${esc(p.buyer_reasoning.text)}”</div>`
+        : absent(p.buyer_reasoning)}
+    </div>`);
+
+  // 4 — the system's decision
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">What the system decided</div>
+      <div style="margin-bottom:10px"><span class="stamp ${stampFor(p.system_decision.decision)}">${esc(p.system_decision.decision)}</span></div>
+      <div class="prose">${esc(p.system_decision.reason)}</div>
+      <p class="note">${esc(p.system_decision.note)}</p>
+    </div>`);
+
+  // 5 — the human confirmation trail
+  const t = p.confirmation_trail;
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">Human confirmation</div>
+      ${t.answers.length
+        ? `<div class="tl">${t.answers.map((a) => `
+            <div class="tl-row">
+              <div class="tl-when">${when(a.at)}</div>
+              <div class="tl-what">${esc(a.outcome)} <span class="mono muted">(${esc(a.recorded_as)})</span></div>
+              <div class="tl-why">${esc(a.reason)}</div>
+            </div>`).join("")}</div>`
+        : `<div class="prose muted">No human was asked to answer for this order.</div>`}
+      ${t.messages.length ? `<div style="margin-top:14px">${t.messages.map((m) => `
+          <div class="msg"><div class="msg-to">to ${esc(m.to)} · ${esc(m.audience)} · ${when(m.sent_at)}${m.delivery_error ? " · delivery failed" : ""}</div>${esc(m.body)}</div>`).join("")}</div>` : ""}
+      <p class="note">${esc(t.messages_note)}</p>
+    </div>`);
+
+  // 6 — money
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">Payment record</div>
+      ${p.payments.length
+        ? p.payments.map((pay) => `
+            <div class="row">
+              <span class="k">${esc(pay.kind === "refund" ? "Refund" : "Capture")} · ${when(pay.at)}</span>
+              <span class="v">${pay.reference ? esc(pay.reference) : "—"}${pay.simulated ? ' <span class="stamp rust">simulated</span>' : ""}</span>
+            </div>
+            <div class="note" style="margin:2px 0 8px">${esc(pay.detail)}</div>`).join("")
+        : `<div class="prose muted">Nothing was charged for this order.</div>`}
+    </div>`);
+
+  // 7 — the two checks
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">Authorization checks</div>
+      ${p.checks.map((c) => `
+        <div class="check">
+          <span class="stamp ${esc(c.tone)}">${esc(c.label)}</span>
+          <div class="check-body">
+            <div class="check-q">${esc(c.question)}</div>
+            <div class="check-d">${esc(c.detail)}</div>
+          </div>
+        </div>`).join("")}
+    </div>`);
+
+  // the full trail, last, because it is the raw thing the rest is drawn from
+  parts.push(`
+    <div class="chit">
+      <div class="sec-title">Everything recorded, in order</div>
+      <div class="tl">${p.lifecycle.map((l) => `
+        <div class="tl-row">
+          <div class="tl-when">${when(l.at)}</div>
+          <div class="tl-what">${esc(l.state)}</div>
+          <div class="tl-why">${esc(l.detail)}</div>
+        </div>`).join("")}</div>
+    </div>`);
+
+  parts.push(`
+    <div class="disclaimer">
+      This is a factual record assembled from this system's own audit trail. It states what
+      was authorised, what was decided and what was paid — it is not a determination of
+      liability or fault, and nothing here decides who owes whom.
+    </div>`);
+
+  $("sheet").innerHTML = parts.join("");
+
+  const btn = document.getElementById("disputeBtn");
+  if (btn) btn.addEventListener("click", async () => {
+    btn.disabled = true;
+    await fetch(`/api/orders/${ORDER_ID}/dispute`, { method: "POST" });
+    location.reload();
+  });
+}
+
+function stampFor(decision) {
+  if (["APPROVE", "PAID", "AUTO_CONFIRMED", "MERCHANT_ACCEPTED"].includes(decision)) return "leaf";
+  if (["ESCALATE", "COUNTER_OFFER", "AWAITING_PAYMENT", "PENDING_MERCHANT_APPROVAL"].includes(decision)) return "rust";
+  if (["REJECTED", "MERCHANT_REJECTED", "REFUNDED", "REFUND_FAILED"].includes(decision)) return "brick";
+  return "steel";
+}
+
+(async () => {
+  try {
+    const res = await fetch(`/api/evidence/${ORDER_ID}`);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      $("sheet").innerHTML = `<div class="chit"><div class="empty">${esc(body.detail || "No such order.")}</div></div>`;
+      return;
+    }
+    render(await res.json());
+  } catch (err) {
+    $("sheet").innerHTML = `<div class="chit"><div class="empty">Couldn't load the record: ${esc(err.message)}</div></div>`;
+  }
+})();
+</script>
+</body>
+</html>
