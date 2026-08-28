@@ -266,11 +266,17 @@ def test_parse_falls_back_to_the_live_menu_without_a_catalog(client, monkeypatch
     assert "veg_thali" in seen["enum"]
 
 
-def test_parse_cart_reports_clearly_when_no_model_key_is_set(client, monkeypatch):
+def test_parse_cart_falls_back_to_the_menu_when_no_model_key_is_set(client, monkeypatch):
+    """This used to answer 503 and stop the order dead, which is the wrong
+    failure: the model only proposes a cart, and a proposal is not a
+    decision. It now matches against the menu directly and SAYS it did --
+    see tests/test_parse_fallback.py for the rest."""
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
     resp = client.post("/api/parse-cart", json={"text": "two biryanis"})
-    assert resp.status_code == 503
-    assert "menu picker" in resp.json()["detail"]
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["parsed_by"] == "menu-matching"
+    assert body["fallback_reason"] == "no model key is configured"
 
 
 # ------------------------------------------- the AI Strategist is read-only

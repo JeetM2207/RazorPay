@@ -194,6 +194,87 @@ def resolve_item(text: str) -> str | None:
     return candidates[0] if len(candidates) == 1 else None
 
 
+# Words people write instead of digits. Deliberately short: this list is
+# for the common cases, and anything outside it falls through to a
+# quantity of 1 rather than to a guess.
+_QTY_WORDS = {
+    "a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10, "a couple of": 2,
+    "couple of": 2, "dozen": 12, "half a dozen": 6,
+}
+
+# How people open an order. Stripped so "order 2 roti" and "2 roti" are
+# the same request.
+_LEAD_IN = re.compile(
+    r"^\s*(please\s+)?(can\s+i\s+(get|have)|could\s+i\s+(get|have)|i(\s+would|'d)?\s+"
+    r"(like|want)|get\s+me|give\s+me|send\s+me|order|buy)\s+",
+    re.IGNORECASE,
+)
+
+# What separates one dish from the next.
+_SPLIT = re.compile(r"\s*(?:,|;|\+|\band\b|\bplus\b|\bwith\b)\s*", re.IGNORECASE)
+
+# A leading count, digits or words, kept so the quantity can be read off.
+_QTY_READ = re.compile(
+    r"^\s*(\d+|" + "|".join(sorted(_QTY_WORDS, key=len, reverse=True)) + r")\b\s*"
+    r"(?:x|nos?\.?|pcs?\.?|plates?|portions?|servings?|orders?\s+of)?\s*",
+    re.IGNORECASE,
+)
+
+
+def _read_qty(phrase: str) -> tuple[int, str]:
+    match = _QTY_READ.match(phrase)
+    if not match:
+        return 1, phrase.strip()
+    token = match.group(1).lower()
+    qty = int(token) if token.isdigit() else _QTY_WORDS.get(token, 1)
+    return max(1, min(qty, 99)), phrase[match.end():].strip()
+
+
+def parse_request(text: str) -> dict:
+    """Free text -> a cart proposal, with no model involved.
+
+    The fallback for when the LLM that normally does this is unreachable.
+    It is a real fallback, not a stub: it splits the sentence, reads each
+    quantity, and resolves each phrase through `resolve_item` -- the same
+    conservative matcher the MCP demand path uses, which returns None
+    rather than guessing between two candidates.
+
+    Being worse than the model is expected and is the correct trade. The
+    model can tell "not sold here" from "close to something here" using
+    the whole menu as context; this cannot, so anything it fails to
+    resolve goes into `unmatched` in the customer's own words and is
+    handled by exactly the same off-menu path a model-reported miss is.
+    A miss is a question asked; a wrong match would be a dish nobody
+    ordered, silently added to a cart.
+
+    What it does NOT do is decide anything. It proposes a cart, the same
+    as the model does, and every gate after it is untouched -- which is
+    why swapping one for the other is safe at all.
+    """
+    cleaned = _LEAD_IN.sub("", (text or "").strip())
+    items: dict[str, int] = {}
+    unmatched: list[str] = []
+
+    for phrase in _SPLIT.split(cleaned):
+        phrase = phrase.strip(" .!\t")
+        if not phrase:
+            continue
+        qty, remainder = _read_qty(phrase)
+        item_id = resolve_item(remainder) or resolve_item(phrase)
+        if item_id:
+            # Summed, not appended: "a thali and another thali" is two
+            # thalis, the same rule the console's basket follows.
+            items[item_id] = items.get(item_id, 0) + qty
+        else:
+            unmatched.append(phrase)
+
+    return {
+        "items": [{"item_id": k, "qty": v} for k, v in items.items()],
+        "unmatched": unmatched,
+    }
+
+
 def _slug(text: str) -> str:
     cleaned = "".join(ch if ch.isalnum() else "_" for ch in text.strip().lower())
     while "__" in cleaned:

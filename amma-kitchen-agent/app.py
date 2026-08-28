@@ -199,7 +199,7 @@ def parse_cart(req: ParseCartRequest) -> dict:
     decision that follows is plain Python in negotiation.py.
     """
     if not os.environ.get("OPENROUTER_API_KEY"):
-        raise HTTPException(503, "OPENROUTER_API_KEY not configured; use the menu picker instead")
+        return _parse_without_a_model(req.text, "no model key is configured")
 
     if req.available_items:
         catalog_lines = [
@@ -259,11 +259,51 @@ def parse_cart(req: ParseCartRequest) -> dict:
                 "required": ["items"],
             },
         )
-        return {"items": args.get("items", []), "unmatched": args.get("unmatched", [])}
+        return {
+            "items": args.get("items", []),
+            "unmatched": args.get("unmatched", []),
+            "parsed_by": "claude",
+        }
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(502, f"could not parse that request: {exc}")
+        return _parse_without_a_model(req.text, _why_the_model_failed(exc))
+
+
+def _why_the_model_failed(exc: Exception) -> str:
+    """One short sentence, because the raw provider error is a wall of
+    JSON that says the same thing five times and reads like a crash."""
+    text = str(exc)
+    if "402" in text or "credits" in text.lower():
+        return "the model provider is out of credit"
+    if "401" in text or "invalid api key" in text.lower():
+        return "the model key was rejected"
+    if "timeout" in text.lower() or "timed out" in text.lower():
+        return "the model did not answer in time"
+    return "the model could not be reached"
+
+
+def _parse_without_a_model(text: str, why: str) -> dict:
+    """Fall back to matching the request against the menu directly.
+
+    The model's only job in this project is turning words into a cart
+    proposal -- it has never decided anything, and every gate after this
+    point is plain Python. So when it is unreachable the honest response
+    is to do that one job worse rather than to refuse the order: match
+    what can be matched exactly, and report the rest as off-menu through
+    the same path a model-reported miss already takes.
+
+    It is labelled on the wire and said out loud in the buyer's terminal.
+    A demo that quietly degrades is worse than one that stops, because
+    the viewer cannot tell which parser answered.
+    """
+    parsed = merchant_config.parse_request(text)
+    return {
+        "items": parsed["items"],
+        "unmatched": parsed["unmatched"],
+        "parsed_by": "menu-matching",
+        "fallback_reason": why,
+    }
 
 
 @app.post("/api/buyer-check")

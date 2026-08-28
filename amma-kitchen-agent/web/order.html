@@ -860,12 +860,13 @@ async function deploy() {
       });
     } catch (err) {
       thinking.remove();
-      log("&gt; Claude unavailable: " + err.message, "err");
+      log("&gt; Could not reach the parser: " + err.message, "err");
       log("&gt; Cannot draft a cart without interpreting the request. Stopping.", "err");
       setState("STOPPED", "#D98070"); stepFailed();
       return;
     }
     thinking.remove();
+    sayWhichParser(parsed);
 
     let items = parsed.items || [];
     const unmatched = parsed.unmatched || [];
@@ -888,6 +889,7 @@ async function deploy() {
         body: JSON.stringify({ text: replacement, available_items: catalogPayload() }),
       });
       retryThinking.remove();
+      sayWhichParser(retry);
 
       for (const missing of retry.unmatched || []) {
         log(`&gt; <b>${missing}</b> isn't on her menu either.`, "warn");
@@ -1465,6 +1467,24 @@ function closeTransactions() {
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closeTransactions();
 });
+
+/* Which parser answered, said out loud.
+
+   The model turns words into a cart proposal and does nothing else -- it
+   has never decided anything, and every gate after it is plain Python --
+   so when it is unreachable the agent falls back to matching the request
+   against the menu directly rather than refusing the order. That is a
+   real downgrade in one specific way: exact matching cannot tell "not
+   sold here" from "close to something here", so it misses more. A viewer
+   has to be able to see which one answered, or the demo quietly degrades
+   into something they can't distinguish from the real thing. */
+function sayWhichParser(parsed) {
+  if (parsed.parsed_by !== "menu-matching") return;
+  log(`&gt; Claude is unavailable — ${escHtml(parsed.fallback_reason || "no reason given")}.`, "warn");
+  log("&gt; Falling back to matching your words against her menu directly. "
+      + "This matches less, never guesses, and changes nothing after this step: "
+      + "the cart still goes through every limit below.", "quiet");
+}
 
 /* ------------------------------------------------------- standing orders
 

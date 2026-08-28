@@ -139,6 +139,7 @@ amma-kitchen-agent/
   buyer_mandate.py        # BUYER's limits — pure, runs before any merchant is contacted
   mandate.py              # MERCHANT's DEFAULT rules + starting menu (plain data)
   merchant_config.py      # what Amma actually configured; what the core decides against
+                          #   + resolve_item / parse_request: free text -> cart, no model
   negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
   upsell_ranking.py       # which add-on suits this cart; pure, derived from her menu
   routines.py             # standing orders + the confidence gate deciding whether one
@@ -179,7 +180,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 453 tests; test_negotiation.py still matters most
+  tests/                  # 464 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1310,7 +1311,7 @@ reply parser, autonomous no-browser settlement, live merchant configuration, gen
 catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
 order instead and whether to approve a soft-cap order.
 
-**453 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**464 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1686,6 +1687,61 @@ survive a restart.
 `disputed_at` is a single timestamp, deliberately: being disputed is a fact about a record,
 not a stage in a workflow. It is not a lifecycle transition either — a status row would
 become the order's latest status and shove it out of whatever state it is really in.
+
+## When the model is unreachable, the order still goes through
+
+Mid-run, the buyer console stopped dead:
+
+```
+> Matching the request against her menu...
+> Claude unavailable: could not parse that request: Error code: 402 ...
+> Cannot draft a cart without interpreting the request. Stopping.
+```
+
+OpenRouter's free credit had run out ($0.19 across 69 requests). Everything else in the
+system was working perfectly and no order could be placed.
+
+**That was the wrong failure, and the architecture already said so.** The rule this project
+is built on is that the LLM never decides anything -- it turns words into a cart
+*proposal*, and every gate after that is plain Python. A proposal is not a decision. So a
+component that cannot decide anything should not be able to stop the sale either, and
+`/api/parse-cart` answering 503 was a single point of failure the design had explicitly
+ruled out having.
+
+`merchant_config.parse_request()` is the fallback. It splits the sentence, reads each
+quantity (digits or words -- "three", "a couple of"), and resolves each phrase through
+**`resolve_item`, the conservative matcher that already existed** for the MCP off-menu
+path. Nothing new was invented to match dishes; the shared resolver got a splitter in front
+of it.
+
+- **It is worse than the model, in one specific way, and that is the correct trade.** The
+  model has the whole menu in context and can tell "not sold here" from "close to something
+  here". This cannot. So it misses more -- and a miss goes into `unmatched` in the
+  customer's own words and takes exactly the same off-menu path a model-reported miss
+  takes: the customer is asked on WhatsApp what they would like instead. **A miss is a
+  question asked; a wrong match would be a dish nobody ordered, silently in a cart.**
+  `resolve_item` returning None on two candidates is what guarantees that, and there is a
+  test that "2 biryani" against a menu with two biryanis is a miss rather than a coin flip.
+- **It is labelled, on the wire and out loud.** The response carries
+  `parsed_by: "menu-matching"` and a one-sentence `fallback_reason` (the raw provider error
+  is a wall of JSON repeating itself five times). The terminal says Claude is unavailable,
+  why, and that the fallback "matches less, never guesses, and changes nothing after this
+  step". **A demo that quietly degrades is worse than one that stops**, because a viewer
+  cannot tell which parser produced the cart.
+- **It cannot get anything past anything.** A test parses the disallowed catering tray
+  through the fallback and asserts the core still returns ESCALATE with no Razorpay call.
+  Whatever drafted the cart, the gates below are untouched -- which is the entire reason
+  swapping one parser for the other is safe.
+
+Verified with the key removed, in a browser, on the exact request that died: it parses,
+announces the fallback, drafts `1x Paneer Bhurji, 4x Tandoori Roti`, clears the buyer's
+own mandate, opens the AP2 intent, takes the Filter Coffee add-on and locks the payment
+mandate at Rs.320 -- **the whole flow, with no model involved at any point.**
+
+For the pitch itself, put credit on the OpenRouter account anyway: 71K tokens cost $0.19,
+so a few dollars is thousands of orders, and the model genuinely parses loose phrasing
+better. The fallback is there so the demo cannot die of a balance, not as a reason to run
+without one.
 
 ## Standing orders: deciding when *not* to act
 
