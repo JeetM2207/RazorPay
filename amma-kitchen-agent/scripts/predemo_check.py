@@ -247,63 +247,105 @@ def check_messaging() -> None:
 # ------------------------------------------------------------- the model
 
 def check_model() -> None:
-    """Does the NL parser have a model, and can it actually afford a call?
+    """Can the NL parser actually make a call right now?
 
-    Here because it went wrong live: the free credit ran out mid-run and
-    the console stopped at "Cannot draft a cart without interpreting the
-    request". A key that is present and valid and BROKE looks identical to
-    a working one from every angle except a real request -- which is the
-    same shape as every other check in this file.
+    Here because it went wrong live: the credit ran out mid-run and the
+    buyer console stopped at "Cannot draft a cart without interpreting the
+    request".
 
-    Never a FAIL, because the order still goes through without it: the
-    parser falls back to matching against the menu directly. It is a WARN
-    because that fallback matches less, and finding out during the pitch
-    is the thing worth avoiding.
+    The verdict comes from a REAL parse, not from the balance endpoint,
+    and that distinction is the entire value of this check. OpenRouter
+    reports `total_credits: 0, total_usage: 0` for a brand-new account and
+    `total_credits: 0, total_usage: 0.19` for one that has spent its free
+    allowance -- and the first version of this check read those numbers
+    and called a working fresh key exhausted. A balance is a claim about
+    whether a call would work; a call is the fact. Same reason the webhook
+    check signs a real delivery instead of comparing secrets.
+
+    Never a FAIL, because the order still goes through without a model:
+    the parser falls back to matching against the menu directly. It is a
+    WARN because that fallback matches less, and finding out during the
+    pitch is the thing worth avoiding.
     """
-    key = ENV.get("OPENROUTER_API_KEY")
-    if not key:
+    if not ENV.get("OPENROUTER_API_KEY"):
         report("WARN", "model for NL parsing",
                "no OPENROUTER_API_KEY -- orders still work via menu matching, "
                "but loose phrasing will miss more")
         return
 
     try:
-        import httpx
+        import merchant_config
+        from llm_client import call_with_forced_tool
 
-        r = httpx.get(
-            "https://openrouter.ai/api/v1/credits",
-            headers={"Authorization": f"Bearer {key}"}, timeout=15,
+        menu = merchant_config.current_menu()
+        if not menu:
+            report("WARN", "model for NL parsing", "no menu configured to parse against")
+            return
+
+        first = next(iter(menu))
+        args = call_with_forced_tool(
+            "This merchant sells exactly these dishes:\n"
+            + "\n".join(f"- {name}: {item.name}" for name, item in menu.items())
+            + f"\n\nThe customer asked for:\n1 {menu[first].name}",
+            tool_name="propose_cart",
+            description="Convert the request into a cart drawn only from this menu.",
+            parameters={
+                "type": "object",
+                "properties": {
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "item_id": {"type": "string", "enum": list(menu)},
+                                "qty": {"type": "integer", "minimum": 1},
+                            },
+                            "required": ["item_id", "qty"],
+                        },
+                    },
+                },
+                "required": ["items"],
+            },
         )
     except Exception as exc:
-        report("WARN", "model for NL parsing", f"could not reach OpenRouter: {str(exc)[:80]}")
+        text = str(exc)
+        if "402" in text or "credits" in text.lower():
+            detail = ("out of credit -- parsing WILL fall back to menu matching. "
+                      "Top up at openrouter.ai/settings/credits")
+        elif "401" in text or "invalid api key" in text.lower():
+            detail = "the key was rejected -- parsing will fall back to menu matching"
+        else:
+            detail = f"call failed: {text[:90]}"
+        report("WARN", "model for NL parsing", detail)
         return
 
-    if r.status_code == 401:
+    if not args.get("items"):
         report("WARN", "model for NL parsing",
-               "OpenRouter rejected the key -- parsing will fall back to menu matching")
-        return
-    if r.status_code != 200:
-        report("WARN", "model for NL parsing", f"OpenRouter answered {r.status_code}")
+               "the call succeeded but returned no cart -- check the model id in llm_client")
         return
 
-    data = r.json().get("data", {})
-    granted = float(data.get("total_credits") or 0)
-    used = float(data.get("total_usage") or 0)
-    left = granted - used
+    # Only now is the balance worth printing, as detail rather than verdict.
+    left = ""
+    try:
+        import httpx
 
-    if left <= 0:
-        # granted is 0 on an account that has only ever spent the free
-        # allowance, so "of $0.00" would read as nonsense.
-        spent = (f"${used:.2f} spent, no credit purchased" if granted <= 0
-                 else f"${used:.2f} of ${granted:.2f} used")
-        report("WARN", "model for NL parsing",
-               f"OpenRouter balance exhausted ({spent}) -- parsing WILL fall back to "
-               "menu matching. Top up at openrouter.ai/settings/credits")
-    elif left < 0.10:
-        report("WARN", "model for NL parsing",
-               f"only ${left:.3f} left -- roughly {int(left / 0.0027)} more parses")
-    else:
-        report("PASS", "model for NL parsing", f"${left:.2f} of credit left")
+        data = httpx.get(
+            "https://openrouter.ai/api/v1/credits",
+            headers={"Authorization": f"Bearer {ENV['OPENROUTER_API_KEY']}"}, timeout=10,
+        ).json().get("data", {})
+        remaining = float(data.get("total_credits") or 0) - float(data.get("total_usage") or 0)
+        used = float(data.get("total_usage") or 0)
+        if remaining > 0:
+            left = f", ${remaining:.2f} of credit left"
+        elif used >= 0.05:
+            # The last account died at $0.19, so this is the range where
+            # it stops being theoretical.
+            left = (f", but ${used:.2f} of free allowance is already spent "
+                    "-- buy credit before the demo")
+    except Exception:
+        pass
+
+    report("PASS", "model for NL parsing", f"a real parse came back correct{left}")
 
 
 # ------------------------------------------------------------------- MCP
