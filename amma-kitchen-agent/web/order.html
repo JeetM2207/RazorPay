@@ -77,6 +77,36 @@
   .dish-add:hover { background: var(--accent); color: #fff; }
   .dish-add:disabled { opacity: .5; cursor: default; background: var(--surface-3); color: var(--ink-3); border-color: var(--line); }
 
+  .dish-qty {
+    display: inline-flex; align-items: center;
+    border: 1px solid var(--accent); border-radius: 7px; overflow: hidden;
+  }
+  .dish-qty button {
+    appearance: none; cursor: pointer; border: 0; background: var(--accent-soft);
+    color: var(--accent); font: inherit; font-size: 13px; font-weight: 700;
+    width: 24px; height: 24px; line-height: 1;
+  }
+  .dish-qty button:hover { background: var(--accent); color: #fff; }
+  .dish-qty .n {
+    min-width: 24px; text-align: center; font-size: 12.5px; font-weight: 700;
+    color: var(--accent); background: var(--surface);
+  }
+  .dish.picked { border-color: var(--accent); background: var(--accent-soft); }
+
+  /* the running basket, so you can see what you have built */
+  .cart-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    margin-top: 12px; padding: 10px 13px; border-radius: 10px;
+    background: var(--accent-soft); border: 1px solid var(--accent-line);
+    font-size: 12.5px; color: var(--accent); font-weight: 600;
+  }
+  .cart-bar:empty { display: none; }
+  .cart-clear {
+    appearance: none; border: 0; background: transparent; cursor: pointer;
+    font: inherit; font-size: 12px; font-weight: 650; color: var(--accent);
+    text-decoration: underline;
+  }
+
   /* ---- transactions drawer ---- */
   .tx-btn { width: 100%; margin-top: 12px; }
   .tx-back { position: fixed; inset: 0; background: rgba(15,23,42,.45); z-index: 70; }
@@ -314,6 +344,7 @@
           <div style="margin-top:20px">
             <label for="command">What do you want your AI to buy?</label>
             <textarea id="command" rows="3">Order 1 paneer bhurji and 4 tandoori roti</textarea>
+            <div class="cart-bar" id="cartBar"></div>
           </div>
 
           <button class="btn" id="deployBtn" style="width:100%; margin-top:14px">Deploy Agent</button>
@@ -585,14 +616,75 @@ async function boot() {
 /* Her live menu, straight from /api/menu. An item she has unticked is
    shown but not addable -- the agent would be refused, and saying so here
    saves a wasted round trip without hiding that she sells it. */
+/* A real basket. Quantities live here, the tiles render them, and the
+   order box is written FROM them -- so tapping + twice gives "2 veg
+   thali" rather than "1 veg thali, 1 veg thali", which is what the
+   parser would otherwise have to untangle and what a customer would
+   rightly find odd. */
+let PICKED = {};               // item_id -> qty
+let pickerWroteBox = "";       // the last text the picker put in the box
+
+function pickedCount() {
+  return Object.values(PICKED).reduce((n, q) => n + q, 0);
+}
+
+/* What the basket costs. Distinct from cartTotal(), which prices the
+   cart the AGENT drafted -- same word, two different carts. */
+function pickedTotal() {
+  return Object.entries(PICKED).reduce((sum, [id, qty]) => {
+    const dish = MENU.find((m) => m.id === id);
+    return sum + (dish ? dish.price_inr * qty : 0);
+  }, 0);
+}
+
+/* Plain English, quantities merged. The parser reads this exactly as it
+   reads anything typed by hand: the basket is a way of building the
+   sentence, never a way around the parse. */
+function pickedText() {
+  const parts = Object.entries(PICKED)
+    .filter(([, qty]) => qty > 0)
+    .map(([id, qty]) => {
+      const dish = MENU.find((m) => m.id === id);
+      return `${qty} ${(dish ? dish.title : id.replace(/_/g, " ")).toLowerCase()}`;
+    });
+  return parts.length ? "Order " + parts.join(", ") : "";
+}
+
+function bumpDish(itemId, delta) {
+  const next = Math.max(0, (PICKED[itemId] || 0) + delta);
+  if (next === 0) delete PICKED[itemId];
+  else PICKED[itemId] = next;
+  syncPicked();
+}
+
+function clearPicked() {
+  PICKED = {};
+  syncPicked();
+  $("command").focus();
+}
+
+function syncPicked() {
+  const text = pickedText();
+  $("command").value = text;
+  pickerWroteBox = text;
+
+  const count = pickedCount();
+  $("cartBar").innerHTML = count
+    ? `<span>${count} item${count === 1 ? "" : "s"} &middot; ${rupee(pickedTotal())}</span>` +
+      `<button class="cart-clear" id="cartClear">Clear</button>`
+    : "";
+  renderDishes();
+}
+
 function renderDishes() {
   const orderable = MENU.filter((m) => m.agent_orderable);
   $("dishCount").textContent = `${orderable.length} of ${MENU.length} orderable`;
 
   $("dishGrid").innerHTML = MENU.map((m) => {
     const onSale = m.sale && m.list_price_inr && m.list_price_inr > m.price_inr;
+    const qty = PICKED[m.id] || 0;
     return `
-      <div class="dish ${m.agent_orderable ? "" : "off"}">
+      <div class="dish ${m.agent_orderable ? "" : "off"} ${qty ? "picked" : ""}">
         <div>
           <div class="dish-name">${escHtml(m.title)}</div>
           <div class="dish-cat">${escHtml(m.category)}${onSale ? " · on sale" : ""}</div>
@@ -601,27 +693,40 @@ function renderDishes() {
           <span class="dish-price">
             ${onSale ? `<span class="dish-was">${rupee(m.list_price_inr)}</span>` : ""}${rupee(m.price_inr)}
           </span>
-          ${m.agent_orderable
-            ? `<button class="dish-add" data-dish="${escHtml(m.title)}">+ Add</button>`
-            : `<button class="dish-add" disabled title="in-person orders only">in person</button>`}
+          ${!m.agent_orderable
+            ? `<button class="dish-add" disabled title="in-person orders only">in person</button>`
+            : qty
+              ? `<span class="dish-qty">
+                   <button data-bump="-1" data-id="${escHtml(m.id)}" aria-label="one fewer">&minus;</button>
+                   <span class="n">${qty}</span>
+                   <button data-bump="1" data-id="${escHtml(m.id)}" aria-label="one more">+</button>
+                 </span>`
+              : `<button class="dish-add" data-bump="1" data-id="${escHtml(m.id)}">+ Add</button>`}
         </div>
       </div>`;
   }).join("");
 }
 
 $("dishGrid").addEventListener("click", (e) => {
-  const btn = e.target.closest(".dish-add[data-dish]");
-  if (btn) addDish(btn.dataset.dish);
+  const btn = e.target.closest("[data-bump]");
+  if (btn) bumpDish(btn.dataset.id, Number(btn.dataset.bump));
 });
 
-/* Appends to whatever is already in the box rather than replacing it, so
-   two taps build a two-item order. */
-function addDish(title) {
-  const box = $("command");
-  const existing = box.value.trim();
-  box.value = existing ? `${existing}, 1 ${title.toLowerCase()}` : `Order 1 ${title.toLowerCase()}`;
-  box.focus();
-}
+$("cartBar").addEventListener("click", (e) => {
+  if (e.target.id === "cartClear") clearPicked();
+});
+
+/* Typing by hand wins: the box is the order, the basket only fills it
+   in. Once they disagree the tiles reset rather than showing quantities
+   that are no longer in the sentence being sent. */
+$("command").addEventListener("input", () => {
+  if ($("command").value !== pickerWroteBox && pickedCount()) {
+    PICKED = {};
+    pickerWroteBox = "";
+    $("cartBar").innerHTML = "";
+    renderDishes();
+  }
+});
 
 /* ------------------------------------------------------- the agent run */
 

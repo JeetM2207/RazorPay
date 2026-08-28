@@ -374,10 +374,16 @@ def test_no_console_script_declares_the_same_name_twice():
     import pathlib
     import re
 
+    # `function` too, not just const/let: a duplicate function declaration
+    # is the same SyntaxError, and it is how the picker's cartTotal()
+    # collided with the agent's cartTotal() and blanked the whole page.
+    pattern = re.compile(
+        r"^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=|^function\s+([A-Za-z_$][\w$]*)\s*\(",
+        re.MULTILINE,
+    )
     web = pathlib.Path(__file__).resolve().parent.parent / "web"
     for page in web.glob("*.html"):
-        names = re.findall(r"^(?:const|let)\s+([A-Za-z_$][\w$]*)\s*=",
-                           page.read_text(encoding="utf-8"), re.MULTILINE)
+        names = [a or b for a, b in pattern.findall(page.read_text(encoding="utf-8"))]
         duplicates = {n for n in names if names.count(n) > 1}
         assert not duplicates, f"{page.name} declares {duplicates} more than once"
 
@@ -551,3 +557,28 @@ def test_declining_a_simulated_settlement_says_so_rather_than_claiming_a_refund(
     outcome = [o for o in client.get("/api/order-outcomes").json()["outcomes"]
                if str(o["order_ref"]) == str(ref)][0]
     assert "no real money moved" in outcome["reason"]
+
+
+def test_the_dish_picker_is_a_real_basket(client):
+    """Tapping the same dish twice must produce "2 veg thali", not
+    "1 veg thali, 1 veg thali" -- which is what the parser would have to
+    untangle, and what a customer would rightly find odd."""
+    page = client.get("/buyer/order").text
+
+    assert "bumpDish" in page and "pickedText" in page
+    assert 'data-bump="-1"' in page and 'data-bump="1"' in page
+    assert "cartBar" in page
+    # The quantity is merged into one line per dish.
+    assert '`${qty} ${(dish ? dish.title : id.replace(/_/g, " ")).toLowerCase()}`' in page
+    # Typing by hand wins; the tiles reset rather than showing stale counts.
+    assert "pickerWroteBox" in page
+
+
+def test_the_basket_does_not_shadow_the_agents_own_cart(client):
+    """order.html already had cartTotal() for the cart the AGENT drafted.
+    A second one for the picker's basket is a SyntaxError that blanks the
+    whole page -- which is exactly what happened."""
+    page = client.get("/buyer/order").text
+
+    assert "function pickedTotal()" in page
+    assert page.count("const cartTotal") + page.count("function cartTotal") == 1
