@@ -43,6 +43,36 @@ def test_nothing_reaches_the_network(name, source):
     assert not re.search(r"@import\s+url\(\s*['\"]?https?://", source), f"{name} @imports a remote sheet"
 
 
+ALLOWED_OFF_ORIGIN = {
+    # Google Identity Services, for the sign-in buttons. The ONE
+    # exception, and a deliberate one: signing in with Google inherently
+    # requires reaching Google, so self-hosting could not make it work
+    # offline. It is loaded only when GOOGLE_CLIENT_ID is set, and every
+    # page works without it -- the merchant keeps her password and the
+    # customer keeps the form.
+    "https://accounts.google.com/gsi/client",
+}
+
+
+@pytest.mark.parametrize("name,source", list(_all_sources()),
+                         ids=lambda v: v if isinstance(v, str) and len(v) < 30 else "")
+def test_the_only_off_origin_asset_is_the_one_we_chose(name, source):
+    """The rule is not "no CDNs we happened to think of" -- it is that
+    every off-origin URL in this project is one somebody decided on.
+
+    The host list above catches the usual suspects. This catches anything
+    else: a new script tag pointing anywhere off this origin fails here
+    unless it is added to ALLOWED_OFF_ORIGIN with a reason.
+    """
+    urls = re.findall(r"""(?:src|href)\s*=\s*["'](https?://[^"']+)["']""", source)
+    for url in urls:
+        assert url in ALLOWED_OFF_ORIGIN, (
+            f"{name} loads {url} from another origin. Everything the page needs to "
+            "render is served from this one; add it to ALLOWED_OFF_ORIGIN with a "
+            "reason if it genuinely has to come from elsewhere."
+        )
+
+
 def test_the_fonts_are_actually_committed():
     """A @font-face pointing at a file nobody committed is worse than no
     @font-face: it fails only on someone else's machine."""

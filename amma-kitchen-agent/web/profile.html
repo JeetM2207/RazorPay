@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Set up your account — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
+<!-- Google Identity Services. The one off-origin asset in the project,
+     and a deliberate exception: signing in with Google inherently
+     requires reaching Google, so self-hosting it would not make the
+     button work offline. Everything the page needs to RENDER is still
+     served from this origin, and the form below works completely without
+     this script -- if it fails to load, the button simply is not there.
+     See web/login.html for the same note. -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   .wrap { max-width: 620px; margin: 0 auto; }
   .steps { display: flex; gap: 8px; margin-bottom: 26px; }
@@ -98,9 +106,17 @@
       <div class="card chit">
         <div class="section-head">Who you are</div>
 
+        <div id="gsiWrap" style="display:none; margin-bottom:20px">
+          <div id="gsiButton"></div>
+          <p class="note" style="margin-top:9px" id="gsiNote">
+            Fills your name in for you, and names your agent after you.
+          </p>
+        </div>
+
         <div class="field">
           <label for="name">Full name</label>
           <input type="text" id="name" placeholder="Priya Sharma" autocomplete="name">
+          <div class="hint" id="agentPreview"></div>
         </div>
 
         <div class="field">
@@ -191,6 +207,31 @@
 const $ = (id) => document.getElementById(id);
 const PROFILE_KEY = "ammas-kitchen-buyer-profile";
 
+let GOOGLE_IDENTITY = null;
+
+/* An agent's name, taken from the person it acts for.
+
+   These ids are read by humans. They head every row of the audit trail,
+   they name the agent in the merchant's trust table, and they appear in
+   the evidence pack for a disputed order. "agent-an1yp" told nobody
+   anything -- five random characters, and a board full of them is
+   unreadable.
+
+   So: Jeet -> "Jeet's Agent". First name only, because a full name in a
+   table column is noise, and the possessive says what the thing actually
+   is. It falls back to a random id only when the name is unusable, since
+   an agent with no id at all would break every lookup that keys on one.
+
+   The id is also the audit key, so it must stay stable for one person --
+   which it is, because it is derived from the name they saved. */
+function agentNameFor(fullName) {
+  const first = (fullName || "").trim().split(/\s+/)[0].replace(/[^\p{L}\p{N}'-]/gu, "");
+  if (!first) return "agent-" + Math.random().toString(36).slice(2, 7);
+  const named = first.charAt(0).toUpperCase() + first.slice(1);
+  // "Chris" -> "Chris' Agent", not "Chris's Agent".
+  return named + (named.endsWith("s") || named.endsWith("S") ? "' Agent" : "'s Agent");
+}
+
 const TEST_CARD = "4100280000001007";
 
 function toast(msg, isErr) {
@@ -277,7 +318,11 @@ function save() {
     hard_cap_inr: hardCap,
     soft_cap_inr: softCap,
     routine_cap_inr: routineCap,
-    agent_id: "agent-" + Math.random().toString(36).slice(2, 7),
+    agent_id: (GOOGLE_IDENTITY && GOOGLE_IDENTITY.agent_id) || agentNameFor(name),
+    // Only present when they signed in with Google. The email is what
+    // makes this a real identity rather than a typed name; nothing is
+    // stored server-side, exactly as before.
+    email: GOOGLE_IDENTITY ? GOOGLE_IDENTITY.email : null,
     created_at: new Date().toISOString(),
   };
 
@@ -319,6 +364,65 @@ async function boot() {
 
 $("saveBtn").addEventListener("click", save);
 boot();
+</script>
+<script>
+/* Sign in with Google, on the customer's side.
+
+   No allowlist here, unlike the merchant's: any Google account is a
+   legitimate customer. What it buys is a real NAME -- so the audit trail
+   reads "Jeet's Agent" instead of five random characters -- and it saves
+   typing.
+
+   It sets no cookie and stores nothing server-side. The profile stays in
+   this browser, which is the existing design and the reason the card
+   never reaches the server; this only fills the form in. */
+(async () => {
+  let config;
+  try {
+    config = await (await fetch("/api/google/config")).json();
+  } catch { return; }
+  if (!config.enabled) return;
+
+  for (let i = 0; i < 40 && !window.google?.accounts?.id; i++) {
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  if (!window.google?.accounts?.id) return;    // offline: type it instead
+
+  google.accounts.id.initialize({
+    client_id: config.client_id,
+    callback: async ({ credential }) => {
+      const res = await fetch("/api/buyer/login/google", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ credential }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        return toast(body.detail || "That sign-in was not accepted.", true);
+      }
+      const person = await res.json();
+      $("name").value = person.name || $("name").value;
+      GOOGLE_IDENTITY = person;            // carried into the saved profile
+      previewAgentName();
+      toast(`Signed in as ${person.email}. Your agent is ${person.agent_id}.`);
+    },
+  });
+  google.accounts.id.renderButton(document.getElementById("gsiButton"),
+    { theme: "filled_black", size: "large", text: "continue_with" });
+  document.getElementById("gsiWrap").style.display = "";
+})();
+
+/* Show the agent's name as it is typed, so nobody is surprised by what
+   ends up on their audit trail. */
+function previewAgentName() {
+  const preview = $("agentPreview");
+  const name = $("name").value.trim();
+  preview.textContent = name
+    ? `Your agent will be called "${agentNameFor(name)}" — this is the name on your order records.`
+    : "";
+}
+$("name").addEventListener("input", previewAgentName);
+previewAgentName();
 </script>
 </body>
 </html>

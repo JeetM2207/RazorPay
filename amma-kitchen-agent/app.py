@@ -43,6 +43,7 @@ import buyer_sms
 import catalog
 import dashboard
 import escalations
+import google_auth
 import merchant_auth
 import notification_service
 import reply_auth
@@ -240,6 +241,81 @@ def merchant_login(
         path="/",
     )
     return response
+
+
+class GoogleCredential(BaseModel):
+    credential: str
+
+
+@app.get("/api/google/config")
+def google_config() -> dict:
+    """What the sign-in buttons need to render themselves.
+
+    The client id is public by design -- it identifies the app to Google
+    and is embedded in every page that offers the button. The SECRET is
+    not here and is not needed: this flow verifies an ID token's
+    signature, it does not exchange an authorization code.
+    """
+    return {
+        "enabled": google_auth.is_enabled(),
+        "client_id": google_auth.client_id(),
+        "merchant_enabled": google_auth.merchant_google_enabled(),
+    }
+
+
+@app.post("/merchant/login/google")
+def merchant_login_google(req: GoogleCredential):
+    """Sign the merchant in with Google, if she is on the list.
+
+    The allowlist is the whole point. Google sign-in with no further check
+    would be strictly worse than the password: anyone with a Google
+    account could open her shop. See google_auth.verify_merchant.
+    """
+    try:
+        person = google_auth.verify_merchant(req.credential)
+    except google_auth.NotConfigured as exc:
+        raise HTTPException(503, str(exc))
+    except google_auth.NotAllowed as exc:
+        raise HTTPException(403, str(exc))
+
+    response = JSONResponse({"ok": True, "email": person["email"], "name": person["name"]})
+    response.set_cookie(
+        merchant_auth.COOKIE_NAME,
+        merchant_auth.issue_cookie(),
+        max_age=merchant_auth.SESSION_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
+
+
+@app.post("/api/buyer/login/google")
+def buyer_login_google(req: GoogleCredential) -> dict:
+    """Identify the customer, and name their agent after them.
+
+    No allowlist here, deliberately: any Google account is a legitimate
+    customer. What this buys is a real name for the agent id, so the
+    audit trail reads "Jeet's Agent" rather than five random characters.
+
+    It sets no cookie. The buyer console keeps its profile in the
+    browser, which is the existing design and the reason the card never
+    reaches this server -- this returns who they are and the page stores
+    it exactly as it stores a typed name.
+    """
+    try:
+        person = google_auth.verify(req.credential)
+    except google_auth.NotConfigured as exc:
+        raise HTTPException(503, str(exc))
+    except google_auth.NotAllowed as exc:
+        raise HTTPException(403, str(exc))
+
+    return {
+        "name": person["name"],
+        "email": person["email"],
+        "picture": person["picture"],
+        "agent_id": google_auth.agent_name_for(person["name"], person["email"]),
+    }
 
 
 @app.post("/merchant/logout")

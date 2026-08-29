@@ -1246,9 +1246,9 @@ async function waitForApproval(live, totalInr) {
     const poll = setInterval(async () => {
       if (Date.now() - started > 180000) return finish(null);
       try {
-        const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+        const state = await api("/api/buyer-sms/status/" + encodeURIComponent(PROFILE.agent_id));
         if (state.answered && !state.consumed) {
-          await api("/api/buyer-sms/consume/" + PROFILE.agent_id, { method: "POST" });
+          await api("/api/buyer-sms/consume/" + encodeURIComponent(PROFILE.agent_id), { method: "POST" });
           log(`&gt; You replied: "<b>${state.reply}</b>"`, state.decision ? "ok" : "warn");
           finish(state.decision === true);
         }
@@ -1308,9 +1308,9 @@ function waitForWhatsAppReply(live) {
     const poll = setInterval(async () => {
       if (Date.now() - started > 180000) return finish(null);   // 3 minutes
       try {
-        const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+        const state = await api("/api/buyer-sms/status/" + encodeURIComponent(PROFILE.agent_id));
         if (state.answered && !state.consumed) {
-          const { reply } = await api("/api/buyer-sms/consume/" + PROFILE.agent_id, { method: "POST" });
+          const { reply } = await api("/api/buyer-sms/consume/" + encodeURIComponent(PROFILE.agent_id), { method: "POST" });
           log(`&gt; You replied: "<b>${reply}</b>"`, "ok");
           finish(reply);
         }
@@ -1674,7 +1674,7 @@ async function postReply(body) {
 
 async function openQuestionCode() {
   try {
-    const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+    const state = await api("/api/buyer-sms/status/" + encodeURIComponent(PROFILE.agent_id));
     return state && state.code ? state.code : "";
   } catch {
     return "";
