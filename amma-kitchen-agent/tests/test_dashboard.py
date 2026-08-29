@@ -121,3 +121,59 @@ def test_reason_text_is_html_escaped(client_and_db):
     body = client.get("/").text
     assert "<script>alert" not in body
     assert "&lt;script&gt;" in body
+
+
+def test_a_stage_is_shown_under_its_order_not_beside_it(client_and_db):
+    """One order, one block.
+
+    The trail is append-only, so a paid order that gets confirmed writes
+    AWAITING_PAYMENT, PAID and AUTO_CONFIRMED as separate rows. That stays.
+    What changed is that the page used to render them exactly like
+    decisions, at the same level, so one order looked like four separate
+    orders on screen.
+    """
+    import dashboard
+
+    decision = {
+        "id": 100, "ts": "2026-08-29T19:13:00+00:00", "agent_id": "Jeet's Agent",
+        "protocol": "ap2", "decision": "APPROVE", "reason": "within budget",
+        "cart_json": '[{"item": "veg_thali", "qty": 1}]', "total_inr": 380,
+        "payment_id": "pay_x", "payment_link_id": None, "order_ref": None,
+        "buyer_reasoning": None, "delivery_name": None, "delivery_phone": None,
+        "delivery_address": None,
+    }
+    stages = [
+        dict(decision, id=100 + n, order_ref=100, payment_id=None, decision=state,
+             reason=state)
+        for n, state in enumerate(("AWAITING_PAYMENT", "PAID", "AUTO_CONFIRMED"), start=1)
+    ]
+
+    rendered = dashboard._event_rows([stages[2], stages[1], stages[0], decision])
+
+    # Nothing is dropped: the record must stay complete.
+    assert rendered.count("<tr") == 4
+
+    # Exactly one of them is an order; the other three are its stages.
+    assert rendered.count("<tr class='stage'>") == 3
+    assert rendered.count("order #100") == 3
+
+    # And the stages come after the decision they belong to.
+    assert rendered.index("class='stage'") > rendered.index("Jeet&#x27;s Agent")
+
+
+def test_an_orphaned_stage_is_still_shown(client_and_db):
+    """A stage whose decision is off the end of the page must not vanish.
+    Dropping it would make the trail incomplete, which is the one thing it
+    may never be."""
+    import dashboard
+
+    orphan = {
+        "id": 501, "ts": "2026-08-29T19:13:03+00:00", "agent_id": "a", "protocol": "ap2",
+        "decision": "PAID", "reason": "captured", "cart_json": "[]", "total_inr": 380,
+        "payment_id": None, "payment_link_id": None, "order_ref": 999,
+        "buyer_reasoning": None, "delivery_name": None, "delivery_phone": None,
+        "delivery_address": None,
+    }
+    rendered = dashboard._event_rows([orphan])
+    assert "order #999" in rendered
+    assert rendered.count("<tr") == 1

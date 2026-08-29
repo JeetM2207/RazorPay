@@ -167,6 +167,92 @@ def _agent_tiers(events: list[dict], db_path: str) -> list[tuple[str, str, int]]
     return rows
 
 
+def _decision_row(event: dict) -> str:
+    return (
+        f"<tr>"
+        f"<td class='mono muted'>{event['id']}</td>"
+        f"<td class='mono muted nowrap'>{html.escape(event['ts'][:19].replace('T', ' '))}</td>"
+        f"<td class='mono'>{html.escape(event['agent_id'])}</td>"
+        f"<td><span class='proto'>{html.escape(event['protocol'].upper())}</span></td>"
+        f"<td>{_format_cart(event['cart_json'])}</td>"
+        f"<td class='num-cell'>&#8377;{event['total_inr']}</td>"
+        f"<td>{_decision_badge(event['decision'])}</td>"
+        f"<td class='reason'>{_reasons_cell(event)}</td>"
+        f"<td>{_payment_cell(event)}</td>"
+        # Every order has a Proof of Authorization record whether or not
+        # anyone has asked for it; this is the shortest way to reach one.
+        f"<td class='nowrap'><a href='/evidence/{event['id']}'>view record</a></td>"
+        f"</tr>"
+    )
+
+
+def _stage_row(event: dict) -> str:
+    """A lifecycle transition, shown as what it is: a stage OF an order
+    rather than another order.
+
+    The columns it repeats -- agent, protocol, cart, total -- are dropped,
+    because they are identical to the decision above it and repeating them
+    is what made one order read as five.
+    """
+    return (
+        f"<tr class='stage'>"
+        f"<td class='mono muted'>{event['id']}</td>"
+        f"<td class='mono muted nowrap'>{html.escape(event['ts'][:19].replace('T', ' '))}</td>"
+        f"<td class='stage-mark' colspan='4'>&#8627; "
+        f"<span class='muted'>order #{event['order_ref']}</span></td>"
+        f"<td>{_decision_badge(event['decision'])}</td>"
+        f"<td class='reason'>{html.escape(event['reason'] or '')}</td>"
+        f"<td>{_payment_cell(event)}</td>"
+        f"<td></td>"
+        f"</tr>"
+    )
+
+
+def _event_rows(events: list[dict]) -> str:
+    """One order, one block.
+
+    The trail is append-only: a paid order that the merchant then confirms
+    writes AWAITING_PAYMENT, PAID and AUTO_CONFIRMED as separate rows, each
+    pointing back at the decision. That is deliberate and stays -- the
+    record should read as what happened, in order, rather than as one row
+    whose history has been overwritten.
+
+    But the page used to render those stages exactly like decisions, at
+    the same level, so a single order appeared as five separate lines and
+    looked like five orders. Nothing is hidden here; the stages are simply
+    shown underneath the decision they belong to, dimmed and indented, so
+    the eye can tell an ORDER from a STAGE OF ONE.
+    """
+    if not events:
+        return ("<tr><td colspan='10' class='muted'>"
+                "No decisions recorded yet. Run a buyer agent.</td></tr>")
+
+    stages: dict[int, list[dict]] = {}
+    for event in events:
+        if event.get("order_ref"):
+            stages.setdefault(event["order_ref"], []).append(event)
+
+    out = []
+    for event in events:
+        if event.get("order_ref"):
+            continue                      # rendered under its own decision
+        out.append(_decision_row(event))
+        # Oldest first inside the block, so the block reads forwards even
+        # though the page reads newest-first.
+        for stage in sorted(stages.get(event["id"], []), key=lambda e: e["id"]):
+            out.append(_stage_row(stage))
+
+    # A stage whose decision is off the end of this page still has to
+    # appear -- dropping it would make the trail incomplete, which is the
+    # one thing it may never be.
+    shown = {e["id"] for e in events if not e.get("order_ref")}
+    for ref, rows in sorted(stages.items()):
+        if ref not in shown:
+            out.extend(_stage_row(r) for r in sorted(rows, key=lambda e: e["id"]))
+
+    return "".join(out)
+
+
 def _render(events: list[dict], db_path: str, refresh: int) -> str:
     _mandate = merchant_config.current_mandate()
     stats = _summary(events)
@@ -191,23 +277,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
         for agent_id, tier, completed in _agent_tiers(events, db_path)
     ) or "<tr><td colspan='3' class='muted'>no agents yet</td></tr>"
 
-    event_rows = "".join(
-        f"<tr>"
-        f"<td class='mono muted'>{event['id']}</td>"
-        f"<td class='mono muted nowrap'>{html.escape(event['ts'][:19].replace('T', ' '))}</td>"
-        f"<td class='mono'>{html.escape(event['agent_id'])}</td>"
-        f"<td><span class='proto'>{html.escape(event['protocol'].upper())}</span></td>"
-        f"<td>{_format_cart(event['cart_json'])}</td>"
-        f"<td class='num-cell'>&#8377;{event['total_inr']}</td>"
-        f"<td>{_decision_badge(event['decision'])}</td>"
-        f"<td class='reason'>{_reasons_cell(event)}</td>"
-        f"<td>{_payment_cell(event)}</td>"
-        # Every order has a Proof of Authorization record whether or not
-        # anyone has asked for it; this is the shortest way to reach one.
-        f"<td class='nowrap'><a href='/evidence/{event['id']}'>view record</a></td>"
-        f"</tr>"
-        for event in events
-    ) or "<tr><td colspan='9' class='muted'>No decisions recorded yet. Run a buyer agent.</td></tr>"
+    event_rows = _event_rows(events)
 
     return f"""<!doctype html>
 <html lang="en">
@@ -280,6 +350,11 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   td {{ padding: 11px 14px; border-bottom: 1px solid var(--paper-border); vertical-align: top; }}
   tr:last-child td {{ border-bottom: none; }}
   .mono {{ font-family: var(--font-mono); font-size: 12px; }}
+  /* A stage of an order, not an order. Dimmed and indented so one order
+     reads as one thing with a history rather than as several orders. */
+  tr.stage > td {{ background: rgba(255,255,255,.015); padding-top: 7px; padding-bottom: 7px; }}
+  tr.stage .stage-mark {{ color: var(--muted-2); font-size: 12px; padding-left: 6px; }}
+  tr.stage .reason {{ color: var(--ink-soft); font-size: 12px; }}
   /* Every raw technical value reads as one: ids, references, timestamps. */
   td.mono, td .mono, .num-cell {{ font-family: var(--font-mono); }}
   .muted {{ color: #7C769A; }}
