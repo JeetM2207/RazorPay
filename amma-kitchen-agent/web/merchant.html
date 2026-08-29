@@ -770,15 +770,24 @@ async function sendSmsReply() {
   const text = $("smsReply").value.trim();
   if (!text) return toast("Type a reply first — try 1 or 2.", true);
 
-  const res = await fetch("/webhook/sms-reply", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
-    },
-    body: new URLSearchParams({ Body: text, From: "+91-merchant-console" }),
-  });
-  toast(await res.text());
+  let res;
+  try {
+    res = await fetch("/webhook/sms-reply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
+      },
+      body: new URLSearchParams({ Body: text, From: "+91-merchant-console" }),
+    });
+  } catch (err) {
+    return toast("Could not reach the server: " + err.message, true);
+  }
+  if (res.status === 403) {
+    // The page is holding a credential from before the server restarted.
+    return toast("This page signed in before the server restarted. Reload and try again.", true);
+  }
+  toast(await res.text(), !res.ok);
   $("smsReply").value = "";
   tick();
 }

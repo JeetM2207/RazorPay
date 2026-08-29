@@ -773,12 +773,38 @@ async function boot() {
   $("whoSoft").textContent = rupee(PROFILE.soft_cap_inr);
   $("termName").textContent = PROFILE.agent_id;
 
-  MENU = (await api("/api/menu")).items;
-  renderDishes();
+  await refreshMenu();
   renderDayPicker();
   syncRoutineForm();
   renderRoutines();
   renderBento();
+
+  /* The merchant edits her menu whenever she likes -- prices, stock,
+     which dishes agents may order. This page used to read it once at
+     load and never again, so after she changed a price the picker went
+     on showing the old one while the AGENT, which fetches her live
+     catalog every run, used the new one. The basket said Rs.400 and the
+     terminal said Rs.500 for the same cart.
+
+     Refetched whenever you come back to the tab, which is exactly when
+     you have been off editing the shop. */
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && !running) refreshMenu();
+  });
+  window.addEventListener("focus", () => { if (!running) refreshMenu(); });
+}
+
+
+async function refreshMenu() {
+  try {
+    const fresh = (await api("/api/menu")).items;
+    // Only redraw when something actually changed, so the picker does
+    // not flicker or lose what is in the basket on every tab switch.
+    if (JSON.stringify(fresh) === JSON.stringify(MENU)) return;
+    MENU = fresh;
+    renderDishes();
+    syncRoutineForm();
+  } catch { /* keep whatever we last had */ }
 }
 
 /* Her live menu, straight from /api/menu. An item she has unticked is
@@ -1199,18 +1225,19 @@ async function waitForApproval(live, totalInr) {
     // These post through the real webhook, so this path exercises
     // exactly what a genuine WhatsApp reply would.
     const answerHere = async (word) => {
+      $("apYes").disabled = $("apNo").disabled = true;
       const code = await openQuestionCode();
-      await fetch("/webhook/sms-reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
-        },
-        body: new URLSearchParams({
-          Body: code ? `${word} ${code}` : word,
-          From: PROFILE.phone,
-        }),
+      const sent = await postReply({
+        Body: code ? `${word} ${code}` : word,
+        From: PROFILE.phone,
       });
+      if (!sent.ok) {
+        // Say so, and give the buttons back. Silence here is what made
+        // this look broken.
+        toast(sent.message, true);
+        log("&gt; That reply was not accepted: " + escHtml(sent.message), "err");
+        $("apYes").disabled = $("apNo").disabled = false;
+      }
     };
     $("apYes").addEventListener("click", () => answerHere("YES"));
     $("apNo").addEventListener("click", () => answerHere("NO"));
@@ -1263,17 +1290,14 @@ function waitForWhatsAppReply(live) {
       const code = await openQuestionCode();
       // Goes through the real webhook, so this path exercises exactly
       // what a genuine WhatsApp reply would.
-      await fetch("/webhook/sms-reply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-          "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
-        },
-        body: new URLSearchParams({
-          Body: code ? `${code} ${text}` : text,
-          From: PROFILE.phone,
-        }),
+      const sent = await postReply({
+        Body: code ? `${code} ${text}` : text,
+        From: PROFILE.phone,
       });
+      if (!sent.ok) {
+        toast(sent.message, true);
+        log("&gt; That reply was not accepted: " + escHtml(sent.message), "err");
+      }
     };
 
     $("waSend").addEventListener("click", sendHere);
@@ -1608,6 +1632,46 @@ document.addEventListener("keydown", (e) => {
    WhatsApp reply does -- that is the point of the mock path -- so they
    need the code exactly as a phone would, and it is read off the status
    endpoint the page already polls rather than fetched from anywhere new. */
+/* Post a reply, and never let it fail silently.
+
+   These buttons post to the authenticated /webhook/sms-reply. Three
+   things can turn one down, and every one of them used to produce
+   exactly nothing on screen -- the button looked broken:
+
+     403  the page is holding a credential the server no longer accepts,
+          which happens to every open tab when the server restarts and
+          INTERNAL_REPLY_TOKEN is not pinned in .env
+     200  with a refusal body, when the single-use code did not check out
+     any  network error
+
+   A control that says nothing when it fails is worse than no control, so
+   this returns the server's own words and the caller shows them. */
+async function postReply(body) {
+  let res;
+  try {
+    res = await fetch("/webhook/sms-reply", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
+      },
+      body: new URLSearchParams(body),
+    });
+  } catch (err) {
+    return { ok: false, message: "Could not reach the server: " + err.message };
+  }
+
+  const text = (await res.text().catch(() => "")).trim();
+  if (res.status === 403) {
+    return {
+      ok: false,
+      message: "This page signed in before the server restarted. Reload and try again.",
+    };
+  }
+  if (!res.ok) return { ok: false, message: text || ("HTTP " + res.status) };
+  return { ok: true, message: text };
+}
+
 async function openQuestionCode() {
   try {
     const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
