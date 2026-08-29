@@ -6,8 +6,70 @@
 <title>Order — Amma's Kitchen</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
-  .split { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 22px; align-items: start; }
-  @media (max-width: 1000px) { .split { grid-template-columns: 1fr; } }
+  /* ---- two stages, one at a time ----
+
+     This page used to show the order form and the terminal side by side,
+     which meant half the screen was always dead: an idle terminal while
+     you were still deciding what to eat, and a form you had finished with
+     while the agent worked.
+
+     So it is one thing at a time. COMPOSE is a calm centred column about
+     deciding. RUN hands the whole width to the agent, which is the part
+     worth watching. Pressing Deploy is the cut between them. */
+
+  .stage { animation: stageIn .42s cubic-bezier(.2, .8, .3, 1) both; }
+  .stage[hidden] { display: none; }
+  @keyframes stageIn {
+    from { opacity: 0; transform: translateY(10px) scale(.994); }
+    to   { opacity: 1; transform: none; }
+  }
+  @media (prefers-reduced-motion: reduce) { .stage { animation: none; } }
+
+  .compose { max-width: 760px; margin: 0 auto; }
+
+  .mode-wrap { display: flex; justify-content: center; margin-bottom: 22px; }
+  .mode {
+    display: inline-flex; gap: 3px; padding: 3px;
+    background: rgba(255, 255, 255, .04);
+    border: 1px solid var(--line); border-radius: 12px;
+  }
+  .mode button {
+    appearance: none; border: 0; cursor: pointer; font-family: var(--font-body);
+    font-size: 13px; font-weight: 650; color: var(--muted);
+    padding: 8px 18px; border-radius: 9px; background: transparent;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: background .15s ease, color .15s ease;
+  }
+  .mode button:hover { color: var(--ink); }
+  .mode button.on { background: var(--card-2); color: var(--ink); }
+  .mode-count {
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    padding: 1px 7px; border-radius: 999px;
+    background: var(--gold-soft); color: var(--lilac);
+  }
+  .mode-count:empty { display: none; }
+
+  /* The run stage gets room: the terminal is the argument this page is
+     making, so it is given the width and the height to make it. */
+  .run { max-width: 1100px; margin: 0 auto; }
+  .run .steps { margin-bottom: 22px; }
+  .run .term-body { min-height: min(58vh, 620px); }
+
+  .run-head {
+    display: flex; align-items: baseline; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 4px;
+  }
+  .run-order {
+    font-size: 13.5px; color: var(--muted);
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 999px; padding: 7px 16px;
+  }
+  .run-order b { color: var(--ink); }
+
+  /* Appears only once the agent has finished, so the way back is never a
+     way to interrupt something mid-flight. */
+  .run-foot { margin-top: 18px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .run-foot .note { margin: 0; }
 
   .pane-label { display: flex; align-items: center; gap: 9px; margin-bottom: 4px; }
   .pane-num {
@@ -315,20 +377,28 @@
   </div>
 
   <div class="page">
-    <h1><span class="blur-in" style="animation-delay:0.05s">What</span> <span class="blur-in" style="animation-delay:0.12s">would</span> <span class="blur-in" style="animation-delay:0.19s">you</span> <span class="blur-in" style="animation-delay:0.26s">like?</span></h1>
-    <p class="lede">
+    <h1 id="pageTitle"><span class="blur-in" style="animation-delay:0.05s">What</span> <span class="blur-in" style="animation-delay:0.12s">would</span> <span class="blur-in" style="animation-delay:0.19s">you</span> <span class="blur-in" style="animation-delay:0.26s">like?</span></h1>
+    <p class="lede" id="pageLede">
       Say it in your own words. Your agent takes it from there, and shows you
       everything it does.
     </p>
 
-    <div class="split">
-      <!-- ─────────────── order form ─────────────── -->
+    <!-- Two different jobs, so two different places. Ordering something
+         now and arranging something to repeat are not the same task, and
+         stacking them in one column made the second read as a footnote
+         of the first. -->
+    <div class="mode-wrap">
+      <div class="mode" id="modeSwitch">
+        <button class="on" data-mode="now">Order now</button>
+        <button data-mode="schedule">
+          Standing orders <span class="mode-count" id="modeRoutineCount"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ══════════════ STAGE 1: compose ══════════════ -->
+    <section class="stage compose" id="stageCompose">
       <div>
-        <div class="pane-label">
-          <span class="pane-num">1</span>
-          <span class="pane-title">Your order</span>
-        </div>
-        <p class="pane-sub">The only thing you still have to do.</p>
 
         <div class="card">
           <div class="who">
@@ -388,6 +458,56 @@
 
         <div class="card" style="margin-top:16px">
           <div class="card-head">
+            <h2 class="card-title">On the menu today</h2>
+            <span class="badge badge-mute" id="dishCount">—</span>
+          </div>
+          <p class="note" style="margin:0 0 12px">
+            Live from her catalog. Tap <b>+ Add</b> to put a dish in the box, or just
+            type what you want in your own words.
+          </p>
+          <div class="dish-grid" id="dishGrid"></div>
+        </div>
+      </div>
+
+      <!-- Four facts about this account, each read from the live trail.
+           On the compose stage, because this is context for DECIDING --
+           under the terminal it competed with the thing you are meant to
+           be watching. -->
+         fetched, and a card with nothing behind it says so. -->
+    <div class="bento">
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Bounded by design</h4>
+        <div class="bwidget"><div style="width:100%" id="bentoCaps"></div></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Demand you can see</h4>
+        <div class="bwidget" id="bentoDemand"></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Every order, gated</h4>
+        <div class="bwidget" id="bentoGated"></div>
+      </div>
+      <div class="bcard spot" onmousemove="spot(event,this)">
+        <h4>Full audit, always</h4>
+        <div class="bwidget" id="bentoAudit"></div>
+      </div>
+    </div>
+    </section>
+
+    <!-- ══════════════ STAGE 1b: standing orders ══════════════ -->
+    <section class="stage compose" id="stageSchedule" hidden>
+      <div>
+        <div class="pane-label">
+          <span class="pane-num">&#8635;</span>
+          <span class="pane-title">Standing orders</span>
+        </div>
+        <p class="pane-sub">
+          Orders your agent places on its own, inside a cap you set &mdash; unless
+          something about them has changed, in which case it asks you first.
+        </p>
+
+        <div class="card" style="margin-top:16px">
+          <div class="card-head">
             <h2 class="card-title">Standing orders</h2>
             <span class="badge badge-mute" id="routineCount">none</span>
           </div>
@@ -403,9 +523,15 @@
               New standing order
             </div>
             <p class="note" style="margin:6px 0 0">
-              Add the dishes to the box above, then pick the days and time.
+              <!-- The dish picker lives on the ordering side now, so this
+                   says where it is rather than "the box above", which was
+                   true when the two shared one column and is not now. -->
+              Uses whatever is in your basket.
               <span id="routineBasket" class="mono"></span>
             </p>
+            <button class="btn btn-ghost btn-sm" id="pickDishesBtn" style="margin-top:10px">
+              Choose dishes &rarr;
+            </button>
             <div class="daybox" id="routineDays"></div>
             <div class="routine-grid">
               <div>
@@ -422,27 +548,22 @@
             </button>
           </div>
         </div>
-
-        <div class="card" style="margin-top:16px">
-          <div class="card-head">
-            <h2 class="card-title">On the menu today</h2>
-            <span class="badge badge-mute" id="dishCount">—</span>
-          </div>
-          <p class="note" style="margin:0 0 12px">
-            Live from her catalog. Tap <b>+ Add</b> to put a dish in the box, or just
-            type what you want in your own words.
-          </p>
-          <div class="dish-grid" id="dishGrid"></div>
-        </div>
       </div>
+    </section>
 
-      <!-- ─────────────── agent terminal ─────────────── -->
+    <!-- ══════════════ STAGE 2: watch it work ══════════════ -->
+    <section class="stage run" id="stageRun" hidden>
       <div>
-        <div class="pane-label">
-          <span class="pane-num">2</span>
-          <span class="pane-title">Your buying agent</span>
+        <div class="run-head">
+          <div>
+            <div class="pane-label">
+              <span class="pane-num">2</span>
+              <span class="pane-title">Your buying agent</span>
+            </div>
+            <p class="pane-sub">Everything it thinks and does, as it happens.</p>
+          </div>
+          <div class="run-order" id="runOrder"></div>
         </div>
-        <p class="pane-sub">Everything it thinks and does, as it happens.</p>
 
         <!-- Four phases, in the order they actually run. The buyer's own
              mandate is checked BEFORE the merchant is contacted, which is
@@ -473,30 +594,14 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- Four facts about this account, each read from the live trail.
-         The design pass had fixed numbers here; every one of these is
-         fetched, and a card with nothing behind it says so. -->
-    <div class="bento">
-      <div class="bcard spot" onmousemove="spot(event,this)">
-        <h4>Bounded by design</h4>
-        <div class="bwidget"><div style="width:100%" id="bentoCaps"></div></div>
+        <div class="run-foot" id="runFoot" hidden>
+          <button class="btn" id="againBtn">Place another order</button>
+          <p class="note">Everything above is on your record at
+            <a href="/audit">the audit trail</a>.</p>
+        </div>
       </div>
-      <div class="bcard spot" onmousemove="spot(event,this)">
-        <h4>Demand you can see</h4>
-        <div class="bwidget" id="bentoDemand"></div>
-      </div>
-      <div class="bcard spot" onmousemove="spot(event,this)">
-        <h4>Every order, gated</h4>
-        <div class="bwidget" id="bentoGated"></div>
-      </div>
-      <div class="bcard spot" onmousemove="spot(event,this)">
-        <h4>Full audit, always</h4>
-        <div class="bwidget" id="bentoAudit"></div>
-      </div>
-    </div>
+    </section>
   </div>
 
 <div id="txBack" class="tx-back" style="display:none" onclick="closeTransactions()"></div>
@@ -691,7 +796,22 @@ function customerSafeReason(reason) {
   return text;
 }
 
-const setState = (t, c) => { $("termState").textContent = t; $("termState").style.color = c; };
+/* States at which the agent has stopped and is not going to start again
+   on its own. AWAITING PAYMENT is one of them: the agent's part is over
+   and the OTP is typed by a human on Razorpay's page, so leaving someone
+   there with no way back would strand them on a screen that will never
+   change by itself. */
+const RESTING_STATES = new Set([
+  "AWAITING PAYMENT", "COMPLETE", "PAID", "ERROR", "STOPPED", "CANCELLED", "REFUSED",
+  "RATE LIMITED",
+]);
+
+const setState = (t, c) => {
+  $("termState").textContent = t;
+  $("termState").style.color = c;
+  const foot = $("runFoot");
+  if (foot) foot.hidden = !RESTING_STATES.has(t);
+};
 
 /* The stepper is a renderer, like markLimits: it reports which phase the
    agent is in, and never decides anything. Phases are in the order they
@@ -925,6 +1045,62 @@ $("command").addEventListener("input", () => {
 
 /* ------------------------------------------------------- the agent run */
 
+/* The cut between deciding and watching.
+
+   Pressing Deploy is the moment this page is about, so it gets to be a
+   transition rather than a state change nobody notices: the composer
+   leaves, the agent's view takes the whole width, and the terminal grows
+   to fill it. */
+/* The page's own heading belongs to the stage, not to the page. Leaving
+   "What would you like?" up while the agent is mid-negotiation asks a
+   question that has already been answered. */
+const STAGES = {
+  schedule: {
+    title: "Set it and forget it",
+    lede: "A standing order is placed without anyone asking — so it only goes ahead "
+        + "while it still looks like the thing you agreed to. If anything has moved, "
+        + "you get a message instead of a charge.",
+  },
+  compose: {
+    title: "What would you like?",
+    lede: "Say it in your own words. Your agent takes it from there, and shows you "
+        + "everything it does.",
+  },
+  run: {
+    title: "Your agent is working",
+    lede: "Every line below is something it actually did, with this order's real "
+        + "numbers. Nothing is skipped and nothing is staged.",
+  },
+};
+
+function showStage(name) {
+  const compose = $("stageCompose");
+  const schedule = $("stageSchedule");
+  const run = $("stageRun");
+
+  const copy = STAGES[name];
+  if (copy) {
+    // Plain text on the way out: the blur-in spans were a first-paint
+    // flourish, and replaying them on every stage change would turn a
+    // one-off into a tic.
+    $("pageTitle").textContent = copy.title;
+    $("pageLede").textContent = copy.lede;
+  }
+  compose.hidden = name !== "compose";
+  schedule.hidden = name !== "schedule";
+  run.hidden = name !== "run";
+  // The switch belongs to composing; while the agent works there is
+  // nothing to switch between.
+  $("modeSwitch").parentElement.hidden = name === "run";
+  // Re-run the entrance on the stage arriving, so the change reads as a
+  // move rather than as content snapping into place.
+  const arriving = { compose, schedule, run }[name] || compose;
+  arriving.style.animation = "none";
+  void arriving.offsetWidth;
+  arriving.style.animation = "";
+  window.scrollTo({ top: 0, behavior: REDUCED_MOTION ? "auto" : "smooth" });
+}
+
 async function deploy() {
   if (running) return;
   running = true;
@@ -932,12 +1108,19 @@ async function deploy() {
   $("deployBtn").textContent = "Agent running…";
   $("term").innerHTML = "";
   $("termAsk").style.display = "none";
+  $("runFoot").hidden = true;
   setStep(0);
   setState("WAKING", "#FFB020");
 
   const hardCap = PROFILE.hard_cap_inr;
   const softCap = PROFILE.soft_cap_inr;
   const prompt = $("command").value.trim();
+
+  // What was asked for, kept beside the terminal -- once the composer is
+  // gone there is otherwise nothing on screen saying what this run is.
+  $("runOrder").innerHTML = prompt
+    ? `<b>${escHtml(prompt)}</b>` : "<b>your order</b>";
+  showStage("run");
 
   try {
     if (!prompt) throw new Error("You didn't say what to buy.");
@@ -1093,12 +1276,34 @@ async function deploy() {
 
     await settle(mandate, hardCap);
   } catch (err) {
-    log("&gt; " + err.message, "err");
-    setState("ERROR", "#FF7A5C"); stepFailed();
+    /* A limit is not a crash.
+
+       Hitting her rate limit came out as a red ERROR, which reads as
+       "something broke" when what actually happened is a rule doing
+       exactly its job. It is amber and it explains itself, like every
+       other refusal on this screen -- and it says when it clears, which
+       is the question anyone asks next. */
+    const limited = /rate limit|spend limit/i.test(err.message || "");
+    if (limited) {
+      log("&gt; " + err.message, "warn");
+      log("&gt; Nothing was charged, and the kitchen was not disturbed. This is her "
+          + "limit on how fast one agent may order — it frees up as your earlier "
+          + "orders age out of the hour.", "quiet");
+      setState("RATE LIMITED", "#FFB020");
+    } else {
+      log("&gt; " + err.message, "err");
+      setState("ERROR", "#FF7A5C");
+    }
+    stepFailed();
   } finally {
     running = false;
     $("deployBtn").disabled = false;
     $("deployBtn").textContent = "Deploy Agent";
+    // Belt and braces. setState reveals this at every resting state --
+    // including AWAITING PAYMENT, which deploy() does not return from --
+    // but if a path ever finishes without setting one, the way back must
+    // still be there.
+    $("runFoot").hidden = false;
   }
 }
 
@@ -1853,7 +2058,9 @@ function syncRoutineForm() {
   const total = pickedTotal();
   $("routineBasket").textContent = items.length
     ? `Using: ${pickedText().replace(/^Order /, "")} · ${rupee(total)}`
-    : "Nothing in the box yet.";
+    : "Your basket is empty.";
+  const pick = $("pickDishesBtn");
+  if (pick) pick.hidden = items.length > 0;
   if (items.length && !$("routineCap").dataset.touched) {
     // Her own default from signup wins; otherwise a little headroom over
     // this cart, so a small price move doesn't trip the gate on day one.
@@ -1870,6 +2077,10 @@ async function renderRoutines() {
   const list = data.routines || [];
   $("routineCount").textContent = list.length
     ? `${list.length} active` : "none";
+  // Also on the switch, so a standing order is visible from the order
+  // screen without having to go and look for it.
+  const badge = $("modeRoutineCount");
+  if (badge) badge.textContent = list.length ? String(list.length) : "";
 
   $("routineList").innerHTML = list.length
     ? list.map((r) => {
@@ -1942,7 +2153,10 @@ $("routineCap").addEventListener("input", () => { $("routineCap").dataset.touche
 $("routineCreate").addEventListener("click", async () => {
   const items = Object.entries(PICKED).filter(([, q]) => q > 0)
     .map(([item_id, qty]) => ({ item_id, qty }));
-  if (!items.length) return toast("Add the dishes to the box above first.", true);
+  if (!items.length) {
+    toast("Pick the dishes first — Order now, then add them to your basket.", true);
+    return goPickDishes();
+  }
   const days = chosenDays();
   if (!days.length) return toast("Pick at least one day.", true);
 
@@ -1970,6 +2184,40 @@ $("routineCreate").addEventListener("click", async () => {
 });
 
 $("deployBtn").addEventListener("click", deploy);
+
+/* One basket, two places that use it. Rather than a second dish picker
+   on this stage -- which would mean two grids to keep in step -- this
+   sends you to the one that exists. */
+function goPickDishes() {
+  for (const b of $("modeSwitch").querySelectorAll("button")) {
+    b.classList.toggle("on", b.dataset.mode === "now");
+  }
+  showStage("compose");
+  $("dishGrid").scrollIntoView({ block: "center",
+                                 behavior: REDUCED_MOTION ? "auto" : "smooth" });
+}
+$("pickDishesBtn").addEventListener("click", goPickDishes);
+
+$("modeSwitch").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-mode]");
+  if (!btn || running) return;
+  for (const b of $("modeSwitch").querySelectorAll("button")) {
+    b.classList.toggle("on", b === btn);
+  }
+  showStage(btn.dataset.mode === "schedule" ? "schedule" : "compose");
+});
+
+$("againBtn").addEventListener("click", () => {
+  if (running) return;
+  clearPicked();
+  $("command").value = "";
+  showStage("compose");
+  // Her menu and this account's numbers may both have moved while the
+  // agent was working.
+  refreshMenu();
+  renderBento();
+  $("command").focus();
+});
 boot();
 </script>
 </body>
