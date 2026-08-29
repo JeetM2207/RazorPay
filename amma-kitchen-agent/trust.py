@@ -42,6 +42,34 @@ TIER_FLEXIBLE_MARGIN_PCT = {
     TrustTier.TRUSTED: 0.15,
 }
 
+# Trust's second lever: how WIDE this agent's rate and spend window is.
+#
+# Same rule as the margin above, and worth stating twice because it is the
+# whole discipline of this module: a multiplier here scales a FLEXIBLE
+# limit -- how many orders an hour, how much a day -- and can never touch
+# the budget cap or the confirmation threshold. A TRUSTED agent may order
+# more often; it may not order anything Amma would not have sold it, and
+# no order it places skips her confirmation.
+#
+# A proven agent gets more room; an unproven one gets less, which is the
+# point -- the flood in the threat model comes from an agent with no
+# history at all, and it is the one this narrows hardest.
+TIER_VELOCITY_MULTIPLIER = {
+    TrustTier.NEW: 0.5,
+    TrustTier.STANDARD: 1.0,
+    TrustTier.TRUSTED: 1.5,
+}
+
+
+def velocity_multiplier(tier: TrustTier) -> float:
+    """How much of her configured window this tier gets.
+
+    Deliberately returns a plain number rather than an adjusted limits
+    object: the caller applies it, so there is no route by which this
+    module could hand back something with a bigger cap in it.
+    """
+    return TIER_VELOCITY_MULTIPLIER[tier]
+
 
 def compute_trust_tier(agent_id: str, db_path: str = audit_log.DEFAULT_DB_PATH) -> TrustTier:
     events = audit_log.get_events_for_agent(agent_id, db_path=db_path)

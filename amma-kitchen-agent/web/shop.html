@@ -146,6 +146,30 @@
           </div>
         </div>
 
+        <div class="section-head">How fast one agent may go</div>
+        <p class="note" style="margin:-6px 0 14px">
+          Every other limit here is about one order. These are about one
+          <em>agent</em>: without them, two hundred small orders that each pass
+          every rule are still two hundred orders. An agent that hits either of
+          these is stopped outright rather than queued for you &mdash; a flood is
+          not something anyone should approve one order at a time.
+        </p>
+
+        <div class="field field-row">
+          <div>
+            <label for="maxOrdersPerHour">Orders an hour, per agent</label>
+            <input type="text" id="maxOrdersPerHour" inputmode="numeric">
+            <div class="hint">
+              A trusted agent gets half again; a brand-new one gets half.
+            </div>
+          </div>
+          <div>
+            <label for="maxSpendPerDay">Spend a day, per agent</label>
+            <input type="text" id="maxSpendPerDay" inputmode="numeric">
+            <div class="hint">Across everything that agent orders in 24 hours.</div>
+          </div>
+        </div>
+
         <div class="section-head">Today's menu</div>
         <p class="note" style="margin:-6px 0 14px">
           Untick <b>agents may order</b> for anything you'll only sell in person &mdash;
@@ -231,6 +255,10 @@ async function save() {
       budget_cap_inr: parseInt($("budgetCap").value, 10) || 0,
       human_confirm_threshold_inr: parseInt($("confirmAt").value, 10) || 0,
     },
+    velocity: {
+      max_orders_per_hour: parseInt($("maxOrdersPerHour").value, 10) || 0,
+      max_spend_per_day_inr: parseInt($("maxSpendPerDay").value, 10) || 0,
+    },
     menu: readMenu(),
   };
 
@@ -257,6 +285,8 @@ async function boot() {
   $("phone").value = config.profile.phone || "";
   $("budgetCap").value = config.mandate.budget_cap_inr;
   $("confirmAt").value = config.mandate.human_confirm_threshold_inr;
+  $("maxOrdersPerHour").value = config.velocity.max_orders_per_hour;
+  $("maxSpendPerDay").value = config.velocity.max_spend_per_day_inr;
 
   $("dishes").innerHTML = "";
   for (const item of config.menu) $("dishes").appendChild(dishRow(item));

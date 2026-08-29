@@ -24,6 +24,7 @@ import re
 from dataclasses import asdict, replace
 from pathlib import Path
 
+import velocity
 from mandate import MANDATE, MENU, Mandate, MenuItem
 
 CONFIG_PATH = Path(
@@ -46,6 +47,12 @@ def _fresh_state() -> dict:
     return {
         "profile": dict(_DEFAULT_PROFILE),
         "mandate": asdict(MANDATE),
+        # Kept in their own block rather than folded into "mandate",
+        # because the mandate block is what becomes a `Mandate` -- the
+        # object `negotiation.py` is handed. These are limits on an
+        # agent's RECENT BEHAVIOUR, which is not a property of the cart,
+        # and the core has no business being able to see them.
+        "velocity": asdict(velocity.default_limits()),
         "menu": {name: asdict(item) for name, item in MENU.items()},
     }
 
@@ -61,6 +68,7 @@ def _load() -> dict:
             stored = json.loads(CONFIG_PATH.read_text())
             _state["profile"].update(stored.get("profile", {}))
             _state["mandate"].update(stored.get("mandate", {}))
+            _state["velocity"].update(stored.get("velocity", {}))
             if stored.get("menu"):
                 _state["menu"] = stored["menu"]
         except (json.JSONDecodeError, OSError):
@@ -104,6 +112,23 @@ def current_mandate() -> Mandate:
     )
 
 
+def current_velocity_limits() -> velocity.VelocityLimits:
+    """How fast one agent may go, as configured right now.
+
+    A separate accessor from `current_mandate()` on purpose: nothing that
+    calls the negotiation core should be able to pick these up by
+    accident.
+    """
+    data = _load().get("velocity") or {}
+    default = velocity.default_limits()
+    return velocity.VelocityLimits(
+        max_orders_per_hour=int(data.get("max_orders_per_hour", default.max_orders_per_hour)),
+        max_spend_per_day_inr=int(
+            data.get("max_spend_per_day_inr", default.max_spend_per_day_inr)
+        ),
+    )
+
+
 def current_menu() -> dict[str, MenuItem]:
     return {
         name: MenuItem(
@@ -128,6 +153,7 @@ def as_dict() -> dict:
             "allowed_categories": list(mandate.allowed_categories),
             "flexible_margin_pct": mandate.flexible_margin_pct,
         },
+        "velocity": asdict(current_velocity_limits()),
         "menu": [
             {
                 "id": item.name,
@@ -282,7 +308,8 @@ def _slug(text: str) -> str:
     return cleaned.strip("_")
 
 
-def save(profile_in: dict, mandate_in: dict, menu_in: list[dict]) -> dict:
+def save(profile_in: dict, mandate_in: dict, menu_in: list[dict],
+         velocity_in: dict | None = None) -> dict:
     """Replace the shop's configuration wholesale.
 
     Validation is strict and returns a plain message, because a merchant
@@ -305,6 +332,28 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict]) -> dict:
         raise ValueError(
             "You'd be asked about orders you would never accept anyway — "
             "keep the confirmation amount at or below the maximum."
+        )
+
+    # Her limits on how fast one agent may go. Validated in the same
+    # breath as the others, and a refused save leaves the shop untouched
+    # exactly as before.
+    # Falls back to what she ALREADY has, not to the shipped defaults: a
+    # caller that only means to edit the menu must not silently reset her
+    # rate limits, and `velocity=None` is exactly that caller.
+    defaults = current_velocity_limits()
+    velocity_in = velocity_in or {}
+    max_orders = int(velocity_in.get("max_orders_per_hour") or defaults.max_orders_per_hour)
+    max_spend = int(
+        velocity_in.get("max_spend_per_day_inr") or defaults.max_spend_per_day_inr
+    )
+    if max_orders <= 0:
+        raise ValueError("An agent has to be allowed at least one order an hour.")
+    if max_spend <= 0:
+        raise ValueError("An agent's daily spending limit has to be above zero.")
+    if max_spend < budget_cap:
+        raise ValueError(
+            "One agent's daily limit is below what you'd accept on a single order — "
+            "no agent could ever place one."
         )
 
     if not menu_in:
@@ -362,6 +411,10 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict]) -> dict:
         "flexible_margin_pct": float(
             mandate_in.get("flexible_margin_pct", MANDATE.flexible_margin_pct)
         ),
+    }
+    state["velocity"] = {
+        "max_orders_per_hour": max_orders,
+        "max_spend_per_day_inr": max_spend,
     }
     state["menu"] = menu
 

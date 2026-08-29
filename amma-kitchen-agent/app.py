@@ -266,6 +266,10 @@ class MerchantConfigRequest(BaseModel):
     profile: dict
     mandate: dict
     menu: list[dict]
+    # Optional so an older client, or a script that only means to edit the
+    # menu, keeps her existing rate limits rather than silently resetting
+    # them to the shipped defaults.
+    velocity: dict | None = None
 
 
 @app.post("/api/merchant-config", dependencies=[Depends(merchant_auth.require_merchant)])
@@ -273,7 +277,7 @@ def save_merchant_config(req: MerchantConfigRequest) -> dict:
     """Save the shop. These values are what negotiation.py decides
     against from the next order onward -- the page is not decorative."""
     try:
-        return merchant_config.save(req.profile, req.mandate, req.menu)
+        return merchant_config.save(req.profile, req.mandate, req.menu, req.velocity)
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
 

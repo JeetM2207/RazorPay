@@ -108,7 +108,13 @@ def record_event(
     limits_snapshot: dict | None = None,
     source: str | None = None,
     routine_id: str | None = None,
+    ts: str | None = None,
 ) -> int:
+    """`ts` exists so the orchestrator's injectable clock reaches the
+    ROW as well as the check. Without it a test can move the clock for
+    the rate window and still write rows stamped with the real time, so
+    the two disagree and the window never fills. Production never passes
+    it."""
     init_db(db_path)
     with sqlite3.connect(db_path) as conn:
         cursor = conn.execute(
@@ -117,7 +123,7 @@ def record_event(
             " order_ref, limits_snapshot, source, routine_id) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
-                datetime.now(timezone.utc).isoformat(),
+                ts or datetime.now(timezone.utc).isoformat(),
                 agent_id,
                 protocol,
                 json.dumps(cart),

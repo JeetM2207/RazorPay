@@ -59,6 +59,47 @@ def test_every_adapter_shares_the_same_orchestrator():
     assert adapter_mcp.orchestrator is adapter_acp.orchestrator
 
 
+def test_all_four_adapters_hit_the_same_rate_limit(tmp_path, monkeypatch):
+    """Identity of the module is one thing; the same LIMIT actually
+    applying through all four is the thing that matters.
+
+    Each adapter is given its own protocol name and the same agent id, so
+    if any of them had its own counter -- or reached Razorpay by another
+    route -- the fourth order would go through.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    import adapter_mcp
+    import audit_log
+    import merchant_config
+    import notification_service
+    import orchestrator
+    import velocity
+
+    monkeypatch.setattr(audit_log, "DEFAULT_DB_PATH", str(tmp_path / "shared.db"))
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    monkeypatch.setattr(velocity, "default_limits", velocity.VelocityLimits)
+    merchant_config.reset_to_defaults()
+    merchant_config._load()["velocity"] = {
+        "max_orders_per_hour": 6, "max_spend_per_day_inr": 1_000_000,
+    }
+    orchestrator.reset_alerts()
+
+    at = datetime(2026, 8, 29, 12, 0, tzinfo=timezone.utc)
+    cart = [("masala_dosa", 1)]
+
+    # NEW tier halves her 6 to 3, so three protocols get through and the
+    # fourth is refused -- by a window none of them owns.
+    for i, protocol in enumerate(("acp", "ap2", "x402")):
+        result = adapter_acp.orchestrator.negotiate_and_record(
+            "agent-shared-window", protocol, cart, now=at + timedelta(seconds=i))
+        assert result["decision"] == "APPROVE"
+
+    with pytest.raises(orchestrator.VelocityRefused):
+        adapter_mcp.orchestrator.negotiate_and_record(
+            "agent-shared-window", "mcp", cart, now=at + timedelta(seconds=4))
+
+
 def test_first_request_answers_402_with_a_real_payment_link(client, monkeypatch):
     _mock_link(monkeypatch)
     resp = _order(client)

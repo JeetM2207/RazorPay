@@ -151,6 +151,7 @@ amma-kitchen-agent/
   routines.py             # standing orders + the confidence gate deciding whether one
                           #   may fire unasked; charges via the shared orchestrator
   trust.py                # per-agent trust tier from audit history; widens margin only
+  velocity.py             # per-agent rate + spend limits; the flood gate, hard refusal
   orchestrator.py         # shared plumbing: trust -> core -> audit -> Razorpay
 
   adapter_acp.py          # ACP-shaped: checkout sessions + delegate tokens
@@ -191,7 +192,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 593 tests; test_negotiation.py still matters most
+  tests/                  # 615 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1261,7 +1262,7 @@ customer's own transaction statement, **Proof of Authorization** for disputed ag
 orders, **standing orders with a confidence gate**, a model-free fallback parser so no
 order dies of a billing balance, and two full design-system passes.
 
-**593 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**615 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1814,6 +1815,113 @@ recorded for `mcp_orders.expire()` -- and inventing one was out of scope.
 something is the **Simulate next occurrence** button, with an optional `at` so a future
 occurrence can be checked without waiting for the day to come round. The capability is
 there; the clock is not, and the button says "simulate" rather than pretending otherwise.
+
+## The flood: why this one gate refuses instead of asking
+
+Every rule in this project was a rule about a cart. The budget cap, the category check,
+the confirmation threshold, the buyer's own mandate — all of them look at one order and
+decide. Which leaves a hole you can drive a bus through using nothing but valid requests:
+
+> One agent places two hundred Rs.399 orders in ninety seconds. Every one of them is under
+> her Rs.500 cap. Every one is in an allowed category. Every one sits below the Rs.400
+> threshold, so no human is ever asked. Nothing refuses any of them, because nothing was
+> ever counting.
+
+"Bounded" was bounded per order and unbounded in aggregate, and that is not bounded.
+
+`velocity.py` closes it with two limits that are hers, configured beside her others on the
+same setup page: **`max_orders_per_hour_per_agent`** (6) and
+**`max_spend_per_day_per_agent_inr`** (Rs.2000).
+
+### It refuses. It does not escalate.
+
+This is the design decision worth defending, because every other limit in this system
+that an agent hits sends the order to a human, and this one deliberately does not.
+
+An escalation is the right answer when **one order needs a person's judgement** — this
+cart is Rs.450, does Amma want to cook it. It is the wrong answer to a pattern. Two
+hundred orders in ninety seconds is not two hundred decisions somebody should make one at
+a time, and there is no answer she could give to any single one of them that would be the
+right answer to what is actually happening.
+
+Worse, **queueing them would be the attack succeeding by another route.** A merchant
+console with two hundred pending escalations in it is a merchant console she cannot work
+from; the flood would have taken her queue instead of her kitchen. Rate-limiting the
+attacker and then flooding the defender is not a defence.
+
+So a breach is a hard refusal: one audit row with its own decision value
+(`VELOCITY_REFUSED`, distinct so the trail can tell "she does not sell that" from "this
+agent is going too fast" — they call for completely different responses), no Razorpay call,
+and **one message to her per window rather than one per refused order**, for exactly the
+same reason.
+
+### Where it sits, and what it is not allowed to know
+
+In `orchestrator.negotiate_and_record()`, after the core has decided and before anything
+reaches Razorpay. `negotiation.py` has never heard of it and a test asserts the strings
+`velocity`, `per_hour` and `per_day` appear nowhere in it — because the core answers "is
+this CART acceptable", and how often an agent has ordered recently is not a property of
+the cart. Same separation `trust.py` has always had: read the trail, adjust what the
+orchestrator does, leave the pure core alone.
+
+The limits are deliberately **not fields on `Mandate`**. `Mandate` is the object the core
+is handed; putting them there would mean handing the core a fact it has no business
+seeing, even if it never read it.
+
+### What counts, precisely
+
+Counted toward both limits: **decision rows only** (no `order_ref` — the pay-first
+lifecycle writes five rows per order and counting them would multiply one order by five),
+whose decision is **APPROVE or ESCALATE**, or which carry a payment id.
+
+Not counted: `COUNTER_OFFER` (nothing was bought, and holding it against an agent would
+punish the negotiation the core exists to do), anything terminally closed (`REJECTED`,
+`REFUNDED`, `PAYMENT_NOT_COMPLETED`…), `UNMATCHED_DEMAND`, and — importantly — **its own
+refusals**, since a gate that counted those would ratchet and hold the window shut long
+after the traffic stopped. A refunded order is excluded from the spend total by the same
+rule her revenue KPI already uses: money that came back is not money spent.
+
+**So an unpaid approval does occupy the window, and it has to.** If only settled orders
+counted, an attacker who never pays would never trip the limit — which is precisely the
+flood being defended against. An APPROVE is a standing invitation to pay.
+
+Counts come from `audit_log`, the same single source of truth `trust.py` reads. There is
+deliberately **no counter table**: a second record of the same fact is a second record that
+can disagree with the first, and the trail is the one that gets shown to a judge.
+
+### Trust's second lever
+
+`trust.py` gained `TIER_VELOCITY_MULTIPLIER` — TRUSTED 1.5x, STANDARD 1.0x, NEW 0.5x —
+under exactly the rule the flexible margin has always had, restated in the code because it
+is the whole discipline of that module: **a multiplier scales a flexible limit and can
+never touch her cap or her threshold.** A proven agent may order more often; it may not
+order anything she would not have sold it, and nothing it places skips her confirmation.
+The multiplier is returned as a plain number rather than an adjusted limits object, so
+there is no route by which trust could hand back something with a bigger cap in it.
+
+Narrowing is the point as much as widening: the flood in the threat model comes from an
+agent with no history at all, and NEW is the tier it narrows hardest. `_scaled()` floors at
+1 so a narrowing multiplier can never reach zero and lock an agent out entirely.
+
+### Two smaller things
+
+**A standing order is not exempt.** Passing its own confidence gate says the routine still
+looks like the thing the customer agreed to; it says nothing about how much that agent has
+already ordered today, which is her side of the question and is answered on her side.
+
+**The limits are snapshotted onto the order**, beside the cap snapshot and for the same
+reason: she edits them whenever she likes, and an evidence pack that referenced the live
+config would describe limits that were never applied to it.
+
+### The one thing that made this ship without touching an adapter
+
+A refusal is **raised**, not returned. Each adapter maps a decision to a status through a
+small table that knows `APPROVE`, `COUNTER_OFFER` and `ESCALATE`; a fourth value would
+have needed all four edited, and reusing an existing one would have meant lying on the
+wire — `ESCALATE` would put the flood in her queue, which is the thing this exists to
+prevent, and `COUNTER_OFFER` would claim alternatives that do not exist. `VelocityRefused`
+is an `HTTPException`, so FastAPI answers **429** on its own and not one adapter knows this
+rule exists. The in-process caller that needs the detail — `routines` — catches it.
 
 ## Before a demo, run the check
 

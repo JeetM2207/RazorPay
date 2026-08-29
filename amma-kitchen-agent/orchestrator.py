@@ -10,15 +10,76 @@ idea this file exists.
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 import audit_log
 import merchant_config
 import negotiation
 import razorpay_client
 import trust
 import upsell_ranking
+import velocity
 
 
-def _limits_snapshot(mandate, tier, buyer_mandate: dict | None) -> dict:
+class VelocityRefused(HTTPException):
+    """Refused for going too fast.
+
+    An HTTPException so the four adapters need no change at all: FastAPI
+    turns it into a 429 without any of them knowing this rule exists.
+    Callers running in-process -- routines -- catch it and read `payload`
+    for the same dict `negotiate_and_record` would have returned.
+    """
+
+    def __init__(self, event_id: int, verdict, notified: bool, payload: dict):
+        super().__init__(status_code=429, detail=verdict.reason)
+        self.event_id = event_id
+        self.verdict = verdict
+        self.merchant_notified = notified
+        self.payload = payload
+
+
+# One notification per window per agent, not one per refused order.
+# Two hundred refusals is two hundred messages, which is the same denial
+# of service arriving by a different route -- and she can act on the first
+# one just as well as the two hundredth.
+_ALERTED: dict[str, str] = {}
+_ALERT_COOLDOWN_SECONDS = 3600
+
+
+def _tell_her_once(agent_id: str, verdict, now: datetime) -> bool:
+    """Returns whether a message was actually sent."""
+    last = _ALERTED.get(agent_id)
+    if last:
+        try:
+            if (now - datetime.fromisoformat(last)).total_seconds() < _ALERT_COOLDOWN_SECONDS:
+                return False
+        except ValueError:
+            pass
+    _ALERTED[agent_id] = now.isoformat()
+
+    try:
+        import notification_service
+
+        notification_service.send_sms(
+            "[Amma's Kitchen AI Alert]\n"
+            f"Agent {agent_id} is ordering unusually fast and has been stopped.\n"
+            f"{verdict.reason}.\n"
+            "Nothing was charged. No action needed unless you expected this."
+        )
+    except Exception:
+        # Telling her can never be the thing that breaks a refusal. The
+        # order is already refused and already on the record.
+        return False
+    return True
+
+
+def reset_alerts() -> None:
+    """Tests, and a merchant who has dealt with it."""
+    _ALERTED.clear()
+
+
+def _limits_snapshot(mandate, tier, buyer_mandate: dict | None,
+                    limits=None, verdict=None) -> dict:
     """What the rules WERE, written beside the decision they produced.
 
     Recorded rather than referenced, and that distinction is the whole
@@ -42,7 +103,75 @@ def _limits_snapshot(mandate, tier, buyer_mandate: dict | None) -> dict:
             "trust_tier_applied": tier.value,
         },
         "buyer": buyer_mandate or None,
+        # Her rate and spend limits as they stood for THIS order. Recorded
+        # for the same reason the cap is: she edits them whenever she
+        # likes, and an evidence pack that referenced the live config
+        # would describe limits that were never applied.
+        "velocity": velocity.snapshot(limits, verdict) if (limits and verdict) else None,
     }
+
+
+def _refuse_for_velocity(
+    agent_id: str,
+    protocol: str,
+    cart_payload: list[dict],
+    result,
+    verdict,
+    adjusted_mandate,
+    tier,
+    buyer_mandate: dict | None,
+    limits,
+    source: str | None,
+    routine_id: str | None,
+    now: datetime,
+    db_path: str,
+) -> dict:
+    """A HARD refusal, and deliberately not an escalation.
+
+    An escalation is the right answer when one order needs a person's
+    judgement. A flood is not that. Two hundred orders in ninety seconds
+    is not two hundred decisions somebody should make one at a time --
+    putting them in her queue IS the denial of service, just arriving by
+    a different route, and no answer she could give to any single one of
+    them would be the right answer to the pattern.
+
+    So: refused outright, one audit row with its own decision value, no
+    Razorpay call, and one message to her per window rather than per
+    order.
+    """
+    event_id = audit_log.record_event(
+        agent_id=agent_id,
+        protocol=protocol,
+        cart=cart_payload,
+        decision=velocity.DECISION,
+        reason=verdict.reason,
+        total_inr=result.total_inr,
+        db_path=db_path,
+        limits_snapshot=_limits_snapshot(
+            adjusted_mandate, tier, buyer_mandate, limits, verdict
+        ),
+        source=source,
+        routine_id=routine_id,
+        ts=now.isoformat(),
+    )
+    notified = _tell_her_once(agent_id, verdict, now)
+
+    raise VelocityRefused(event_id, verdict, notified, {
+        "event_id": event_id,
+        "agent_id": agent_id,
+        "trust_tier": tier.value,
+        "decision": velocity.DECISION,
+        "reason": verdict.reason,
+        "total_inr": result.total_inr,
+        "alternatives": [],
+        "velocity": {
+            "orders_in_window": verdict.orders_in_window,
+            "spend_in_window_inr": verdict.spend_in_window_inr,
+            "max_orders_per_hour": verdict.effective_orders,
+            "max_spend_per_day_inr": verdict.effective_spend,
+            "merchant_notified": notified,
+        },
+    })
 
 
 def negotiate_and_record(
@@ -52,6 +181,7 @@ def negotiate_and_record(
     buyer_mandate: dict | None = None,
     source: str | None = None,
     routine_id: str | None = None,
+    now: datetime | None = None,
 ) -> dict:
     db_path = audit_log.DEFAULT_DB_PATH
     # Read the merchant's LIVE configuration, so edits she makes on the
@@ -62,7 +192,30 @@ def negotiate_and_record(
     )
     result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=menu)
 
+    # How fast this agent has been going. Checked HERE rather than in the
+    # core, because it is a question about the agent's recent history and
+    # not about the cart -- negotiation.py has never heard of it, and a
+    # test asserts it never will.
+    #
+    # It runs after the core so the trail records what she WOULD have
+    # decided, and before any Razorpay call, which is the only ordering
+    # that matters for money.
+    now = now or datetime.now(timezone.utc)
+    limits = merchant_config.current_velocity_limits()
+    verdict = velocity.check(
+        agent_id, result.total_inr, limits,
+        tier_multiplier=trust.velocity_multiplier(tier),
+        now=now, db_path=db_path,
+    )
+
     cart_payload = [{"item": name, "qty": qty} for name, qty in cart]
+
+    if not verdict.ok:
+        return _refuse_for_velocity(
+            agent_id, protocol, cart_payload, result, verdict,
+            adjusted_mandate, tier, buyer_mandate, limits, source, routine_id,
+            now=now, db_path=db_path,
+        )
     event_id = audit_log.record_event(
         agent_id=agent_id,
         protocol=protocol,
@@ -74,12 +227,15 @@ def negotiate_and_record(
         # Written here, once, so every adapter gets it without knowing it
         # exists. negotiation.py is untouched: this records what it was
         # given, it does not change what it decides.
-        limits_snapshot=_limits_snapshot(adjusted_mandate, tier, buyer_mandate),
+        limits_snapshot=_limits_snapshot(
+            adjusted_mandate, tier, buyer_mandate, limits, verdict
+        ),
         # How the order originated. A standing order still comes through
         # here like everything else -- there is no second charging path --
         # it just says so on the row.
         source=source,
         routine_id=routine_id,
+        ts=now.isoformat(),
     )
 
     response = {

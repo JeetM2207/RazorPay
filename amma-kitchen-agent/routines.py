@@ -318,11 +318,19 @@ def _fire(routine: dict, gate: dict) -> dict:
     """
     import autonomous_payment
 
-    detail = orchestrator().negotiate_and_record(
-        routine["agent_id"], "routine", _cart_tuples(routine),
-        buyer_mandate={"routine_cap_inr": routine.get("routine_cap_inr")},
-        source="routine", routine_id=routine["id"],
-    )
+    try:
+        detail = orchestrator().negotiate_and_record(
+            routine["agent_id"], "routine", _cart_tuples(routine),
+            buyer_mandate={"routine_cap_inr": routine.get("routine_cap_inr")},
+            source="routine", routine_id=routine["id"],
+        )
+    except orchestrator().VelocityRefused as refused:
+        # A standing order is NOT exempt from her rate limits. Passing its
+        # own confidence gate says the routine still looks like the thing
+        # the customer agreed to; it says nothing about how much this
+        # agent has already ordered today, which is her side of the
+        # question and is answered on her side.
+        detail = refused.payload
 
     if detail["decision"] not in ("APPROVE", "ESCALATE"):
         # Her rules refused it. The customer's pre-authorisation does not

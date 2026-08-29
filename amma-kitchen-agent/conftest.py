@@ -18,6 +18,24 @@ def _isolate_merchant_config(tmp_path, monkeypatch):
 
     monkeypatch.setattr(merchant_config, "CONFIG_PATH", tmp_path / "merchant_config.json")
     merchant_config.reset_to_defaults()
+
+    # Her real default is 6 orders an hour, which is right for a kitchen
+    # and wrong for a suite that fires twenty carts through one agent id
+    # to test something else. The window is opened wide here so those
+    # tests are testing what they mean to; tests/test_velocity.py sets
+    # its own limits and is the one that exercises the real numbers.
+    #
+    # Deliberately widened rather than switched off: the gate still runs
+    # on every order in every test, it simply has room. A bypass flag
+    # would mean the suite never touched the code path at all.
+    import velocity
+
+    monkeypatch.setattr(
+        velocity, "default_limits",
+        lambda: velocity.VelocityLimits(max_orders_per_hour=10_000,
+                                        max_spend_per_day_inr=100_000_000),
+    )
+    merchant_config.reset_to_defaults()
     yield
     merchant_config.reset_to_defaults()
 
