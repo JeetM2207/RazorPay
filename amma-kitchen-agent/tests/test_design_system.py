@@ -157,3 +157,30 @@ def test_no_rule_paints_text_with_a_background_token():
         for ground in grounds:
             hit = re.search(rf"(?<!-)color:\s*var\(\s*{re.escape(ground)}\s*\)", source)
             assert hit is None, f"{name} paints text with the ground token {ground}"
+
+
+# ----------------------------------------------------- the helper scripts
+
+def test_every_script_can_run_from_anywhere():
+    """`python scripts/foo.py` from the project root must work.
+
+    free_payment_links.py was missing its sys.path line and died on
+    `ModuleNotFoundError: No module named 'razorpay_client'` -- the same
+    class of bug as the two demo scripts that pointed at ports nothing
+    listened on: correct code nobody had actually invoked the documented
+    way. Found by running the documented command.
+    """
+    scripts = (WEB.parent / "scripts").glob("*.py")
+    for script in scripts:
+        source = script.read_text(encoding="utf-8")
+        imports_project = any(
+            f"import {name}" in source
+            for name in ("razorpay_client", "audit_log", "merchant_config",
+                         "idempotency", "adapter_mcp", "routines", "app")
+        )
+        if not imports_project:
+            continue
+        assert "sys.path.insert" in source, (
+            f"scripts/{script.name} imports a project module but never puts the "
+            "project root on sys.path, so it only runs from the right directory"
+        )

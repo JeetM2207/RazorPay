@@ -13,6 +13,17 @@ before a demo, not during one.
 """
 
 import sys
+from pathlib import Path
+
+# The project root, so this runs from anywhere rather than only from a
+# shell that already happens to be sitting in it. Every other script in
+# here does the same; this one was missed, and died with
+# "No module named 'razorpay_client'" on the documented command.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 import razorpay_client
 
