@@ -13,6 +13,8 @@ import sys
 from pathlib import Path
 
 import requests
+
+import merchant_session
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,7 +29,8 @@ def main() -> None:
         sys.exit(1)
     session_id = sys.argv[1]
 
-    resp = requests.post(f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/human_reject")
+    merchant = merchant_session.login(ACP_BASE_URL)
+    resp = merchant.post(f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/human_reject")
     if resp.status_code != 200:
         print(f"Could not reject (HTTP {resp.status_code}): {resp.json()}")
         sys.exit(1)

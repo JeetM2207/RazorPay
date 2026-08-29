@@ -177,6 +177,8 @@ amma-kitchen-agent/
   escalations.py          # merchant escalations + THE one inbound webhook + router
   reply_auth.py           # who may POST a reply: Twilio signature or console token
   reply_codes.py          # the single-use code in every reply that moves money
+  merchant_auth.py        # the merchant login: signed session cookie + require_merchant
+  merchant_session.py     # how demo.py and the CLIs log in, with the password from env
   buyer_sms.py            # asking the customer: what instead? / approve this?
   mcp_orders.py           # the pay-first lifecycle (not MCP-only any more):
                           #   pay -> confirm -> refund if declined
@@ -189,7 +191,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 524 tests; test_negotiation.py still matters most
+  tests/                  # 593 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1259,7 +1261,7 @@ customer's own transaction statement, **Proof of Authorization** for disputed ag
 orders, **standing orders with a confidence gate**, a model-free fallback parser so no
 order dies of a billing balance, and two full design-system passes.
 
-**524 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**593 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1931,9 +1933,35 @@ Four decisions inside that are worth keeping:
 - **An unset `TWILIO_AUTH_TOKEN` rejects rather than waves through**, with a loud startup
   warning. A signed request that cannot be checked is a request that has not been checked.
 
-**The residual, stated rather than papered over:** this project has no user authentication
-anywhere, so anyone who can load `/merchant/orders` can read the internal token out of the
-page. What is closed is the blind unauthenticated POST — a scanner, a CSRF from another
-origin, anyone who never opened the console. Closing the rest means authenticating the
-consoles themselves, which is a larger piece of work and remains open. `predemo_check.py`
-now posts a deliberately unparseable unsigned reply and FAILs if it is accepted.
+`predemo_check.py` now posts a deliberately unparseable unsigned reply and FAILs if it is
+accepted.
+
+**The residual that was open here is now closed too.** The note that used to sit at this
+point said the internal token was readable by anyone who could load `/merchant/orders`,
+because this project had no user authentication anywhere. It has one now — see
+"**CLOSED — the merchant console had no login**" below. What remains genuinely open is the
+BUYER side: `/api/buyer-sms/status/{agent_id}` hands out the customer's reply code to
+anyone who knows an agent id, and closing that needs per-customer accounts, which do not
+exist.
+
+**CLOSED — the merchant console had no login.** `/api/merchant/optimize-prices` repriced
+the shop, the setup page set the budget cap the decision core runs on, and the accept/reject
+endpoints moved money — all reachable by anyone holding the ngrok URL, which gets pasted
+into a public connector setting. `merchant_auth.py` puts an HMAC-signed, HttpOnly,
+SameSite=Lax session cookie in front of both merchant pages, everything under
+`/api/merchant/`, her configuration, `/api/insights`, `/api/sms`, the disputes endpoints,
+the evidence pack and the four adapters' accept/reject endpoints. `/catalog`, `/mcp`, the
+adapters' buyer-facing endpoints, the signed webhooks and the buyer console are deliberately
+left open — a cookie in front of `/mcp` would break the Claude connector outright.
+
+`/audit` **stays readable**, deliberately: a trail behind a login is a claim you have to
+take on trust, and being checkable without an account is the entire point of it. The
+customer's name, phone and address are redacted out of the page instead, and the
+unredacted record lives at `/evidence/<id>`, which does need the login.
+
+The test that matters is not any of the ones asserting a 401. It is the one that
+introspects `app.routes` and fails if an `/api/merchant/*` endpoint is ever added without
+the dependency — confirmed by adding one and watching it fail. Scripts get in with the
+password from the environment through the same `/merchant/login` a person uses; there is
+no bypass flag, because a second way in is the one an attacker reads the repository to
+find.

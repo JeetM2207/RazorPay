@@ -117,14 +117,20 @@ def _reasons_cell(event: dict) -> str:
         )
 
     if event.get("delivery_name"):
-        recipient = " &middot; ".join(
-            html.escape(v)
-            for v in (event.get("delivery_name"), event.get("delivery_phone"))
-            if v
-        )
+        # REDACTED, and the page stays open.
+        #
+        # This trail exists to be checkable by someone with no account --
+        # "every rejected order never touched Razorpay" is a claim, and a
+        # claim behind a login is one you have to take on trust. So the
+        # page is not put behind the password; the customer's name, phone
+        # and address are taken out of it instead. The full record is one
+        # click away at /evidence/<id>, which IS behind the login, because
+        # that is the page a dispute needs and the one that should cost a
+        # password.
         parts.append(
-            f"<div class='deliver-to'><span class='who'>deliver to:</span> {recipient}"
-            f"<br>{html.escape(event.get('delivery_address') or '')}</div>"
+            "<div class='deliver-to'><span class='who'>deliver to:</span> "
+            "<span class='muted'>recorded &mdash; name, phone and address are in the "
+            "order's record, which needs a merchant login</span></div>"
         )
 
     return "".join(parts)

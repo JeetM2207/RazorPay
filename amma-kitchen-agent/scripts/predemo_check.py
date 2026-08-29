@@ -244,6 +244,65 @@ def check_messaging() -> None:
         report("PASS", "Twilio", f"{account.type} account")
 
 
+def check_merchant_login() -> None:
+    """Can she actually get in, and is the console actually shut?
+
+    Both halves matter and they fail in opposite directions. A console
+    nobody can log into is a demo that stops at the first approval; a
+    console anyone can open is the problem this login exists to fix. So
+    this asks for a protected page WITHOUT a cookie and expects to be
+    turned away, then logs in with the password from .env and expects to
+    get in.
+
+    Nothing here logs the password or the cookie.
+    """
+    import merchant_auth
+
+    try:
+        anon = requests.get(f"{LOCAL}/api/merchant-config", timeout=15)
+    except Exception as exc:
+        report("WARN", "merchant console is shut", f"could not test: {str(exc)[:70]}")
+        return
+
+    if anon.status_code != 401:
+        report("FAIL", "merchant console is shut",
+               f"/api/merchant-config answered {anon.status_code} with no login -- "
+               "her limits and menu are writable by anyone with the URL; "
+               "restart the server if it predates merchant_auth.py")
+        return
+    report("PASS", "merchant console is shut", "an anonymous request was refused")
+
+    if not ENV.get("MERCHANT_CONSOLE_PASSWORD"):
+        report("FAIL", "merchant can log in",
+               "MERCHANT_CONSOLE_PASSWORD is not set in .env, so nobody can approve "
+               "an order or edit the shop")
+        return
+
+    session = requests.Session()
+    try:
+        session.post(
+            f"{LOCAL}/merchant/login",
+            data={"password": ENV["MERCHANT_CONSOLE_PASSWORD"], "next": "/merchant/orders"},
+            allow_redirects=False, timeout=15,
+        )
+    except Exception as exc:
+        report("FAIL", "merchant can log in", str(exc)[:90])
+        return
+
+    if merchant_auth.COOKIE_NAME not in session.cookies:
+        report("FAIL", "merchant can log in",
+               "the password in .env was refused -- the RUNNING server may hold a "
+               "different one; restart it after editing .env")
+        return
+
+    got_in = session.get(f"{LOCAL}/api/merchant-config", timeout=15)
+    if got_in.status_code == 200:
+        report("PASS", "merchant can log in", "signed in and read the shop back")
+    else:
+        report("FAIL", "merchant can log in",
+               f"logged in but /api/merchant-config still answered {got_in.status_code}")
+
+
 def check_reply_auth() -> None:
     """Is the inbound reply endpoint actually shut?
 
@@ -496,6 +555,7 @@ def main() -> int:
     check_state()
     check_routines()
     check_reply_auth()
+    check_merchant_login()
 
     fails = _RESULTS.count("FAIL")
     warns = _RESULTS.count("WARN")

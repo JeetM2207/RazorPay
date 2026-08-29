@@ -11,6 +11,8 @@ import sys
 from pathlib import Path
 
 import requests
+
+import merchant_session
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -29,7 +31,8 @@ def main() -> None:
         sys.exit(1)
     intent_id = sys.argv[1]
 
-    resp = requests.post(f"{AP2_BASE_URL}/ap2/intent-mandates/{intent_id}/human-reject")
+    merchant = merchant_session.login(AP2_BASE_URL)
+    resp = merchant.post(f"{AP2_BASE_URL}/ap2/intent-mandates/{intent_id}/human-reject")
     if resp.status_code != 200:
         print(f"Could not reject (HTTP {resp.status_code}): {resp.json()}")
         sys.exit(1)

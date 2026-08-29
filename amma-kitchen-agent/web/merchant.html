@@ -255,6 +255,9 @@
       <a href="/buyer/order">Buyer console</a>
       <a href="/audit">Full audit trail</a>
       <a href="/">Home</a>
+      <form method="post" action="/merchant/logout" style="display:inline; margin:0">
+        <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+      </form>
     </div>
   </div>
 
@@ -531,6 +534,14 @@ function toast(msg, isErr) {
 
 async function api(path, opts) {
   const res = await fetch(path, { headers: { "Content-Type": "application/json" }, ...opts });
+  /* A session that expired while this board was open would otherwise
+     show as every panel failing at once, which reads as a broken console
+     rather than as "you were logged out". This board polls every two
+     seconds, so that is exactly how it would be discovered. */
+  if (res.status === 401) {
+    window.location.href = "/merchant/login?next=" + encodeURIComponent(location.pathname);
+    throw new Error("Signed out — taking you to the login.");
+  }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || ("HTTP " + res.status));
   return body;

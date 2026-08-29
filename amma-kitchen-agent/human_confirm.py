@@ -22,6 +22,8 @@ import time
 from pathlib import Path
 
 import requests
+
+import merchant_session
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -65,7 +67,8 @@ def main() -> None:
     reduced_cart = _parse_reduced_cart(sys.argv[2:])
     request_body = {"items": reduced_cart} if reduced_cart is not None else {}
 
-    resp = requests.post(
+    merchant = merchant_session.login(ACP_BASE_URL)
+    resp = merchant.post(
         f"{ACP_BASE_URL}/acp/checkout_sessions/{session_id}/human_confirm", json=request_body
     )
     if resp.status_code != 200:

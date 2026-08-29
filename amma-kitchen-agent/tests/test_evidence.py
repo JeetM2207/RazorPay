@@ -7,6 +7,8 @@ than filled in with something plausible.
 """
 
 import pytest
+
+import merchant_auth
 from fastapi.testclient import TestClient
 
 import adapter_ap2
@@ -27,7 +29,14 @@ def client(tmp_path, monkeypatch):
     escalations.reset()
     adapter_ap2._INTENT_MANDATES.clear()
     adapter_ap2._CART_MANDATES.clear()
-    return TestClient(unified.app)
+    client = TestClient(unified.app)
+    # These tests drive merchant surfaces, which now need a login. The
+    # session is minted directly rather than posted through the form,
+    # because the login itself is what tests/test_merchant_auth.py is
+    # for -- and leaving these anonymous would only prove the guard
+    # fires, which is already covered there.
+    client.cookies.set(merchant_auth.COOKIE_NAME, merchant_auth.issue_cookie())
+    return client
 
 
 def _shop(cap, confirm):

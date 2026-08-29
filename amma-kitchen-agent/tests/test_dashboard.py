@@ -76,7 +76,16 @@ def test_both_reasons_render_side_by_side(client_and_db):
     assert "within budget and below human confirm threshold" in body   # system's reason
     assert "Working late, wants something light." in body            # the human context
     assert "customer wanted:" in body
-    assert "Priya Sharma" in body and "Indiranagar" in body
+
+    # The delivery details are REDACTED here, deliberately. This page has
+    # no login -- its whole purpose is being checkable by someone without
+    # an account -- so the customer's name, phone and address are taken
+    # out of it rather than the page being closed. The full record is at
+    # /evidence/<id>, which does need a merchant login.
+    assert "Priya Sharma" not in body
+    assert "Indiranagar" not in body
+    assert "9876543210" not in body
+    assert "deliver to:" in body and "needs a merchant login" in body
 
 
 def test_buyer_reasoning_is_html_escaped(client_and_db):

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Merchant sign in — Amma's Kitchen</title>
+<link rel="stylesheet" href="/static/shared.css?v=2">
+<style>
+  .login-wrap { display: grid; place-items: center; min-height: 78vh; padding: 24px; }
+  .login-card { width: min(420px, 100%); }
+  .login-mark {
+    width: 44px; height: 44px; border-radius: 13px; margin-bottom: 18px;
+    background: radial-gradient(circle at 30% 30%, var(--lilac), var(--violet));
+    box-shadow: 0 10px 28px rgba(138, 92, 255, .38);
+  }
+  .login-err {
+    margin: 14px 0 0; padding: 10px 13px; border-radius: 10px; font-size: 13px;
+    color: var(--coral); background: var(--brick-soft); border: 1px solid var(--brick-line);
+  }
+  .login-note { margin-top: 18px; font-size: 12.5px; color: var(--muted-2); line-height: 1.55; }
+</style>
+</head>
+<body>
+
+  <div class="aurora" aria-hidden="true">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+  </div>
+
+  <div class="topbar">
+    <div class="brand"><span class="brand-mark">Amma's Kitchen</span></div>
+    <div class="topbar-links">
+      <a href="/buyer/order">Buyer console</a>
+      <a href="/audit">Audit trail</a>
+      <a href="/">Home</a>
+    </div>
+  </div>
+
+  <div class="login-wrap">
+    <div class="card login-card">
+      <div class="login-mark"></div>
+      <h1 style="font-size:24px">Merchant sign in</h1>
+      <p class="lede" style="margin-bottom:22px">
+        Your shop's limits, your menu and your prices live behind this. So does
+        approving an order.
+      </p>
+
+      <form method="post" action="/merchant/login">
+        <input type="hidden" name="next" value="__NEXT__">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" autocomplete="current-password"
+               autofocus required>
+        <button class="btn" type="submit" style="width:100%; margin-top:16px">Sign in</button>
+      </form>
+
+      __ERROR__
+
+      <p class="login-note">
+        The <a href="/buyer/order">buyer console</a>, the
+        <a href="/catalog">agent catalog</a> and the
+        <a href="/audit">audit trail</a> stay open — the trail is meant to be
+        checkable without an account, so it is readable here with the customer's
+        name, phone and address redacted out of it.
+      </p>
+    </div>
+  </div>
+
+</body>
+</html>

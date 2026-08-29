@@ -29,6 +29,8 @@ import time
 from pathlib import Path
 
 import requests
+
+import merchant_session
 from dotenv import load_dotenv
 
 HERE = Path(__file__).resolve().parent
@@ -196,7 +198,8 @@ def scene_3_failure() -> str:
     step("VERIFIED: Razorpay was never called for this order.")
 
     say("\n  Trying to force it through anyway, as a merchant human would...")
-    forced = requests.post(f"{ACP}/acp/checkout_sessions/{resp['session_id']}/human_confirm")
+    merchant = merchant_session.login(ACP)
+    forced = merchant.post(f"{ACP}/acp/checkout_sessions/{resp['session_id']}/human_confirm")
     step(f"human_confirm -> HTTP {forced.status_code}")
     step(f"refused: {forced.json()['detail'][:96]}...")
     step("a category rule is a hard merchant rule; not even a human can wave it through here.")
@@ -208,7 +211,8 @@ def scene_4_reject(session_id: str) -> None:
     scene(4, "A human closes it out on the record")
     say("Doing nothing would leave this indistinguishable from 'nobody looked at it'.")
 
-    rejected = requests.post(
+    merchant = merchant_session.login(ACP)
+    rejected = merchant.post(
         f"{ACP}/acp/checkout_sessions/{session_id}/human_reject"
     ).json()
     step(f"status: {rejected['status']}")
