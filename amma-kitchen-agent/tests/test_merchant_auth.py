@@ -363,3 +363,82 @@ def test_the_audit_trail_is_readable_without_a_login_and_carries_no_pii(client):
     assert "needs a merchant login" in page, "the redaction should say where the record is"
 
     assert client.get("/audit").status_code == 200
+
+
+# --------------------------------------------------- Google sign-in
+
+def test_merchant_google_stays_shut_when_unconfigured(monkeypatch):
+    """Blank means closed. An unconfigured door should be a closed one."""
+    import google_auth
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
+    monkeypatch.delenv("MERCHANT_GOOGLE_EMAILS", raising=False)
+
+    assert google_auth.merchant_google_enabled() is False
+    with pytest.raises(google_auth.NotConfigured):
+        google_auth.verify_merchant("anything")
+
+
+def test_an_allowlist_of_one_lets_only_that_person_in(monkeypatch):
+    import google_auth
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
+    monkeypatch.setenv("MERCHANT_GOOGLE_EMAILS", "amma@example.com")
+
+    assert google_auth.merchant_is_open_to_anyone() is False
+    assert google_auth.merchant_emails() == {"amma@example.com"}
+
+
+def test_the_wildcard_is_explicit_not_a_default(monkeypatch):
+    """`*` opens the shop to any Google account. It exists so that choice
+    is something somebody typed, rather than what you get by leaving a
+    setting blank."""
+    import google_auth
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
+    monkeypatch.setenv("MERCHANT_GOOGLE_EMAILS", google_auth.OPEN_TO_ANYONE)
+
+    assert google_auth.merchant_is_open_to_anyone() is True
+    assert google_auth.merchant_google_enabled() is True
+
+    # And it is still a REAL Google account -- the signature is verified
+    # either way. "Anyone with a Google account" is not "anyone".
+    with pytest.raises(google_auth.NotAllowed):
+        google_auth.verify_merchant("not.a.real.token")
+
+
+def test_a_forged_token_is_refused_even_with_the_wildcard(monkeypatch):
+    """The wildcard relaxes WHO may sign in, never WHETHER the token is
+    checked. An unverified JWT is a string the client wrote."""
+    import google_auth
+
+    monkeypatch.setenv("GOOGLE_CLIENT_ID", "test.apps.googleusercontent.com")
+    monkeypatch.setenv("MERCHANT_GOOGLE_EMAILS", "*")
+
+    import base64
+    import json as _json
+
+    def _b64(obj):
+        return base64.urlsafe_b64encode(_json.dumps(obj).encode()).rstrip(b"=").decode()
+
+    forged = ".".join([
+        _b64({"alg": "none", "typ": "JWT"}),
+        _b64({"email": "attacker@example.com", "email_verified": True,
+              "sub": "1", "aud": "test.apps.googleusercontent.com",
+              "iss": "accounts.google.com", "exp": 9999999999, "iat": 1}),
+        "",
+    ])
+    with pytest.raises(google_auth.NotAllowed):
+        google_auth.verify_merchant(forged)
+
+
+def test_the_buyer_side_has_no_allowlist(monkeypatch):
+    """Any Google account is a legitimate customer; the identity is the
+    point rather than a gate."""
+    import inspect
+
+    import google_auth
+
+    source = inspect.getsource(google_auth.verify)
+    assert "merchant_emails" not in source
+    assert "allowlist" not in source.lower()

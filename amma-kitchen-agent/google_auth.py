@@ -14,17 +14,19 @@ their published JWKS and cached), the audience matching OUR client id
 the issuer being Google, and expiry. PyJWT does all four; there is no new
 dependency.
 
-The merchant allowlist, and why it is not optional
---------------------------------------------------
+The merchant allowlist
+----------------------
 "Sign in with Google" on the merchant console, with no further check,
-would be strictly WORSE than the password it replaces: anybody on earth
-with a Google account could open her shop settings and approve orders.
-The password at least only lets in whoever knows it.
+is WEAKER than the password it sits beside: anybody with a Google account
+could open her shop settings and approve orders, where the password at
+least only lets in whoever knows it.
 
-So merchant sign-in requires MERCHANT_GOOGLE_EMAILS, an explicit list of
-who may run this kitchen. With it unset, Google sign-in for the merchant
-is refused outright and the password remains the only door -- closed, not
-open, when unconfigured.
+So merchant sign-in requires MERCHANT_GOOGLE_EMAILS to say something.
+Either a list of addresses, or `*` for "anyone with a Google account" --
+which is a legitimate choice for a demo, and is spelled out precisely so
+it has to be chosen. Blank means SHUT: an unconfigured door should be a
+closed one, and an accidentally-open door looks identical to a
+deliberately-open one from the outside.
 
 The buyer side has no allowlist on purpose: any Google account is a
 legitimate customer, and their identity is the point rather than a gate.
@@ -69,9 +71,21 @@ def merchant_emails() -> set[str]:
     return {e.strip().lower() for e in raw.split(",") if e.strip()}
 
 
+# Set MERCHANT_GOOGLE_EMAILS to this to let ANY Google account run the
+# kitchen. It exists so "open to everyone" is something somebody typed on
+# purpose, rather than what you get by leaving a setting blank -- an
+# accidental open door and a deliberate one look identical from outside,
+# and only one of them is a decision.
+OPEN_TO_ANYONE = "*"
+
+
+def merchant_is_open_to_anyone() -> bool:
+    return OPEN_TO_ANYONE in merchant_emails()
+
+
 def merchant_google_enabled() -> bool:
-    """Google sign-in for the MERCHANT needs both a client id and an
-    allowlist. Without the list it stays shut."""
+    """Google sign-in for the MERCHANT needs a client id, and either an
+    allowlist or an explicit `*`. Blank still means shut."""
     return is_enabled() and bool(merchant_emails())
 
 
@@ -128,10 +142,20 @@ def verify_merchant(id_token: str) -> dict:
     if not merchant_emails():
         raise NotConfigured(
             "MERCHANT_GOOGLE_EMAILS is not set. Google sign-in for the merchant "
-            "console is refused until you list who may use it -- without a list, "
-            "any Google account on earth would be able to open the shop."
+            "console is refused until you say who may use it -- either a list of "
+            f"addresses, or '{OPEN_TO_ANYONE}' to mean anyone with a Google account. "
+            "Blank means shut, because an unconfigured door should be a closed one."
         )
+
     person = verify(id_token)
+
+    if merchant_is_open_to_anyone():
+        # Chosen deliberately. The signature was still verified, so this
+        # is "any REAL Google account", not "anyone who can type an
+        # email" -- which is a meaningfully different thing from no
+        # authentication at all.
+        return person
+
     if person["email"] not in merchant_emails():
         raise NotAllowed("That Google account is not on this shop's list.")
     return person
