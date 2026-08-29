@@ -128,13 +128,19 @@ decide an escalation. All three run through one inbound webhook.
 ```
 amma-kitchen-agent/
   app.py                  # THE server: mounts everything, serves every console
-  web/                    # vanilla HTML/CSS/JS, no build step
+  web/                    # vanilla HTML/CSS/JS, no build step, no CDN
     index.html            #   landing page
     profile.html          #   buyer: one-time account setup
     order.html            #   buyer: order box + live agent terminal
     shop.html             #   merchant: one-time shop setup
     merchant.html         #   merchant: escalation queue, trust, SMS, log
-    shared.css
+    evidence.html         #   one order's record, with a print sheet
+    shared.css            #   the design system: tokens, aurora, terminal, bento
+    fonts/                #   Inter + JetBrains Mono .woff2, self-hosted (180KB)
+  design/
+    reference_mockup.html        # the motion mockup this was ported from
+    motion_terminal_brief.md     # and its brief
+    reference_mockup_chit_retired.html   # the paper design it replaced
 
   buyer_mandate.py        # BUYER's limits — pure, runs before any merchant is contacted
   mandate.py              # MERCHANT's DEFAULT rules + starting menu (plain data)
@@ -154,7 +160,8 @@ amma-kitchen-agent/
   buyer_agent_a.py        # scripted ACP buyer (Claude parses NL to a cart)
   buyer_agent_b.py        # scripted AP2 buyer
   buyer_agent_x402.py     # scripted x402 buyer, incl. a replay attempt
-  llm_client.py           # Claude via OpenRouter, forced tool use
+  llm_client.py           # the ONLY model caller: NL->cart, and merchant insights.
+                          #   Claude via OpenRouter, forced tool use
 
   razorpay_client.py      # test-mode orders / payment links / payments
   autonomous_payment.py   # no-browser settlement; UPI collect -> card S2S -> labelled sim
@@ -164,19 +171,19 @@ amma-kitchen-agent/
   audit_log.py            # append-only log, queries, co-purchase history
   catalog.py              # agent-readable product feed (ACP-style)
   evidence.py             # Proof of Authorization: one order's whole record, read-only
-  llm_client.py stays the only model caller: NL->cart, and merchant insights
   dashboard.py            # audit trail as HTML
 
   notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
   escalations.py          # merchant escalations + THE one inbound webhook + router
   buyer_sms.py            # asking the customer: what instead? / approve this?
-  mcp_orders.py           # MCP order lifecycle: pay -> confirm -> refund if declined
+  mcp_orders.py           # the pay-first lifecycle (not MCP-only any more):
+                          #   pay -> confirm -> refund if declined
 
   demo.py                 # one-command scripted walkthrough (starts its own servers)
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
-  scripts/predemo_check.py        # 12 checks, each one something that has broken
+  scripts/predemo_check.py        # 15 checks, each one something that has broken
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
@@ -1197,8 +1204,13 @@ the agent trust layer, the agent-readable catalog, payment reconciliation, the
 one-command `demo.py`, the human web consoles, predictive upselling from real
 co-purchase history, the x402 adapter, SMS/WhatsApp escalation with a deterministic
 reply parser, autonomous no-browser settlement, live merchant configuration, genuine
-catalog discovery by the buyer agent, and asking the customer on WhatsApp both what to
-order instead and whether to approve a soft-cap order.
+catalog discovery by the buyer agent, asking the customer on WhatsApp both what to
+order instead and whether to approve a soft-cap order, the **MCP adapter** that hands
+the same tools to somebody else's model, the pay-first order lifecycle with automatic
+refunds, off-menu demand capture, the AI Strategist and inventory-led repricing, the
+customer's own transaction statement, **Proof of Authorization** for disputed agent
+orders, **standing orders with a confidence gate**, a model-free fallback parser so no
+order dies of a billing balance, and two full design-system passes.
 
 **483 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
@@ -1450,10 +1462,13 @@ Seen order refs live in `localStorage`, so reloading the page does not replay th
 outcomes as if they had just happened, and a first pass marks what is already finished
 before the poll starts.
 
-## What the restyle had to go and find
+## What the FIRST restyle had to go and find — the checklist the second one reused
 
-Porting the design system was mostly `shared.css`, but four things were not in a
-stylesheet at all and would have been left behind by a search-and-replace on the CSS:
+This records the paper/chit pass, which the motion system above replaced. It is kept
+because the four things it turned up are properties of this codebase rather than of that
+palette, and the second restyle went looking for all four deliberately instead of
+discovering them on camera. Porting a design system here is mostly `shared.css`, but these
+are not in a stylesheet at all and a search-and-replace on the CSS leaves them behind:
 
 - **Colour inlined in JS.** `order.html` calls `setState("RUNNING", "#56d364")` and a dozen
   variants — the terminal's state chip is coloured from JavaScript, not CSS, so those hex
@@ -1762,7 +1777,7 @@ behind by a failed checkout — the unit suite was green through all of them.
 python scripts/predemo_check.py
 ```
 
-Thirteen checks, each one something that has actually broken: server and tunnel up, the
+Fifteen checks, each one something that has actually broken: server and tunnel up, the
 tunnel's domain actually allowed, a **signed** webhook `ping` accepted both locally and
 publicly (which is the only way to catch a running process holding a different secret
 than `.env`), Razorpay keys valid and link headroom left, a webhook registered *at the
@@ -1770,7 +1785,23 @@ current tunnel*, which message transport is live, the MCP tools reachable over t
 URL with wording that still matches the flow, no stuck checkout locks, and no paid order
 sitting undecided.
 
-One of them is there because the same mistake has now cost an hour three times:
+Two of them were added after the last two things that went wrong live.
+
+**Does the model provider have a balance, not just a key?** OpenRouter's free credit ran
+out mid-run and the buyer console stopped dead. A key that is present, valid and *broke*
+looks identical to a working one from every angle except a real request -- so the check
+makes one. The first version of it read the `/credits` endpoint and called that a verdict,
+which would have reported a working brand-new key as exhausted: a fresh account reads
+`total_credits: 0, total_usage: 0` and a spent one reads `total_credits: 0,
+total_usage: 0.19`. Identical. It is a WARN and never a FAIL, because the order still goes
+through on menu matching -- the point is finding out before the pitch.
+
+**Can every standing order still fire?** Each active routine is run through its confidence
+gate as it stands right now, so a paused dish or a drifted price is on screen before the
+demo rather than during it. A wrong-day failure is ignored, because that is what the gate
+is *for*.
+
+One more is there because the same mistake has now cost an hour three times:
 **does the running server have every endpoint the code defines?** Python routes register
 at import, so a server started before a feature was written serves FastAPI's own bare 404
 for it -- while HTML and CSS, which are read per request, update without a restart. A
