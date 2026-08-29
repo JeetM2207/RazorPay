@@ -176,6 +176,7 @@ amma-kitchen-agent/
   notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
   escalations.py          # merchant escalations + THE one inbound webhook + router
   reply_auth.py           # who may POST a reply: Twilio signature or console token
+  reply_codes.py          # the single-use code in every reply that moves money
   buyer_sms.py            # asking the customer: what instead? / approve this?
   mcp_orders.py           # the pay-first lifecycle (not MCP-only any more):
                           #   pay -> confirm -> refund if declined
@@ -188,7 +189,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 483 tests; test_negotiation.py still matters most
+  tests/                  # 524 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -1038,16 +1039,55 @@ Someone deploys an agent precisely so they don't have to sit and watch it. So al
 human decisions can arrive on a phone, not only on a screen:
 
 - **Merchant escalation** (`escalations.py`) — "Order #40 from agent-x: 2x Chicken
-  Biryani (Rs.440). Reply '1' to APPROVE, '2' to REJECT." The `Order #` in the message is
-  the audit event id, so the number in the SMS *is* the row in the trail.
+  Biryani (Rs.440). Reply  **1 4417**  to APPROVE  or  **2 4417**  to REJECT." The
+  `Order #` in the message is the audit event id, so the number in the SMS *is* the row in
+  the trail.
 - **Customer substitution** (`buyer_sms.py`) — "we don't have pizza; here's what we do
-  have. Reply with what you'd like instead."
+  have. Reply with what you'd like instead, starting with the code 8823."
 - **Customer approval** (`buyer_sms.py`) — "your agent wants to order X for Rs.440,
-  above the Rs.400 you asked to be checked on. Reply YES or NO."
+  above the Rs.400 you asked to be checked on. Reply  **YES 8823**  to go ahead, or
+  **NO 8823**  to cancel."
 
 **The endpoint is authenticated.** A reply of '1' approves an order and releases food,
 so it is treated as the money action it is: a Twilio signature or the consoles' own token,
 403 otherwise, no third path. See "Known gaps" for the whole shape of it.
+
+**And every reply that moves money carries a single-use code** (`reply_codes.py`). The
+signature proves the POST came from Twilio; it says nothing about who typed the message.
+Caller ID is spoofable, and the number match is loose *on purpose* — it compares the last
+ten digits so "98765 43210" typed in a browser matches `whatsapp:+919876543210` as Twilio
+delivers it. Together those meant anyone who learned an order number could approve it.
+
+The code is generated with `secrets.randbelow` when the question is sent, appears only in
+that message, and is required back. Four digits, because a person reads it off a phone and
+types it in, and a longer one gets copied wrong — which is thin on its own and is exactly
+why the re-ask is rate limited.
+
+- **The code gates the ACTION; it does not route.** `#<order>` is still the first router
+  branch and still wins outright, plausibility and recency still decide between two open
+  questions, and every routing test passes unchanged. What the code changed is whether the
+  thing that was routed is allowed to act.
+- **One expiry clock, not two.** `reply_codes.TTL_SECONDS` is the only such number in the
+  project, and `buyer_sms.CONVERSATION_TTL_SECONDS` is now literally it. A code has to die
+  with the question it was guarding, and two clocks drift.
+- **Every failure reads identically.** Wrong code, missing code, expired question, already
+  answered, no such order — one message. Answering them apart would tell an attacker which
+  order numbers are live and when the digits were right, which is the oracle the rate limit
+  exists to deny; there is a test asserting a wrong code and an unknown order come back
+  with the same string.
+- **The re-ask is itself rate limited.** After three failures from one sender the reply
+  stops varying at all. Without that, 10,000 requests walk a 4-digit space.
+- **Prose is not a failed guess.** An unparseable message asks again and costs nothing
+  against the limit; only a reply that actually offered a code counts. Locking someone out
+  for typing a sentence would be punishing the wrong person.
+- **A wrong code falls through rather than being claimed.** On a shared number "1 4417"
+  may well be the merchant's, so `buyer_sms.record_reply` returns None on a code mismatch
+  instead of swallowing it, and the merchant path gets its own chance. There is still
+  exactly one place that answers and one that keeps score.
+- **The consoles show the code.** The merchant's quick-reply buttons read *1 2322 ·
+  Approve*, and the buyer console reads it off the status endpoint it already polls. The
+  mock path posts to the *same* endpoint a real reply does, so it needs the code exactly as
+  a phone would — that is the whole reason the mock path is worth having.
 
 **Routing, because Twilio allows one webhook URL per number and in a demo the same
 person is often both parties.** Messages are routed by what they *are*, not only who sent
@@ -1098,7 +1138,9 @@ Other properties worth keeping:
 - **Sending can never break an order.** A transport failure is recorded and swallowed;
   the escalation still sits in the queue and the console remains a complete path.
 - **Replies are single-use** and questions expire, so a stale answer cannot resurrect an
-  order the person has long forgotten.
+  order the person has long forgotten. Both were half-true before the code: the escalation
+  had no expiry at all and `CONVERSATION_TTL_SECONDS` was declared and never read. They are
+  enforced now, on the one clock in `reply_codes`.
 - Numbers are normalised to E.164 and compared on the last ten digits, so "98765 43210"
   typed in a browser matches `whatsapp:+919876543210` as Twilio delivers it.
 - With no Twilio configured, messages land in an in-memory outbox the merchant console
@@ -1217,7 +1259,7 @@ customer's own transaction statement, **Proof of Authorization** for disputed ag
 orders, **standing orders with a confidence gate**, a model-free fallback parser so no
 order dies of a billing balance, and two full design-system passes.
 
-**483 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**524 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.

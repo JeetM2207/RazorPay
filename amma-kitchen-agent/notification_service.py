@@ -73,15 +73,29 @@ def clear_outbox() -> None:
 
 
 def format_escalation_alert(
-    order_id: int, agent_id: str, cart: list[tuple[str, int]], total_inr: int, reason: str
+    order_id: int, agent_id: str, cart: list[tuple[str, int]], total_inr: int,
+    reason: str, code: str = ""
 ) -> str:
+    """The alert Amma reads on her phone.
+
+    The last line is the whole point of the code: this message is the
+    only place it appears, and a reply without it does not act. It is
+    spaced apart from the digit rather than run together, because
+    "1 4417" is what she has to type and "14417" is what she would type
+    if the message ran them into each other.
+    """
     items = ", ".join(f"{qty}x {name.replace('_', ' ').title()}" for name, qty in cart)
+    instruction = (
+        f"Reply  1 {code}  to APPROVE  or  2 {code}  to REJECT."
+        if code else
+        "Reply '1' to APPROVE, '2' to REJECT."
+    )
     return (
         "[Amma's Kitchen AI Alert]\n"
         f"Order #{order_id} from {agent_id}:\n"
         f"Items: {items} (Rs.{total_inr})\n"
         f"Reason: {reason}.\n"
-        "Reply '1' to APPROVE, '2' to REJECT."
+        + instruction
     )
 
 

@@ -512,7 +512,11 @@ def test_the_phone_labels_each_message_and_matches_its_buttons(client):
     assert "renderQuickReplies" in page
     assert "to the customer" in page and "to Amma" in page
     # The vocabularies are chosen per message, not hardcoded in the markup.
-    assert 'data-reply="YES"' in page and 'data-reply="1"' in page
+    assert 'data-reply="YES"' in page
+    # The merchant's buttons now carry the waiting order's single-use
+    # code, because a bare "1" no longer moves anything -- see
+    # tests/test_reply_codes.py.
+    assert 'data-reply="1 ${code}"' in page
     assert "answer in the buyer console" in page
 
 

@@ -26,10 +26,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import notification_service
+import reply_codes
 
 # Conversations expire so a reply that arrives an hour later doesn't
-# silently resurrect an order the customer has long forgotten.
-CONVERSATION_TTL_SECONDS = 900
+# silently resurrect an order the customer has long forgotten. This is
+# reply_codes' clock rather than a second one: the code and the question
+# it belongs to have to die together, or a stale code outlives the thing
+# it was guarding.
+CONVERSATION_TTL_SECONDS = reply_codes.TTL_SECONDS
 
 _CONVERSATIONS: dict[str, "Conversation"] = {}
 
@@ -50,6 +54,9 @@ class Conversation:
     replied_at: str | None = None
     consumed: bool = False
     transport: str = "mock"
+    # Single-use code, sent in the message and required back. Without it
+    # a reply is authenticated only by caller ID, which is spoofable.
+    code: str = ""
     # Only meaningful for an APPROVAL question: True/False once answered.
     decision: bool | None = None
 
@@ -66,6 +73,10 @@ class Conversation:
             "answered": self.reply is not None,
             "consumed": self.consumed,
             "transport": self.transport,
+            # The buyer console renders this beside the message so the
+            # mock path stays usable: the customer reads the code off the
+            # screen exactly as they would off their phone.
+            "code": self.code,
         }
 
 
@@ -115,7 +126,8 @@ def _same_number(a: str, b: str) -> bool:
 
 # ---------------------------------------------------------------- asking
 
-def _compose(unmatched: list[str], available: list[dict], shop_name: str) -> str:
+def _compose(unmatched: list[str], available: list[dict], shop_name: str,
+             code: str = "") -> str:
     missing = ", ".join(unmatched) if unmatched else "that"
     lines = [
         f"{item.get('title') or item['id']} Rs.{item.get('price_inr') or item.get('price')}"
@@ -126,7 +138,7 @@ def _compose(unmatched: list[str], available: list[dict], shop_name: str) -> str
         f"{shop_name}: sorry, we don't have {missing}.\n\n"
         "Today we have:\n"
         + "\n".join(f"• {line}" for line in lines)
-        + "\n\nReply with what you'd like instead, in your own words."
+        + f"\n\nReply with what you'd like instead, starting with the code {code}."
     )
 
 
@@ -143,7 +155,8 @@ def ask(
     if not normalised:
         raise ValueError("No usable phone number on file for this customer.")
 
-    body = _compose(unmatched, available, shop_name)
+    code = reply_codes.new_code()
+    body = _compose(unmatched, available, shop_name, code)
     sent = notification_service.send_sms(body, to=normalised, audience="customer")
 
     conversation = Conversation(
@@ -153,6 +166,7 @@ def ask(
         unmatched=list(unmatched),
         asked_at=datetime.now(timezone.utc).isoformat(),
         transport=sent.transport,
+        code=code,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation
@@ -186,13 +200,14 @@ def ask_approval(
     if not normalised:
         raise ValueError("No usable phone number on file for this customer.")
 
+    code = reply_codes.new_code()
     body = (
         f"{shop_name}: your agent wants to order {cart_label} for Rs.{total_inr}.\n\n"
         + (
             f"{why}\n\n" if why
             else f"That's above the Rs.{soft_cap_inr} you asked to be checked on.\n\n"
         )
-        + "Reply YES to go ahead, or NO to cancel."
+        + f"Reply  YES {code}  to go ahead, or  NO {code}  to cancel."
     )
     sent = notification_service.send_sms(body, to=normalised, audience="customer")
 
@@ -204,6 +219,7 @@ def ask_approval(
         asked_at=datetime.now(timezone.utc).isoformat(),
         kind=APPROVAL,
         transport=sent.transport,
+        code=code,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation
@@ -253,7 +269,10 @@ def open_question_asked_at(from_phone: str) -> str | None:
     return conversation.asked_at if conversation else None
 
 
-_BARE_DIGIT = re.compile(r"^\s*[12]\s*[.!]?\s*$")
+# "1", and now also "1 4417" -- a merchant decision carries its code, and
+# without the optional code here a coded decision would stop looking like
+# one and get routed to the customer instead.
+_BARE_DIGIT = re.compile(r"^\s*[12]\s*[:,\-]?\s*(?:\d{4})?\s*[.!]?\s*$")
 
 
 def reply_suits_open_question(from_phone: str, text: str) -> bool:
@@ -295,7 +314,39 @@ def record_reply(from_phone: str, text: str) -> dict | None:
     if conversation is None:
         return None
 
-    cleaned = (text or "").strip()
+    # The code first, before either branch acts. Caller ID is spoofable
+    # and _same_number matches on the last ten digits by design, so this
+    # is what actually proves the reply came from the person we asked.
+    # Expiry counts as wrong: reply_codes owns the one clock, so a code
+    # cannot outlive the question it was guarding.
+    import hmac
+
+    supplied = reply_codes.extract(text)
+    valid = bool(
+        supplied
+        and conversation.code
+        and not reply_codes.is_expired(conversation.asked_at)
+        and hmac.compare_digest(supplied, conversation.code)
+    )
+    if not valid:
+        # None, not a refusal. On a shared number this message may well
+        # be the MERCHANT's -- "1 4417" carries a code that is simply not
+        # this conversation's -- and claiming it here would swallow a
+        # valid decision. Falling through lets the merchant path try its
+        # own code; if that fails too, the router answers once and counts
+        # it against the rate limit, so there is still exactly one place
+        # keeping score.
+        return None
+
+    # Consumed here rather than at the end of each branch, so a replay
+    # cannot act a second time whichever branch it takes. _find_open
+    # already skips answered conversations; this closes the case where
+    # the same code arrives twice before the first reply is stored.
+    conversation.code = ""
+
+    # Strip the code out before the rest is read as an order: "4417 2
+    # dosas" is an order for two dosas, not for 4417 of something.
+    cleaned = reply_codes.strip(text)
 
     if conversation.kind == APPROVAL:
         decision = parse_approval(cleaned)

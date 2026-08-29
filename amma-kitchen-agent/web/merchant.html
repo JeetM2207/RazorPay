@@ -710,7 +710,8 @@ function renderQuickReplies(body) {
 
   if (newest && newest.audience === "customer") {
     el.innerHTML =
-      `<p class="qr-hint">The last message asked the CUSTOMER — they answer YES or NO.</p>` +
+      `<p class="qr-hint">The last message asked the CUSTOMER — they answer YES or NO,
+         with the code, in the buyer console.</p>` +
       `<div style="display:flex; gap:7px; width:100%">
          <button class="qr-yes" data-reply="YES">YES</button>
          <button class="qr-no" data-reply="NO">NO</button>
@@ -718,14 +719,23 @@ function renderQuickReplies(body) {
     return;
   }
 
-  const waiting = (body.escalations || []).filter((e) => !e.answered).length;
+  /* Every reply that moves money needs the single-use code from the
+     message, so the buttons carry the waiting order's — otherwise the
+     mock path, which exists precisely so the loop can be demoed offline,
+     would send a bare "1" and be refused. The code is shown on the button
+     rather than hidden in it, because what she has to type is exactly
+     what she should see. */
+  const open = (body.escalations || []).filter((e) => !e.answered);
+  const code = open.length ? open[0].code : "";
+  const waiting = open.length;
+
   el.innerHTML =
     `<p class="qr-hint">${waiting
-      ? `Amma has ${waiting} order${waiting === 1 ? "" : "s"} to answer — 1 or 2.`
-      : "Nothing outstanding. 1 approves, 2 declines."}</p>` +
+      ? `Amma has ${waiting} order${waiting === 1 ? "" : "s"} to answer — reply with the code.`
+      : "Nothing outstanding."}</p>` +
     `<div style="display:flex; gap:7px; width:100%">
-       <button class="qr-yes" data-reply="1">1 · Approve</button>
-       <button class="qr-no" data-reply="2">2 · Reject</button>
+       <button class="qr-yes" data-reply="1 ${code}">1 ${code} · Approve</button>
+       <button class="qr-no" data-reply="2 ${code}">2 ${code} · Reject</button>
      </div>`;
 }
 
@@ -734,8 +744,8 @@ document.addEventListener("click", (e) => {
   if (btn) quickReply(btn.dataset.reply);
 });
 
-function quickReply(digit) {
-  $("smsReply").value = digit;
+function quickReply(reply) {
+  $("smsReply").value = reply;
   sendSmsReply();
 }
 

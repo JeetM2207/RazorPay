@@ -336,9 +336,11 @@ def test_an_accept_reply_over_whatsapp_resolves_it(env):
     placed = checkout(("chicken_biryani", 2))
     pay(env, placed["payment_link_id"])
 
-    parsed = escalations.parse_reply("ACCEPT")
+    code = escalations._PENDING[placed["order_id"]].code
+    parsed = escalations.parse_reply(f"ACCEPT {code}")
     assert parsed.action == "APPROVE"
-    escalations.resolve(parsed.action, placed["order_id"])
+    assert parsed.code == code
+    escalations.resolve(parsed.action, placed["order_id"], parsed.code)
 
     assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.MERCHANT_ACCEPTED
 
@@ -347,8 +349,9 @@ def test_a_reject_reply_over_whatsapp_refunds(env):
     placed = checkout(("chicken_biryani", 2))
     pay(env, placed["payment_link_id"], payment_id="pay_sms")
 
-    parsed = escalations.parse_reply("REJECT")
-    escalations.resolve(parsed.action, placed["order_id"])
+    code = escalations._PENDING[placed["order_id"]].code
+    parsed = escalations.parse_reply(f"REJECT {code}")
+    escalations.resolve(parsed.action, placed["order_id"], parsed.code)
 
     assert env["refunds"][0]["payment_id"] == "pay_sms"
     assert mcp_orders.status_of(placed["order_id"]) == mcp_orders.REFUNDED

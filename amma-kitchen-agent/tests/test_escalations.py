@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -8,6 +10,7 @@ import app as unified
 import audit_log
 import buyer_sms
 import escalations
+import reply_codes
 import notification_service
 
 
@@ -32,21 +35,57 @@ def _escalate(client, agent_id="sms-buyer", item="chicken_biryani", qty=2):
     ).json()
 
 
-def _reply(client, body, sender="+919876543210"):
+def _reply(client, body, sender="+919876543210", code=None):
     """Post a reply the way a console reply box does.
 
-    /webhook/sms-reply is authenticated -- it approves merchant orders and
-    releases food -- so these go through the same internal-token door the
-    consoles use rather than the endpoint being left open for tests. The
-    auth layer itself is covered in tests/test_reply_auth.py.
+    Two things are supplied for the caller, because neither is what these
+    tests are about:
+
+    * /webhook/sms-reply is authenticated, so this goes through the same
+      internal-token door the consoles use rather than the endpoint being
+      left open for tests. Covered in tests/test_reply_auth.py.
+    * A decision needs the single-use code from its message, so this
+      appends the right one -- which is exactly what a person reading
+      their phone does. Pass code="" to send one deliberately without it;
+      the cases that are ABOUT the code live in tests/test_reply_codes.py.
+
+    "The right one" means the escalation the reply actually names: a
+    "#41" reply must carry #41's code, not the oldest one's, or targeted
+    routing would silently start failing the code check instead.
     """
     import reply_auth
+
+    if code is None:
+        named = re.search(r"#(\d+)", body or "")
+        if named:
+            target = escalations._PENDING.get(int(named.group(1)))
+        else:
+            # Falls back to the most recently answered one so a REPLAY can
+            # actually be sent: without it a second reply carries no code
+            # and gets refused for the wrong reason, hiding whether
+            # single-use works at all.
+            target = escalations._oldest_unanswered() or escalations._most_recently_answered()
+        code = target.code if target else ""
+
+    if code and _CARRIES_DECISION.match(body or "") and code not in body:
+        body = f"{body} {code}"
 
     return client.post(
         "/webhook/sms-reply",
         data={"Body": body, "From": sender},
         headers={reply_auth.INTERNAL_TOKEN_HEADER: reply_auth.internal_token()},
     )
+
+
+# A reply that is a decision -- optionally with a #order on either side --
+# and so the only shape a code should be appended to. Prose is left alone,
+# because a test sending prose is testing that prose is not understood.
+_CARRIES_DECISION = re.compile(
+    r"^\s*(?:#\d+\s*[:,\-]?\s*)?"
+    r"(1|2|approve[d]?|accept|yes|ok|reject[ed]?|decline[d]?|no)"
+    r"\s*(?:[:,\-]?\s*#\d+)?\s*[.!]?\s*$",
+    re.IGNORECASE,
+)
 
 
 # ------------------------------------------------------------ the parser
@@ -111,7 +150,12 @@ def test_escalation_sends_an_sms_in_the_specified_format(client):
     assert f"Order #{body['decision_detail']['event_id']}" in text
     assert "sms-buyer" in text
     assert "2x Chicken Biryani (Rs.440)" in text
-    assert "Reply '1' to APPROVE, '2' to REJECT." in text
+    # The code is the only thing standing between "anyone who learned an
+    # order number" and an approved order, so the message is the one place
+    # it appears and the wording is asserted rather than assumed.
+    code = escalations._oldest_unanswered().code
+    assert len(code) == 4 and code.isdigit()
+    assert f"Reply  1 {code}  to APPROVE  or  2 {code}  to REJECT." in text
 
 
 def test_an_approved_order_does_not_text_anyone(client):
@@ -197,9 +241,12 @@ def test_replying_twice_does_not_re_decide(client):
 
 
 def test_reply_with_no_pending_escalation_is_handled(client):
+    # This used to answer "Nothing is waiting for a decision right now",
+    # which is a small oracle: it tells an unknown sender whether anything
+    # is pending. Every failure now reads the same.
     resp = _reply(client, "1")
     assert resp.status_code == 200
-    assert "Nothing is waiting" in resp.text
+    assert resp.text == reply_codes.REASK
 
 
 def test_targeted_reply_resolves_the_named_order(client):
@@ -226,8 +273,11 @@ def test_bare_reply_answers_the_oldest_waiting_order(client):
 
 def test_reply_for_an_unknown_order_is_reported(client):
     _escalate(client)
+    # Deliberately no longer "No order #999999": confirming which order
+    # numbers exist is exactly the oracle the code is here to close.
     resp = _reply(client, "1 #999999")
-    assert "No order #999999" in resp.text
+    assert resp.text in (reply_codes.REASK, reply_codes.STONEWALL)
+    assert "999999" not in resp.text
 
 
 # ----------------------------------------------------- across protocols

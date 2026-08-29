@@ -1170,7 +1170,11 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
   return await waitForApproval(live, totalInr);
 }
 
-function waitForApproval(live, totalInr) {
+async function waitForApproval(live, totalInr) {
+  // Fetched BEFORE the Promise, not inside its executor: an async
+  // executor swallows anything that throws, and this is the only place
+  // the reply's code comes from.
+  const askCode = await openQuestionCode();
   return new Promise((resolve) => {
     let settled = false;
     const finish = (value) => {
@@ -1184,23 +1188,28 @@ function waitForApproval(live, totalInr) {
 
     $("termAsk").innerHTML = `
       <p>${live ? `Waiting for your WhatsApp reply — YES or NO to ${rupee(totalInr)}…`
-                : `Approve ${rupee(totalInr)}? Reply YES or NO.`}</p>
+                : `Approve ${rupee(totalInr)}? Reply YES or NO.`}
+         ${askCode ? `<br><span class="mono muted">code ${escHtml(askCode)}</span>` : ""}</p>
       <div class="btn-row">
-        <button class="btn btn-ok btn-sm" id="apYes">YES</button>
-        <button class="btn btn-ghost btn-sm" id="apNo">NO</button>
+        <button class="btn btn-ok btn-sm" id="apYes">YES ${escHtml(askCode)}</button>
+        <button class="btn btn-ghost btn-sm" id="apNo">NO ${escHtml(askCode)}</button>
       </div>`;
     $("termAsk").style.display = "";
 
     // These post through the real webhook, so this path exercises
     // exactly what a genuine WhatsApp reply would.
     const answerHere = async (word) => {
+      const code = await openQuestionCode();
       await fetch("/webhook/sms-reply", {
         method: "POST",
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
           "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
         },
-        body: new URLSearchParams({ Body: word, From: PROFILE.phone }),
+        body: new URLSearchParams({
+          Body: code ? `${word} ${code}` : word,
+          From: PROFILE.phone,
+        }),
       });
     };
     $("apYes").addEventListener("click", () => answerHere("YES"));
@@ -1251,6 +1260,7 @@ function waitForWhatsAppReply(live) {
     const sendHere = async () => {
       const text = $("waReply").value.trim();
       if (!text) return;
+      const code = await openQuestionCode();
       // Goes through the real webhook, so this path exercises exactly
       // what a genuine WhatsApp reply would.
       await fetch("/webhook/sms-reply", {
@@ -1259,7 +1269,10 @@ function waitForWhatsAppReply(live) {
           "Content-Type": "application/x-www-form-urlencoded",
           "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
         },
-        body: new URLSearchParams({ Body: text, From: PROFILE.phone }),
+        body: new URLSearchParams({
+          Body: code ? `${code} ${text}` : text,
+          From: PROFILE.phone,
+        }),
       });
     };
 
@@ -1586,6 +1599,24 @@ document.addEventListener("keydown", (e) => {
    sold here" from "close to something here", so it misses more. A viewer
    has to be able to see which one answered, or the demo quietly degrades
    into something they can't distinguish from the real thing. */
+/* The single-use code for the question currently open with this
+   customer.
+
+   Every reply that moves money needs it: caller ID is spoofable and the
+   number match is loose, so the code is what proves the reply came from
+   the person we asked. These boxes post to the SAME endpoint a real
+   WhatsApp reply does -- that is the point of the mock path -- so they
+   need the code exactly as a phone would, and it is read off the status
+   endpoint the page already polls rather than fetched from anywhere new. */
+async function openQuestionCode() {
+  try {
+    const state = await api("/api/buyer-sms/status/" + PROFILE.agent_id);
+    return state && state.code ? state.code : "";
+  } catch {
+    return "";
+  }
+}
+
 function sayWhichParser(parsed) {
   if (parsed.parsed_by !== "menu-matching") return;
   log(`&gt; Claude is unavailable — ${escHtml(parsed.fallback_reason || "no reason given")}.`, "warn");

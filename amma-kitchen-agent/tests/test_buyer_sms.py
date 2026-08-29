@@ -36,15 +36,59 @@ def _ask(client, agent_id="agent-1", phone=BUYER_PHONE, unmatched=None):
     )
 
 
-def _inbound(client, body, sender=BUYER_E164):
+def _inbound(client, body, sender=BUYER_E164, code=None):
     """Post a reply the way a console reply box does.
 
-    /webhook/sms-reply is authenticated -- it approves merchant orders and
-    releases food -- so these go through the same internal-token door the
-    consoles use rather than the endpoint being left open for tests. The
-    auth layer itself is covered in tests/test_reply_auth.py.
+    Two things are supplied for the caller, because neither is what these
+    routing tests are about:
+
+    * /webhook/sms-reply is authenticated, so this goes through the same
+      internal-token door the consoles use. See tests/test_reply_auth.py.
+    * A reply needs the single-use code from its message, so this appends
+      the right one -- which is what a person reading their phone does.
+
+    "The right one" has to be chosen the same way the router chooses,
+    because on this shared number BOTH a customer question and a merchant
+    escalation can be open at once: a decision-shaped reply carries the
+    escalation's code, anything else carries the conversation's. Getting
+    that wrong here would make every routing test fail on the code check
+    instead of exercising the routing.
+
+    Pass code="" to send one deliberately without a code; the cases that
+    are ABOUT the code live in tests/test_reply_codes.py.
     """
+    import re
+
     import reply_auth
+
+    if code is None:
+        # Mirrors the router's own `prefer_buyer` condition rather than
+        # guessing from the shape of the message, because the router
+        # decides by RECENCY too: with both a merchant escalation and a
+        # newer customer question open, a bare "1" belongs to the
+        # customer. A helper that disagreed would make these tests fail
+        # on the code check instead of exercising the routing they exist
+        # to cover.
+        named = re.search(r"#(\d+)", body or "")
+        waiting = escalations._oldest_unanswered() or escalations._most_recently_answered()
+        asked_at = buyer_sms.open_question_asked_at(sender)
+
+        prefer_buyer = asked_at is not None and named is None and (
+            waiting is None
+            or (buyer_sms.reply_suits_open_question(sender, body)
+                and asked_at > waiting.created_at)
+        )
+
+        if named:
+            target = escalations._PENDING.get(int(named.group(1)))
+        elif prefer_buyer:
+            target = buyer_sms._find_open(sender)
+        else:
+            target = waiting or buyer_sms._find_open(sender)
+        code = getattr(target, "code", "") or ""
+
+    if code and code not in (body or ""):
+        body = f"{body} {code}" if body else code
 
     return client.post(
         "/webhook/sms-reply",
@@ -211,7 +255,11 @@ def test_a_soft_cap_order_asks_the_customer_on_whatsapp(client):
 
     assert "2x Chicken Biryani for Rs.440" in body
     assert "above the Rs.400 you asked to be checked on" in body
-    assert "Reply YES to go ahead, or NO to cancel" in body
+    # The code is the only thing proving this reply came from the person
+    # we asked, so it is in the message and asserted here.
+    code = buyer_sms._find_open(BUYER_E164).code
+    assert len(code) == 4 and code.isdigit()
+    assert f"Reply  YES {code}  to go ahead, or  NO {code}  to cancel." in body
 
 
 @pytest.mark.parametrize("word", ["YES", "yes", "y", "ok", "approve", "sure", "1"])

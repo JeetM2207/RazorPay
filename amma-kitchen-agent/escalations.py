@@ -19,6 +19,7 @@ Design notes worth keeping:
     (disallowed category) is still refused -- over SMS you get told why.
 """
 
+import hmac
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -28,6 +29,7 @@ from fastapi.responses import PlainTextResponse
 
 import notification_service
 import reply_auth
+import reply_codes
 
 router = APIRouter()
 
@@ -45,6 +47,27 @@ class Escalation:
     answered: bool = False
     outcome: str | None = None    # APPROVED | REJECTED | REFUSED
     detail: str | None = None
+    # The single-use code sent in the message and required back. Caller
+    # ID is spoofable and the last-ten-digit match is loose, so without
+    # this anyone who learned an order number could approve it.
+    code: str = ""
+
+    def code_ok(self, supplied: str | None) -> bool:
+        """Constant-time, and expiry counts as wrong -- a code whose
+        question has gone stale is not a code.
+
+        Deliberately says nothing about `answered`. Somebody holding the
+        right code for an order that is already decided is the merchant
+        re-sending, and she is better served by "that was already
+        approved" than by a blank refusal. Single use is enforced in
+        `resolve()`, where the difference between "you are too late" and
+        "you are not who you claim" belongs.
+        """
+        if not supplied or not self.code:
+            return False
+        if reply_codes.is_expired(self.created_at):
+            return False
+        return hmac.compare_digest(supplied, self.code)
 
 
 _PENDING: dict[int, Escalation] = {}
@@ -65,6 +88,10 @@ def pending() -> list[dict]:
             "created_at": e.created_at,
             "answered": e.answered,
             "outcome": e.outcome,
+            # Shown in the merchant console's phone mock-up so the mock
+            # path stays usable -- she has to be able to read the code
+            # off the screen exactly as she would off her phone.
+            "code": e.code,
         }
         for e in sorted(_PENDING.values(), key=lambda e: e.order_id)
     ]
@@ -103,6 +130,7 @@ def notify(
         total_inr=detail["total_inr"],
         reason=detail["reason"],
         created_at=datetime.now(timezone.utc).isoformat(),
+        code=reply_codes.new_code(),
     )
     _PENDING[order_id] = escalation
 
@@ -116,6 +144,7 @@ def notify(
             cart=escalation.cart,
             total_inr=escalation.total_inr,
             reason=escalation.reason,
+            code=escalation.code,
         )
     )
     return escalation
@@ -131,8 +160,11 @@ _REPLY_RE = re.compile(
     r"""^\s*
     (?:\#(?P<order_before>\d{1,9})\s*[:,\-]?\s*)?
     (?P<action>1|2|approve[d]?|accept|yes|ok|reject[ed]?|decline[d]?|no)
-    \s*
-    (?:[:,\-]?\s*\#(?P<order_after>\d{1,9}))?
+    # The code and an optional #order may arrive in either order --
+    # "2 4417 #41" and "2 #41 4417" are the same person saying the same
+    # thing, and refusing one of them would fail a decision on a
+    # formatting detail nobody was told about.
+    (?:\s*[:,\-]?\s*(?:\#(?P<order_after>\d{1,9})|(?P<code>\d{4})\b))*
     \s*[.!]?\s*$""",
     re.IGNORECASE | re.VERBOSE,
 )
@@ -145,11 +177,21 @@ _REJECT_WORDS = {"2", "reject", "rejected", "decline", "declined", "no"}
 class ParsedReply:
     action: str | None            # APPROVE | REJECT | None
     order_id: int | None = None
+    code: str | None = None       # the single-use code, if one was given
 
 
 def parse_reply(text: str) -> ParsedReply:
     """Extract the decision from an SMS body. Returns action=None when the
-    message is not unambiguously one of the two options."""
+    message is not unambiguously one of the two options.
+
+    Still a regex, and still strict: the input space is two options, and
+    a model here would add latency, cost and a failure mode to a two-way
+    branch that moves money. The code is parsed but NOT judged here --
+    this function reports what the message said, and `resolve()` decides
+    whether it is allowed to act on it. Keeping those apart is what lets
+    a wrong code be told apart from an unparseable message, which need
+    different answers.
+    """
     if not text:
         return ParsedReply(None)
 
@@ -161,7 +203,7 @@ def parse_reply(text: str) -> ParsedReply:
     action = "APPROVE" if token in _APPROVE_WORDS else "REJECT" if token in _REJECT_WORDS else None
 
     raw_order = match.group("order_before") or match.group("order_after")
-    return ParsedReply(action, int(raw_order) if raw_order else None)
+    return ParsedReply(action, int(raw_order) if raw_order else None, match.group("code"))
 
 
 # -------------------------------------------------------------- resolver
@@ -201,26 +243,35 @@ def _most_recently_answered() -> Escalation | None:
     return max(done, key=lambda e: e.order_id) if done else None
 
 
-def resolve(action: str, order_id: int | None = None) -> dict:
+def resolve(action: str, order_id: int | None = None,
+            code: str | None = None, sender: str = "") -> dict:
     """Apply a parsed reply to an in-flight escalation.
 
     Approval is NOT an override: it calls the adapter's own human_confirm,
     so anything the web console would refuse is refused here too.
+
+    The code is checked FIRST, before anything is looked up or acted on.
+    Caller ID is spoofable and the number match is loose by design, so
+    the code is what actually proves this reply came from the person we
+    asked rather than from anyone who learned an order number.
+
+    Every failure -- wrong code, missing code, expired question, already
+    answered, no such order -- returns the SAME message. Distinguishing
+    them would tell an attacker which order numbers are live and when
+    they had the digits right, which is the oracle the rate limit exists
+    to close; answering differently would hand it to them for free.
     """
     if order_id is not None:
         escalation = _PENDING.get(order_id)
     else:
         escalation = _oldest_unanswered() or _most_recently_answered()
 
-    if escalation is None:
+    if escalation is None or not escalation.code_ok(code):
         return {
             "ok": False,
-            "outcome": "NOT_FOUND",
-            "message": (
-                f"No order #{order_id} is waiting for a decision."
-                if order_id is not None
-                else "Nothing is waiting for a decision right now."
-            ),
+            "outcome": "CODE_REQUIRED",
+            "order_id": order_id,
+            "message": reply_codes.refusal(sender),
         }
     if escalation.answered:
         return {
@@ -337,10 +388,18 @@ async def sms_reply(
             return PlainTextResponse(handled["message"], status_code=200)
 
     if parsed.action is None:
+        # Two different things land here: prose we cannot read, and a
+        # reply whose code matched no open question of either kind. They
+        # get the same answer -- but only the one that OFFERED a code
+        # counts against the rate limit, because somebody typing prose
+        # at us is not probing the code space, and locking them out for
+        # it would be punishing the wrong person.
+        if reply_codes.extract(Body):
+            return PlainTextResponse(reply_codes.refusal(From), status_code=200)
         return PlainTextResponse(
-            "Sorry, I didn't understand that. Reply '1' to APPROVE or '2' to REJECT.",
+            "Sorry, I didn't understand that. " + reply_codes.REASK,
             status_code=200,
         )
 
-    result = resolve(parsed.action, parsed.order_id)
+    result = resolve(parsed.action, parsed.order_id, parsed.code, sender=From)
     return PlainTextResponse(result["message"], status_code=200)
