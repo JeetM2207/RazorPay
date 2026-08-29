@@ -16,6 +16,8 @@ Then:
     /docs        API reference for both protocols
 """
 
+import asyncio
+import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -44,11 +46,14 @@ import escalations
 import merchant_auth
 import notification_service
 import reply_auth
+import scheduler
 import trust
 import webhook_handler
 import merchant_config
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
+
+log = logging.getLogger("amma.app")
 
 @asynccontextmanager
 async def _lifespan(fastapi_app: FastAPI):
@@ -63,8 +68,26 @@ async def _lifespan(fastapi_app: FastAPI):
     # looks like a bug in Twilio.
     reply_auth.warn_if_misconfigured()
     merchant_auth.warn_if_misconfigured()
-    async with adapter_mcp.app.router.lifespan_context(fastapi_app):
-        yield
+    # The clock. Started here so it lives exactly as long as the app does
+    # -- and cancelled below, because a background task that outlives its
+    # server is a task nobody is watching.
+    ticker = asyncio.create_task(scheduler.run()) if scheduler.is_enabled() else None
+    if ticker is None:
+        log.info("scheduler: disabled (SCHEDULER_ENABLED=false)")
+
+    try:
+        async with adapter_mcp.app.router.lifespan_context(fastapi_app):
+            yield
+    finally:
+        if ticker is not None:
+            ticker.cancel()
+            # Awaited rather than abandoned, so shutdown waits for the
+            # tick in flight instead of tearing the database out from
+            # under a refund that is half-written.
+            try:
+                await ticker
+            except asyncio.CancelledError:
+                pass
 
 
 app = FastAPI(title="Amma's Kitchen -- Agentic Commerce", lifespan=_lifespan)

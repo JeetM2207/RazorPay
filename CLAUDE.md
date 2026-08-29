@@ -169,6 +169,7 @@ amma-kitchen-agent/
   webhook_handler.py      # idempotent payment_link.* and refund.processed / failed
   idempotency.py          # the claim ledger the webhook, reconciler and x402 share
   reconcile_payments.py   # safety net for webhooks that never arrived
+  scheduler.py            # THE CLOCK: merchant timeouts + standing orders, every 60s
   audit_log.py            # append-only log, queries, co-purchase history
   catalog.py              # agent-readable product feed (ACP-style)
   evidence.py             # Proof of Authorization: one order's whole record, read-only
@@ -192,7 +193,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 615 tests; test_negotiation.py still matters most
+  tests/                  # 635 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -802,10 +803,12 @@ an unknown payment id: writing "confirmed processed" into a real order's trail f
 refund Razorpay had not yet processed would have put a false fact in the audit log to make
 a test pass.
 
-**Not built, deliberately:** nothing schedules the timeout. The project has no expiry
-mechanism for merchant escalations to reuse, and inventing a scheduler was out of scope,
-so `mcp_orders.expire()` exists and is tested but must currently be triggered by hand.
-That is the honest gap: the capability is there, the clock is not.
+**The timeout now fires by itself.** `scheduler.py` asks
+`mcp_orders.due_for_expiry()` every minute and calls the same `expire()` that was always
+there. Her clock starts when she was actually ASKED -- the timestamp of the
+`PENDING_MERCHANT_APPROVAL` row, not the order's own, because an order can sit in
+`AWAITING_PAYMENT` for a while before anyone pays it. `MERCHANT_TIMEOUT_MINUTES` defaults
+to 45. See "The clock" below.
 
 ## The word "ESCALATE" broke the pay-first flow
 
@@ -1262,7 +1265,7 @@ customer's own transaction statement, **Proof of Authorization** for disputed ag
 orders, **standing orders with a confidence gate**, a model-free fallback parser so no
 order dies of a billing balance, and two full design-system passes.
 
-**615 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**635 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions) and
 the identity assertion that all four adapters share one orchestrator object.
@@ -1807,14 +1810,95 @@ real browser -- the same lesson as every other section here.
   been written into. The answer is now written *after* the redraw. No unit test could see
   this; the DOM had to be driven.
 
-### The honest gap, again
+### What calls it
 
-**Nothing schedules any of this.** The project has no scheduler -- the same gap already
-recorded for `mcp_orders.expire()` -- and inventing one was out of scope.
-`check_and_fire()` is complete and tested, and something has to call it; for the demo that
-something is the **Simulate next occurrence** button, with an optional `at` so a future
-occurrence can be checked without waiting for the day to come round. The capability is
-there; the clock is not, and the button says "simulate" rather than pretending otherwise.
+`scheduler.py`, every minute, for whatever `routines.due_now()` says is due. The
+**Simulate next occurrence** button stays exactly as it was and is still the right demo
+control -- nobody wants to wait until Tuesday at eight on camera, and `at` lets a future
+occurrence be checked without the clock moving.
+
+`due_now()` is the part that matters, and it is why a scheduler can safely be pointed at
+`check_and_fire` at all. See "The clock" below: ticking every routine every minute would
+have messaged the customer about fourteen hundred times a day.
+
+## The clock
+
+Two capabilities in this project were complete, tested, and unreachable.
+`mcp_orders.expire()` turns a paid order the merchant never answered back into a refund.
+`routines.check_and_fire()` places a standing order. Both were written, both had tests,
+and **nothing would ever call either of them** — so the lifecycle diagram above contained
+a transition that could not happen:
+
+```
+silence -> MERCHANT_TIMEOUT_REFUNDED -> REFUNDED
+```
+
+A customer who paid and whose merchant then went quiet had no automatic protection at all.
+The capability existed; the clock did not. `scheduler.py` is the missing caller, and
+deliberately nothing else: it asks each owning module what is due and calls the function
+that module already exposes. There is no business logic in it, no second charging path,
+and a test parses it and asserts it never mentions Razorpay, `negotiate_and_record`,
+`autonomous_payment` or `record_event`.
+
+### The predicate that makes it safe
+
+This is the part that would have been a disaster to skip, and it is why `due_now()` and
+`due_for_expiry()` live in the modules that own the work rather than in the tick.
+
+Pointing a 60-second loop straight at `check_and_fire` for every active routine breaks in
+**both directions at once**:
+
+- **Outside its window** — which is most of the day — the confidence gate fails on
+  `time_window`, and a gate failure calls `_ask_first`, which **messages the customer**. A
+  routine expecting 08:00 ± 45 minutes is outside its window for 22½ hours a day, so a
+  minute tick would send its owner roughly **1,400 WhatsApp messages a day**. Each one
+  individually correct, and collectively an attack on your own customer.
+- **Inside its window** it would fire, and then fire again on the next tick, and the next
+  — **ninety charges for one breakfast.**
+
+So a routine is due only when it is active, inside its window, and has not already fired
+for *this* occurrence — `last_fired_at` compared against the window's start rather than a
+fixed interval, so a routine that fired at the end of yesterday's window is not mistaken
+for having covered today's. Being conservative is the right failure mode: a routine this
+skips simply does not fire, and Simulate still works. A routine it fires twice is money.
+
+### Two runners, one charge
+
+`uvicorn --reload` runs two processes, and so does any multi-worker deploy. Firing a
+standing order twice is money, so each tick's work is claimed through the **same
+`idempotency.py` ledger** the webhook handler and the reconciler use — not a second one,
+for the reason that ledger exists in the first place: a second record of the same fact is
+a second record that can disagree with the first.
+
+The claim is keyed on the **work**, not the tick: `scheduler.expire` + the order id, and
+`scheduler.routine` + routine + date + hour. Two runners racing the same minute both see
+order #40 and exactly one of them expires it. A test asserts the claim lands in the shared
+table by trying to claim it again from outside the scheduler and getting `False`.
+
+**The expiry claim is never released**, even on failure — unlike `checkout`'s, which is a
+lock around work that might not happen. `expire()` refunds and writes as it goes, so a
+failure part-way through is *not* work that provably did not happen, and retrying it could
+refund twice. It is logged loudly and left for a human.
+
+### Failing without dying, and logging without noise
+
+Each pass is wrapped separately, so a failure in the expiry pass cannot stop standing
+orders from firing on the same tick — they are unrelated pieces of work that happen to
+share a clock. Every exception is logged with its traceback and stepped over, because **a
+scheduler that dies quietly on tick 3 is worse than no scheduler**: everything downstream
+now assumes something is watching.
+
+And it logs **one line per tick, only when the tick did something**. A scheduler that says
+"nothing to do" every 60 seconds writes 1,440 lines a day for a real failure to hide in.
+
+The tick runs on a thread (`asyncio.to_thread`) because both calls do blocking SQLite and
+HTTP, and a tick that blocks the event loop stalls every request the server is serving.
+It is cancelled *and awaited* in `app.py`'s lifespan teardown, so shutdown waits for a tick
+in flight rather than tearing the database out from under a half-written refund.
+
+`SCHEDULER_ENABLED=false` starts no task at all, and `conftest.py` sets it for the whole
+suite so no test ever races a background tick. The scheduler's own tests call `tick()`
+directly — driving a real 60-second loop from a test would be testing asyncio, not this.
 
 ## The flood: why this one gate refuses instead of asking
 

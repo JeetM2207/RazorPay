@@ -293,12 +293,75 @@ def describe(routine: dict) -> str:
     )
 
 
+def due_now(now: datetime | None = None) -> list[str]:
+    """Routines whose occurrence is happening and has not run yet.
+
+    This predicate is the reason a scheduler is safe to point at
+    `check_and_fire`, and it lives here because this module owns the
+    schedule. Ticking every routine every minute would be catastrophic
+    in both directions:
+
+      * OUTSIDE its window -- which is most of the day -- the confidence
+        gate fails on `time_window` and `_ask_first` messages the
+        customer. A 60-second tick would send them roughly 1,400 messages
+        a day, per routine.
+      * INSIDE its window it would fire, and then fire again on the next
+        tick, and the next -- ninety charges for one breakfast.
+
+    So a routine is due only when it is active, inside its window, and
+    has not already fired for THIS occurrence. `last_fired_at` is the
+    guard for the second half: a routine that ran at 08:03 is not due
+    again at 08:04, because 08:04 is the same 08:00 occurrence.
+
+    Being conservative is the right failure mode here: a routine this
+    skips simply does not fire, and the customer can still press
+    Simulate. A routine this fires twice is money.
+    """
+    now = now or datetime.now(timezone.utc)
+    due = []
+    for routine in all_routines():
+        if routine.get("status") != "active":
+            continue
+        inside, _ = _within_window(now, routine)
+        if not inside:
+            continue
+        if _already_fired_this_occurrence(routine, now):
+            continue
+        due.append(routine["id"])
+    return due
+
+
+def _already_fired_this_occurrence(routine: dict, now: datetime) -> bool:
+    """Has it run since this occurrence's window opened?
+
+    Compared against the window's start rather than against a fixed
+    interval, so a routine that fired at the very end of yesterday's
+    window is not mistaken for having covered today's.
+    """
+    last = routine.get("last_fired_at")
+    if not last:
+        return False
+    try:
+        fired_at = datetime.fromisoformat(last)
+    except (TypeError, ValueError):
+        return True          # unreadable: assume it ran, and do not charge again
+    if fired_at.tzinfo is None:
+        fired_at = fired_at.replace(tzinfo=timezone.utc)
+
+    hour, minute = (int(p) for p in routine["time"].split(":"))
+    expected = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    window = routine.get("window_minutes", DEFAULT_WINDOW_MINUTES)
+    return fired_at >= expected - timedelta(minutes=window)
+
+
 def check_and_fire(routine_id: str, now: datetime | None = None) -> dict:
     """Run the gate, then either charge or ask.
 
     `now` is overridable so a future occurrence can be simulated without
     waiting for real time -- which is also how the demo button works.
-    There is no scheduler in this project; something has to call this.
+
+    Called by `scheduler.py` for whatever `due_now()` returns, and
+    directly by the console's Simulate button.
     """
     routine = get(routine_id)
     if routine is None:

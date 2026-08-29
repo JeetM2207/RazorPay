@@ -30,6 +30,7 @@ reply webhook. No parallel machinery.
 """
 
 import json
+import os
 from datetime import datetime, timedelta, timezone
 
 import audit_log
@@ -418,14 +419,60 @@ def reject(order_ref: int) -> dict:
     return _refund(order, MERCHANT_REJECTED, "merchant rejected the order")
 
 
+# How long a paid order waits for her before the money goes back. Long
+# enough that she can be cooking, short enough that a customer who paid
+# is not left indefinitely. `scheduler.py` is what actually watches it.
+MERCHANT_TIMEOUT_MINUTES = int(os.environ.get("MERCHANT_TIMEOUT_MINUTES", "45"))
+
+
+def due_for_expiry(now: datetime | None = None) -> list[int]:
+    """Paid orders that have waited longer than she gets.
+
+    Lives here rather than in the scheduler because this module owns the
+    lifecycle: the scheduler's job is to ask "what is due" and call the
+    existing function, not to know what "due" means.
+
+    Reads the timestamp of the row that PUT the order into her queue, not
+    the order's own creation time -- an order can sit in AWAITING_PAYMENT
+    for a while before anyone pays, and her clock should start when she
+    was actually asked.
+    """
+    now = now or datetime.now(timezone.utc)
+    cutoff = now - timedelta(minutes=MERCHANT_TIMEOUT_MINUTES)
+
+    due = []
+    for order in pending_orders():
+        ref = order["id"]
+        asked_at = _entered_queue_at(ref)
+        if asked_at is not None and asked_at <= cutoff:
+            due.append(ref)
+    return due
+
+
+def _entered_queue_at(order_ref: int) -> datetime | None:
+    """When this order was put in front of her.
+
+    The transition's timestamp, not the order's -- an order can sit in
+    AWAITING_PAYMENT for a while before anyone pays it, and her clock
+    should start when she was actually asked, not when it was drafted.
+    """
+    for row in reversed(audit_log.get_order_rows(order_ref, db_path=_db())):
+        if row["decision"] != PENDING_MERCHANT_APPROVAL:
+            continue
+        try:
+            stamp = datetime.fromisoformat(row["ts"])
+        except (TypeError, ValueError):
+            return None
+        return stamp if stamp.tzinfo else stamp.replace(tzinfo=timezone.utc)
+    return None
+
+
 def expire(order_ref: int) -> dict:
     """Treat a non-answer like a rejection, but record it as its own
     status so the trail can tell "she said no" from "she never replied".
 
-    NOTE: nothing schedules this yet -- see CLAUDE.md. The project has no
-    expiry mechanism for merchant escalations, and inventing a scheduler
-    was out of scope for this change, so the capability exists and is
-    tested but must currently be triggered deliberately.
+    Fired by `scheduler.py` for anything `due_for_expiry()` returns, and
+    still callable by hand.
     """
     order = get_order(order_ref)
     if order is None:

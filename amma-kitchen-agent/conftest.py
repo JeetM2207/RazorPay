@@ -55,3 +55,16 @@ def _isolate_reply_codes():
     reply_codes.reset()
     yield
     reply_codes.reset()
+
+
+@pytest.fixture(autouse=True)
+def _no_background_scheduler(monkeypatch):
+    """The suite must never race a background task.
+
+    Set before app.py's lifespan reads it, so a TestClient that starts the
+    app starts no ticker. The scheduler's own tests call `scheduler.tick()`
+    directly, which is the honest way to test it anyway -- driving a real
+    60-second loop from a test would be testing asyncio, not this.
+    """
+    monkeypatch.setenv("SCHEDULER_ENABLED", "false")
+    yield
