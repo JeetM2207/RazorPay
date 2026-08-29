@@ -214,3 +214,61 @@ def test_every_script_can_run_from_anywhere():
             f"scripts/{script.name} imports a project module but never puts the "
             "project root on sys.path, so it only runs from the right directory"
         )
+
+
+# ------------------------------------------------ the merchant's shell
+
+def test_the_console_navigates_from_a_rail_not_a_tab_strip():
+    """Four labels of very different lengths made a ragged row, the counts
+    had nowhere consistent to sit, and there was no room to say what each
+    section was for. A rail gives every section the same footprint."""
+    page = (WEB / "merchant.html").read_text(encoding="utf-8")
+
+    assert '<nav class="rail"' in page
+    assert '.shell { display: grid; grid-template-columns: 248px' in page
+
+    # `.tabs` keeps its name on purpose: showTab() and every count badge
+    # select by it, and renaming would have meant editing the JS for a
+    # purely visual change.
+    assert 'class="tabs"' in page
+    assert page.count('onclick="showTab(') == 4
+
+
+def test_each_section_says_what_it_is():
+    """One fixed heading was right on the first section and wrong on the
+    other three -- it still read "Orders needing your decision" while you
+    were looking at the disputes list."""
+    page = (WEB / "merchant.html").read_text(encoding="utf-8")
+    assert "const SECTIONS = {" in page
+    for key in ("ops:", "growth:", "ledger:", "disputes:"):
+        assert key in page, f"no heading defined for {key}"
+    assert 'id="sectionTitle"' in page and 'id="sectionLede"' in page
+
+
+def test_the_nav_icons_are_drawn_not_borrowed():
+    """An emoji is somebody else's illustration at somebody else's weight,
+    and it will not take the nav item's colour."""
+    page = (WEB / "merchant.html").read_text(encoding="utf-8")
+    nav = page[page.index('<div class="tabs">'):page.index('<div class="rail-foot">')]
+    assert nav.count("<svg") == 4
+    assert "stroke=" not in nav or "currentColor" in page   # icons inherit state
+    for emoji in ("📊", "🔔", "⚠", "📋", "🛡"):
+        assert emoji not in nav, "an emoji crept into the nav"
+
+
+def test_the_rail_still_works_on_a_narrow_screen():
+    """A nav you cannot see is a nav you cannot use, and a hamburger for
+    four items is a click to save nothing."""
+    page = (WEB / "merchant.html").read_text(encoding="utf-8")
+    assert "@media (max-width: 900px)" in page
+    narrow = page[page.index("@media (max-width: 900px)"):]
+    assert ".rail" in narrow and "flex-direction: row" in narrow
+
+
+def test_nothing_still_points_at_the_removed_topbar():
+    """The rail carries the wordmark now. A querySelector for the old one
+    threw and took the whole boot with it -- the board rendered empty for
+    no visible reason."""
+    page = (WEB / "merchant.html").read_text(encoding="utf-8")
+    assert "brand-mark" not in page
+    assert 'querySelector(".rail-name")' in page

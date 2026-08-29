@@ -16,18 +16,10 @@
 
   /* ---- sticky command bar: identity, live dot, and the three numbers
          Amma actually cares about while she is working ---- */
-  .cockpit {
-    position: sticky; top: 0; z-index: 45;
-    background: var(--coffee); border-bottom: 1px solid var(--coffee-border);
-  }
-  .cockpit-inner {
-    max-width: 1400px; margin: 0 auto; padding: 12px 24px;
-    display: flex; align-items: center; gap: 22px; flex-wrap: wrap;
-  }
-  .kpis { margin-left: auto; display: flex; gap: 10px; flex-wrap: wrap; }
+  .kpis { margin-left: auto; display: flex; gap: 4px; flex-wrap: wrap; }
   .kpi {
     display: flex; flex-direction: column; gap: 1px;
-    padding: 6px 15px; border-left: 1px solid var(--coffee-border);
+    padding: 4px 16px; border-left: 1px solid var(--line);
   }
   .kpi:first-child { border-left: 0; }
   .kpi .n { font-family: var(--font-display); font-size: 22px; font-weight: 700;
@@ -38,24 +30,108 @@
   .kpi.act .n { color: #FFB020; }
   .kpi.std .n { color: #FFB020; }
 
-  /* ---- tabs ---- */
-  .tabs { display: flex; gap: 3px; border-bottom: 1px solid var(--coffee-border); margin-bottom: 22px; }
+  /* ---- the shell ----
+
+     A console is operated, not read top to bottom, so it gets a proper
+     application frame: a fixed rail on the left holding the four places
+     you can be, and one scrolling column of work on the right.
+
+     A horizontal tab strip was the wrong shape for this. Four labels of
+     wildly different lengths made a ragged row, the counts had nowhere
+     good to sit, and there was no room to say what each section is for.
+     A rail gives every section the same footprint, puts its count at a
+     consistent right edge, and leaves the whole width for the work. */
+
+  .shell { display: grid; grid-template-columns: 248px minmax(0, 1fr); min-height: 100vh; }
+
+  .rail {
+    position: sticky; top: 0; align-self: start; height: 100vh;
+    display: flex; flex-direction: column;
+    background: var(--card); border-right: 1px solid var(--line);
+    padding: 20px 14px 16px;
+  }
+  .rail-brand {
+    display: flex; align-items: center; gap: 10px;
+    padding: 0 8px 18px; margin-bottom: 6px;
+    border-bottom: 1px solid var(--line);
+  }
+  .rail-mark {
+    width: 30px; height: 30px; border-radius: 9px; flex: none;
+    background: radial-gradient(circle at 30% 30%, var(--lilac), var(--violet));
+    box-shadow: 0 6px 18px rgba(138, 92, 255, .38);
+  }
+  .rail-name { font-weight: 800; font-size: 14.5px; letter-spacing: -.02em; line-height: 1.15; }
+  .rail-role {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--muted-2);
+  }
+
+  .rail-label {
+    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted-2);
+    padding: 16px 8px 8px;
+  }
+
+  /* `.tabs` and `.tabs button` keep their names: showTab() and every
+     count badge select by them, and renaming would have meant editing
+     the JS for a purely visual change. */
+  .tabs { display: flex; flex-direction: column; gap: 2px; }
   .tabs button {
-    appearance: none; border: 0; background: transparent; cursor: pointer;
-    font-family: var(--font-body); font-size: 14px; font-weight: 600; color: #948FA8;
-    padding: 11px 16px; border-bottom: 2px solid transparent; margin-bottom: -1px;
-    display: inline-flex; align-items: center; gap: 8px;
-    transition: color .15s ease, border-color .15s ease;
+    appearance: none; border: 0; cursor: pointer; width: 100%;
+    display: flex; align-items: center; gap: 11px;
+    font-family: var(--font-body); font-size: 13.5px; font-weight: 600;
+    color: var(--muted); background: transparent;
+    padding: 10px 11px; border-radius: 10px; text-align: left;
+    position: relative;
+    transition: background .14s ease, color .14s ease;
   }
-  .tabs button:hover { color: var(--ink); }
-  .tabs button.on { color: var(--gold); border-bottom-color: var(--gold); }
+  .tabs button svg { width: 17px; height: 17px; flex: none; stroke: currentColor; }
+  .tabs button .lbl { flex: 1; min-width: 0; }
+  .tabs button:hover { background: rgba(255, 255, 255, .04); color: var(--ink); }
+  .tabs button.on { background: var(--gold-soft); color: var(--lilac); }
+  .tabs button.on::before {
+    content: ""; position: absolute; left: -14px; top: 9px; bottom: 9px;
+    width: 2px; border-radius: 0 2px 2px 0; background: var(--violet);
+  }
+
   .tab-count {
-    font-size: 10.5px; font-weight: 700; min-width: 18px; padding: 1px 6px;
-    border-radius: 999px; background: var(--coffee); color: #C9C2E0;
-    font-family: var(--font-mono);
+    font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+    min-width: 20px; padding: 2px 7px; border-radius: 999px; text-align: center;
+    background: rgba(255, 255, 255, .07); color: var(--muted);
   }
-  .tabs button.on .tab-count { background: var(--gold); color: #fff; }
-  .tab-count.hot { background: var(--rust); color: var(--ink); }
+  .tabs button.on .tab-count { background: var(--violet); color: #fff; }
+  /* Something is waiting on a human: amber, the same as everywhere else. */
+  .tab-count.hot { background: var(--amber); color: #2B1A00; }
+
+  .rail-foot {
+    margin-top: auto; padding-top: 14px; border-top: 1px solid var(--line);
+    display: flex; flex-direction: column; gap: 1px;
+  }
+  .rail-foot a, .rail-foot button {
+    display: block; width: 100%; text-align: left;
+    font-family: var(--font-body); font-size: 12.5px; font-weight: 500;
+    color: var(--muted-2); padding: 7px 11px; border-radius: 8px;
+    background: transparent; border: 0; cursor: pointer; text-decoration: none;
+  }
+  .rail-foot a:hover, .rail-foot button:hover {
+    background: rgba(255, 255, 255, .04); color: var(--ink); text-decoration: none;
+  }
+  .rail-foot form { margin: 0; }
+
+  /* ---- the working column ---- */
+  .work { min-width: 0; display: flex; flex-direction: column; }
+
+  .work-top {
+    position: sticky; top: 0; z-index: 40;
+    background: rgba(10, 7, 20, .88);
+    backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--line);
+    padding: 13px 30px;
+    display: flex; align-items: center; gap: 20px; flex-wrap: wrap;
+  }
+  .work-body { padding: 26px 30px 60px; }
+  @media (max-width: 640px) { .work-top { padding: 12px 16px; } .work-body { padding: 20px 16px 48px; } }
+
   .panel { display: none; }
   .panel.on { display: block; animation: fade .2s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
@@ -63,6 +139,23 @@
   /* ---- tab 1: two columns, queue beside the phone ---- */
   .ops { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(300px, .85fr); gap: 20px; align-items: start; }
   @media (max-width: 1020px) { .ops { grid-template-columns: 1fr; } }
+
+  /* Below a laptop the rail lies down rather than disappearing: a nav you
+     cannot see is a nav you cannot use, and a hamburger for four items is
+     a click to save nothing. */
+  @media (max-width: 900px) {
+    .shell { grid-template-columns: 1fr; }
+    .rail {
+      position: static; height: auto; flex-direction: row; align-items: center;
+      gap: 10px; padding: 10px 14px; overflow-x: auto;
+      border-right: 0; border-bottom: 1px solid var(--line);
+    }
+    .rail-brand, .rail-label, .rail-foot { display: none; }
+    .tabs { flex-direction: row; gap: 4px; }
+    .tabs button { width: auto; white-space: nowrap; padding: 8px 12px; }
+    .tabs button.on::before { display: none; }
+    .work-top { position: static; }
+  }
 
   /* Pinned to the board: a paper chit, tacked up at a slight angle with
      status edge -- amber where a human is being asked, coral where a hard
@@ -242,25 +335,53 @@
   <div class="aurora aurora-quiet" aria-hidden="true"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
 
 
-  <div class="topbar">
-    <div class="brand">
-      <span class="brand-mark">Amma's Kitchen</span>
-      <span class="brand-role">Merchant</span>
+<!-- No topbar: the rail carries the wordmark, the role and every link,
+     so a second bar above it would repeat itself and cost 66px of the
+     working area on every screen. -->
+<div class="shell">
+
+  <!-- The rail: the four places you can be, and the way out. -->
+  <nav class="rail" aria-label="Sections">
+    <div class="rail-brand">
+      <div class="rail-mark"></div>
+      <div>
+        <div class="rail-name">Amma's Kitchen</div>
+        <div class="rail-role">Merchant</div>
+      </div>
     </div>
-    <div class="topbar-links">
+
+    <div class="rail-label">Your shop</div>
+    <div class="tabs">
+      <button id="tab-ops" class="on" onclick="showTab('ops')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16v9H8l-4 4z"/><path d="M9 9h6"/></svg><span class="lbl">Live ops</span>
+        <span class="tab-count" id="opsCount">0</span>
+      </button>
+      <button id="tab-growth" onclick="showTab('growth')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18l5-5 3 3 7-7"/><path d="M15 9h4v4"/></svg><span class="lbl">Growth &amp; yield</span>
+      </button>
+      <button id="tab-ledger" onclick="showTab('ledger')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4h14v16l-3-2-2 2-2-2-2 2-2-2-3 2z"/><path d="M9 9h6M9 13h6"/></svg><span class="lbl">Trust &amp; ledger</span>
+      </button>
+      <button id="tab-disputes" onclick="showTab('disputes')">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg><span class="lbl">Disputes</span>
+        <span class="tab-count" id="disputeCount">0</span>
+      </button>
+    </div>
+
+    <div class="rail-foot">
       <a href="/merchant">Shop settings</a>
       <a href="/buyer/order">Buyer console</a>
       <a href="/audit">Full audit trail</a>
       <a href="/">Home</a>
-      <form method="post" action="/merchant/logout" style="display:inline; margin:0">
-        <button type="submit" class="btn btn-ghost btn-sm">Sign out</button>
+      <form method="post" action="/merchant/logout">
+        <button type="submit">Sign out</button>
       </form>
     </div>
-  </div>
+  </nav>
 
-  <!-- Sticky cockpit: the three numbers worth watching while working. -->
-  <div class="cockpit">
-    <div class="cockpit-inner">
+  <div class="work">
+    <!-- The numbers worth watching while working, on every section. -->
+    <div class="work-top">
       <span class="live"><span class="dot"></span> live</span>
       <div class="kpis">
         <div class="kpi rev"><span class="n" id="kpiRevenue">₹0</span><span class="l">Today's revenue</span></div>
@@ -269,28 +390,15 @@
         <div class="kpi std"><span class="n" id="kpiStanding">0%</span><span class="l">From standing orders</span></div>
       </div>
     </div>
-  </div>
 
-  <div class="page">
-    <h1>Orders needing your decision</h1>
-    <p class="lede">
-      These are the ones the system refused to decide on its own. Everything else it
-      already handled inside the bounds you set — and everything it refused outright
-      never reached Razorpay at all.
-    </p>
+    <div class="work-body">
+      <!-- Written by showTab(), because a heading that says "Orders
+           needing your decision" while you are reading the disputes
+           list is worse than no heading. -->
+      <h1 id="sectionTitle">Orders needing your decision</h1>
+      <p class="lede" id="sectionLede"></p>
 
-    <div class="mandate-strip" id="mandateStrip"></div>
-
-    <div class="tabs">
-      <button id="tab-ops" class="on" onclick="showTab('ops')">
-        Live ops &amp; escalations <span class="tab-count" id="opsCount">0</span>
-      </button>
-      <button id="tab-growth" onclick="showTab('growth')">AI growth &amp; yield</button>
-      <button id="tab-ledger" onclick="showTab('ledger')">Trust &amp; audit ledger</button>
-      <button id="tab-disputes" onclick="showTab('disputes')">
-        Disputes <span class="tab-count" id="disputeCount">0</span>
-      </button>
-    </div>
+      <div class="mandate-strip" id="mandateStrip"></div>
 
     <!-- ══════════════════ TAB 1 ══════════════════ -->
     <section class="panel on" id="panel-ops">
@@ -435,7 +543,9 @@
         </table>
       </div>
     </section>
-  </div>
+    </div><!-- /.work-body -->
+  </div><!-- /.work -->
+</div><!-- /.shell -->
 
 <script>
 /* The credential this page presents to /webhook/sms-reply.
@@ -573,11 +683,49 @@ const DECISION_PATH = {
 
 /* ----------------------------------------------------------------- tabs */
 
+/* What each section is, in her words rather than the system's.
+
+   The page used to carry one fixed heading -- "Orders needing your
+   decision" -- which was right on the first section and wrong on the
+   other three: it still said that while you were reading the disputes
+   list. A heading that lies about where you are is worse than none. */
+const SECTIONS = {
+  ops: {
+    title: "Orders needing your decision",
+    lede: "These are the ones the system refused to decide on its own. Everything else "
+        + "it already handled inside the bounds you set — and everything it refused "
+        + "outright never reached Razorpay at all.",
+  },
+  growth: {
+    title: "Growth & yield",
+    lede: "What your agents have learned about demand, what people asked for that you "
+        + "don't sell, and the one button that reprices your menu from your own stock.",
+  },
+  ledger: {
+    title: "Trust & audit ledger",
+    lede: "Every agent that has ordered here, the trust it has earned from its own "
+        + "history, and every decision on record — yours and the system's.",
+  },
+  disputes: {
+    title: "Disputes",
+    lede: "Flag an order and pull its full Proof of Authorization: what the customer "
+        + "authorised, under which limits, and who confirmed what.",
+  },
+};
+
 function showTab(name) {
   for (const id of ["ops", "growth", "ledger", "disputes"]) {
     $("panel-" + id).classList.toggle("on", id === name);
     $("tab-" + id).classList.toggle("on", id === name);
   }
+  const section = SECTIONS[name];
+  if (section) {
+    $("sectionTitle").textContent = section.title;
+    $("sectionLede").textContent = section.lede;
+  }
+  // The mandate belongs to the orders screen; on the others it is a
+  // fact about a page you are not looking at.
+  $("mandateStrip").style.display = name === "ops" ? "" : "none";
 }
 
 /* ---------------------------------------------------------------- boot */
@@ -590,7 +738,14 @@ async function boot() {
     window.location.href = "/merchant";
     return;
   }
-  document.querySelector(".brand-mark").textContent = config.profile.shop_name;
+  // The rail carries the wordmark now; the topbar is gone. Guarded
+  // because a missing element here used to throw and take the whole
+  // boot with it -- the board would render empty for no visible reason.
+  const wordmark = document.querySelector(".rail-name");
+  if (wordmark) wordmark.textContent = config.profile.shop_name;
+
+  // Seed the heading and lede for the section we open on.
+  showTab("ops");
 
   MANDATE = (await api("/api/menu")).mandate;
   $("mandateStrip").innerHTML =
