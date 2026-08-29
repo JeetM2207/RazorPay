@@ -596,6 +596,10 @@ class RoutineIn(BaseModel):
     phone: str | None = None
     routine_cap_inr: int | None = None
     window_minutes: int = 45
+    # The customer's own offset from UTC. Their "08:00" means eight where
+    # THEY are; without this the gate measured it against UTC and a
+    # routine outside that zone could never fire.
+    utc_offset_minutes: int | None = None
 
 
 @app.get("/api/routines")
@@ -619,6 +623,7 @@ def create_routine(req: RoutineIn) -> dict:
             items=[{"item_id": i.item_id, "qty": i.qty} for i in req.items],
             days=req.days, at_time=req.time, agent_id=req.agent_id, phone=req.phone,
             routine_cap_inr=req.routine_cap_inr, window_minutes=req.window_minutes,
+            utc_offset_minutes=req.utc_offset_minutes,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))
@@ -878,8 +883,66 @@ def events(limit: int = 40) -> dict:
 @app.get("/api/payment-status/{payment_link_id}")
 def payment_status(payment_link_id: str) -> dict:
     """Lets the buyer console show 'paid' without the user refreshing.
-    Asks Razorpay directly rather than trusting local state."""
+
+    Asks Razorpay directly rather than trusting local state -- and RECORDS
+    the answer, which it used to leave undone.
+
+    That gap was invisible until someone tested without a tunnel. The
+    webhook is what normally writes a capture to the trail, and it cannot
+    reach a laptop with no ngrok running: the customer paid, Razorpay
+    said "paid", this endpoint said "paid", the screen said "paid", and
+    the audit row still had no payment id. So the order never appeared in
+    the customer's statement, never entered the pay-first lifecycle, and
+    Amma was never asked about the ones that needed her. Everything
+    correct except the one thing that mattered.
+
+    The recording goes through the SAME claim and the SAME follow-up the
+    webhook and the reconciler use, so this is a third path to the fact
+    and not a third version of it -- whichever gets there first wins and
+    the others no-op.
+    """
     import razorpay_client
 
     link = razorpay_client.fetch_payment_link(payment_link_id)
-    return {"status": link["status"]}
+    status = link["status"]
+
+    if status == "paid":
+        try:
+            _record_capture(payment_link_id, link)
+        except Exception:
+            # Reporting the status must not fail because recording it did;
+            # the reconciler is still the safety net behind this.
+            log.exception("could not record the capture for %s", payment_link_id)
+
+    return {"status": status}
+
+
+def _record_capture(payment_link_id: str, link: dict) -> None:
+    """Write a capture the webhook never delivered."""
+    import idempotency
+    import mcp_orders
+
+    original = audit_log.get_event_by_payment_link(
+        payment_link_id, db_path=audit_log.DEFAULT_DB_PATH
+    )
+    if original is None or original["payment_id"]:
+        return
+
+    payments = link.get("payments") or []
+    payment_id = next(
+        (p.get("payment_id") or p.get("id") for p in payments
+         if p.get("status") == "captured"), None
+    )
+    if not payment_id:
+        return
+
+    # The same ledger and the same key the webhook claims under, so a
+    # webhook that arrives late finds the work already done rather than
+    # doing it twice.
+    if not idempotency.claim_event(
+        "payment_link.paid", payment_link_id, audit_log.DEFAULT_DB_PATH
+    ):
+        return
+
+    audit_log.mark_paid(original["id"], payment_id, db_path=audit_log.DEFAULT_DB_PATH)
+    mcp_orders.follow_up_after_capture(original, payment_id)

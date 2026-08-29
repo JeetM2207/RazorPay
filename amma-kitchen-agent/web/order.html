@@ -1647,6 +1647,16 @@ function countUp(el, target, { duration = 1100, prefix = "", suffix = "" } = {})
   el.dataset.counted = String(target);
   if (REDUCED_MOTION) { el.textContent = prefix + target + suffix; return; }
 
+  /* requestAnimationFrame does not fire in a background tab. Without
+     this the animation never starts, the guard above then blocks every
+     retry, and the number sits at zero permanently -- open the console
+     in a background tab, come back, and every KPI reads 0 while the
+     data behind it is correct. Found exactly that way.
+
+     So: animate only when the page is actually visible, and land the
+     real value either way. */
+  if (document.visibilityState === "hidden") { el.textContent = prefix + target + suffix; return; }
+
   const start = performance.now();
   const tick = (now) => {
     const p = Math.min(1, (now - start) / duration);
@@ -1654,6 +1664,10 @@ function countUp(el, target, { duration = 1100, prefix = "", suffix = "" } = {})
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+
+  // Belt and braces: if the frames never came, put the number up anyway.
+  setTimeout(() => { if (el.dataset.counted === String(target)) el.textContent = prefix + target + suffix; },
+             duration + 120);
 }
 
 /* ------------------------------------------------------------- the bento */
@@ -1875,6 +1889,11 @@ $("routineCreate").addEventListener("click", async () => {
         items, days, time: $("routineTime").value.trim(),
         agent_id: PROFILE.agent_id, phone: PROFILE.phone,
         routine_cap_inr: parseInt($("routineCap").value, 10) || null,
+        // The time above is what you typed on YOUR clock. Sent so the
+        // server measures it against the same one -- without it a
+        // routine set for 22:13 in Delhi was compared against 16:43 UTC
+        // and could never fire.
+        utc_offset_minutes: -new Date().getTimezoneOffset(),
       }),
     });
     toast("Standing order on. Your agent will place it automatically inside that cap.");

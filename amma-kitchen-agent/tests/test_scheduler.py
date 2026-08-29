@@ -145,7 +145,8 @@ def test_an_order_she_answered_is_not_expired(env, monkeypatch):
 
 def _routine(**over):
     kwargs = dict(items=[{"item_id": "veg_thali", "qty": 1}], days=["tue"],
-                  at_time="08:00", agent_id="agent-routine", phone="8306610707")
+                  at_time="08:00", agent_id="agent-routine", phone="8306610707",
+                  utc_offset_minutes=0)
     kwargs.update(over)
     return routines.create(**kwargs)
 

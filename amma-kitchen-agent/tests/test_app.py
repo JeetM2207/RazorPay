@@ -513,20 +513,38 @@ def test_the_sms_feed_says_who_each_message_was_for(client, monkeypatch):
     assert body["escalations"] == [], "nothing was ever asked of the merchant"
 
 
-def test_the_phone_labels_each_message_and_matches_its_buttons(client):
-    """A message that asks the customer for YES/NO must not be shown with
-    the merchant's 1/2 buttons under it -- that was the bug."""
+def test_her_console_shows_only_messages_addressed_to_her(client):
+    """The earlier fix labelled the customer's questions and showed them
+    anyway. That was the wrong call.
+
+    Both parties reach the same outbox -- in a demo they are usually the
+    same phone number -- but a merchant board should show what was said to
+    HER. A question addressed to somebody else, with reply buttons under
+    it that answer a different conversation, is noise at best. The
+    customer answers in the buyer console, where their question is.
+    """
     page = client.get("/merchant/orders").text
 
     assert "renderQuickReplies" in page
-    assert "to the customer" in page and "to Amma" in page
-    # The vocabularies are chosen per message, not hardcoded in the markup.
-    assert 'data-reply="YES"' in page
-    # The merchant's buttons now carry the waiting order's single-use
-    # code, because a bare "1" no longer moves anything -- see
-    # tests/test_reply_codes.py.
+    # The filter is the whole point.
+    assert '(m.audience || "merchant") !== "customer"' in page
+
+    # No customer vocabulary on this screen at all any more: those
+    # messages are not here to be answered.
+    assert 'data-reply="YES"' not in page
+    assert "answer in the buyer console" not in page
+
+    # Hers still carry the single-use code, because a bare "1" no longer
+    # moves anything -- see tests/test_reply_codes.py.
     assert 'data-reply="1 ${code}"' in page
-    assert "answer in the buyer console" in page
+
+
+def test_her_console_is_not_dressed_up_as_a_phone(client):
+    """A fake handset around real content adds nothing a merchant needs
+    and reads as a toy on a board she is meant to work from."""
+    page = client.get("/merchant/orders").text
+    for prop in ("phone-screen", "phone-av", "phone-who", "phone-feed", "phone-top"):
+        assert prop not in page, f"the phone mock-up left {prop} behind"
 
 
 # ------------------------------- pay-first, from the buyer console this time

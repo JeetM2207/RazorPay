@@ -64,6 +64,10 @@ def _routine(**over):
         items=[{"item_id": "veg_thali", "qty": 1}],
         days=["tue"], at_time="08:00", agent_id="agent-routine",
         phone="8306610707",
+        # UTC, so the fixed `now` values in these tests line up with the
+        # routine's clock. A real routine records the customer's own
+        # offset from their browser -- see routines._local.
+        utc_offset_minutes=0,
     )
     kwargs.update(over)
     return routines.create(**kwargs)

@@ -318,7 +318,8 @@ def test_a_routine_firing_into_a_breached_window_is_refused(shop, monkeypatch):
 
     r = routines.create(items=[{"item_id": "masala_dosa", "qty": 1}],
                         days=["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-                        at_time="12:00", agent_id="agent-routine", phone="8306610707")
+                        at_time="12:00", agent_id="agent-routine", phone="8306610707",
+                        utc_offset_minutes=0)
 
     assert routines.check_and_fire(r["id"], now=T0)["fired"] is True
     second = routines.check_and_fire(r["id"], now=T0 + timedelta(minutes=1))

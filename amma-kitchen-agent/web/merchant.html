@@ -103,50 +103,47 @@
   .reduce .qty { min-width: 24px; text-align: center; font-weight: 650; font-size: 13.5px; }
 
   /* ---- the phone ---- */
-  .phone {
+  /* Her messages. Deliberately NOT a phone mock-up: a fake handset
+     around real content adds nothing a merchant needs and reads as a
+     toy on a board she is meant to work from. This is a message list. */
+  .msgs {
     position: sticky; top: 130px;
-    background: var(--coffee); border-radius: 20px; padding: 14px;
-    border: 1px solid var(--coffee-border);
-    box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; overflow: hidden;
+    display: flex; flex-direction: column; max-height: 560px;
   }
-  .phone-screen {
-    background: var(--coffee); border-radius: 12px; overflow: hidden;
-    display: flex; flex-direction: column; height: 505px;
+  .msg-feed {
+    flex: 1; overflow-y: auto; padding: 6px 0;
+    display: flex; flex-direction: column;
   }
-  .phone-top {
-    padding: 11px 15px; background: #0B0716; border-bottom: 1px solid var(--dark-line);
-    display: flex; align-items: center; gap: 9px;
-  }
-  .phone-av {
-    width: 30px; height: 30px; border-radius: 50%; flex: none;
-    background: #3DE8A0; color: var(--ink); display: grid; place-items: center;
-    font-size: 13px; font-weight: 700;
-  }
-  .phone-who { font-size: 13px; font-weight: 620; color: #F5F3FA; line-height: 1.2; }
-  .phone-sub { font-size: 10.5px; color: #948FA8; }
-  .phone-feed { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 9px; }
-  .phone-feed::-webkit-scrollbar { width: 6px; }
-  .phone-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.09); border-radius: 4px; }
+  .msg-feed::-webkit-scrollbar { width: 6px; }
+  .msg-feed::-webkit-scrollbar-thumb { background: rgba(255,255,255,.1); border-radius: 4px; }
+
   .bubble {
-    max-width: 92%; align-self: flex-start;
-    background: var(--coffee-2); color: var(--ink); border-radius: 10px;
-    padding: 12px 14px; font-size: 13px; line-height: 1.5; white-space: pre-wrap;
+    padding: 15px 18px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap;
+    border-bottom: 1px solid var(--line); color: var(--ink);
   }
-  .bubble-meta { display: flex; justify-content: space-between; gap: 9px; align-items: center; margin-top: 6px; }
-  .bubble-to { font-family: var(--mono); font-size: 10px; color: #948FA8; }
-  .bubble-fail { color: #FF7A5C; font-size: 10.5px; margin-top: 5px; }
-  /* A message written for the customer, shown here because in a demo the
-     two people are usually the same phone. Tinted and labelled so it is
-     never mistaken for something Amma is being asked. */
-  .bubble.to-customer { background: #0E2B22; border: 1px dashed #1E5B44; }
+  .bubble:last-child { border-bottom: 0; }
+  .bubble-meta {
+    display: flex; justify-content: space-between; gap: 9px; align-items: center;
+    margin-top: 10px;
+  }
+  .bubble-to { font-family: var(--mono); font-size: 10.5px; color: var(--muted-2); }
+  .bubble-fail { color: var(--coral); font-size: 11px; margin-top: 6px; }
   .bubble-tag {
-    font-size: 9.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase;
-    color: #FFC96B; margin-bottom: 6px; display: block;
+    font-family: var(--mono);
+    font-size: 9.5px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--muted-2); margin-bottom: 8px; display: block;
   }
-  .bubble.to-customer .bubble-tag { color: #FFC96B; }
+  .msg-reply { border-top: 1px solid var(--line); background: var(--card-2); padding: 13px 15px; }
+  .msg-empty {
+    color: var(--muted-2); font-size: 13px; text-align: center;
+    margin: auto; padding: 40px 24px; line-height: 1.6;
+  }
+
   .qr-hint { font-size: 10.5px; color: #948FA8; margin: 0 0 8px; text-align: center; }
   .bubble .badge { font-size: 9.5px; padding: 1px 7px; }
-  .phone-empty { color: #948FA8; font-size: 12.5px; text-align: center; margin: auto; padding: 0 20px; line-height: 1.6; }
+
   .phone-input { border-top: 1px solid var(--dark-line); background: #0B0716; padding: 11px; }
   .quick-replies { display: flex; flex-direction: column; margin-bottom: 9px; }
   .quick-replies button {
@@ -304,23 +301,19 @@
         </div>
 
         <div>
-          <h2>Amma's phone <span class="badge badge-mute" id="smsTransport">mock</span></h2>
-          <div class="phone">
-            <div class="phone-screen">
-              <div class="phone-top">
-                <div class="phone-av">AK</div>
-                <div>
-                  <div class="phone-who">Amma's Kitchen bot</div>
-                  <div class="phone-sub" id="phoneSub">WhatsApp · mock transport</div>
-                </div>
-              </div>
-              <div class="phone-feed" id="smsOutbox"></div>
-              <div class="phone-input">
-                <div class="quick-replies" id="quickReplies"></div>
-                <div class="phone-row">
-                  <input type="text" id="smsReply" placeholder="Reply as Amma: 1, 2, or 1 #42" autocomplete="off">
-                  <button class="phone-send" id="smsSendBtn">Send</button>
-                </div>
+          <h2>Messages sent to you
+            <span class="badge badge-mute" id="smsTransport">mock</span></h2>
+          <p class="note" style="margin:-4px 0 12px" id="phoneSub">
+            Delivered over WhatsApp when Twilio is configured.
+          </p>
+          <div class="msgs">
+            <div class="msg-feed" id="smsOutbox"></div>
+            <div class="msg-reply">
+              <div class="quick-replies" id="quickReplies"></div>
+              <div class="phone-row">
+                <input type="text" id="smsReply" placeholder="Your reply — e.g. 1 4417"
+                       autocomplete="off">
+                <button class="phone-send" id="smsSendBtn">Send</button>
               </div>
             </div>
           </div>
@@ -496,6 +489,16 @@ function countUp(el, target, { duration = 1000, prefix = "", suffix = "" } = {})
   el.dataset.counted = String(target);
   if (REDUCED_MOTION) { el.textContent = fmt(target); return; }
 
+  /* requestAnimationFrame does not fire in a background tab. Without
+     this the animation never starts, the guard above then blocks every
+     retry, and the number sits at zero permanently -- open the console
+     in a background tab, come back, and every KPI reads 0 while the
+     data behind it is correct. Found exactly that way.
+
+     So: animate only when the page is actually visible, and land the
+     real value either way. */
+  if (document.visibilityState === "hidden") { el.textContent = fmt(target); return; }
+
   const start = performance.now();
   const tick = (now) => {
     const p = Math.min(1, (now - start) / duration);
@@ -503,6 +506,10 @@ function countUp(el, target, { duration = 1000, prefix = "", suffix = "" } = {})
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
+
+  // Belt and braces: if the frames never came, put the number up anyway.
+  setTimeout(() => { if (el.dataset.counted === String(target)) el.textContent = fmt(target); },
+             duration + 120);
 }
 const HARD_RULE = (reason) => !reason.includes("human confirmation threshold");
 
@@ -675,35 +682,41 @@ async function renderSms() {
   const badge = $("smsTransport");
   badge.textContent = live ? "live via Twilio" : "mock outbox";
   badge.className = "badge " + (live ? "badge-ok" : "badge-mute");
-  $("phoneSub").textContent = live ? "WhatsApp · live via Twilio" : "WhatsApp · mock transport";
+  $("phoneSub").textContent = live
+    ? "Delivered over WhatsApp via Twilio."
+    : "Twilio is off, so these are shown here instead of being sent. The reply box below "
+      + "posts to the same endpoint a real WhatsApp reply does.";
 
-  $("smsOutbox").innerHTML = body.outbox.length
-    ? body.outbox.slice().reverse().map((m) => {
-        const forCustomer = m.audience === "customer";
-        // "awaiting reply" is only claimed where it can be checked: a
-        // merchant escalation is tracked by order id. Nothing in this
-        // payload knows whether the CUSTOMER has answered yet, so the
-        // console does not pretend to -- it says who the message was for
-        // and stops there.
-        const answered = forCustomer ? null : body.escalations.find(
+  /* HER messages only.
+
+     Both parties reach the same outbox -- in a demo they are usually the
+     same phone number -- so this panel used to show the customer's
+     questions too, labelled. That was the wrong call: a merchant board
+     should show what was said to HER. A question addressed to somebody
+     else, with reply buttons under it that answer a different
+     conversation, is noise at best and misleading at worst. The customer
+     answers in the buyer console, which is where their question is. */
+  const mine = body.outbox.filter((m) => (m.audience || "merchant") !== "customer");
+
+  $("smsOutbox").innerHTML = mine.length
+    ? mine.slice().reverse().map((m) => {
+        const answered = body.escalations.find(
           (e) => m.body.includes(`Order #${e.order_id}`) && e.answered
         );
         return `
-          <div class="bubble ${forCustomer ? "to-customer" : ""}">
-            <span class="bubble-tag">${forCustomer ? "→ to the customer" : "→ to Amma"}</span>
+          <div class="bubble">
+            <span class="bubble-tag">Amma's Kitchen bot</span>
             ${esc(m.body)}
             <div class="bubble-meta">
               <span class="bubble-to">to ${esc(m.to)}</span>
-              ${forCustomer
-                ? `<span class="badge badge-info">answer in the buyer console</span>`
-                : answered
-                  ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
-                  : `<span class="badge badge-warn">awaiting reply</span>`}
+              ${answered
+                ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
+                : `<span class="badge badge-warn">awaiting reply</span>`}
             </div>
             ${m.error ? `<div class="bubble-fail">delivery failed: ${esc(m.error)}</div>` : ""}
           </div>`;
       }).join("")
-    : `<div class="phone-empty">No alerts yet.<br>An escalation texts Amma automatically.</div>`;
+    : `<div class="msg-empty">Nothing sent to you yet.<br>An order over your limit messages you automatically.</div>`;
 
   renderQuickReplies(body);
   $("smsOutbox").scrollTop = $("smsOutbox").scrollHeight;
@@ -716,39 +729,32 @@ async function renderSms() {
    offering "1 / 2" under a message that says "reply YES or NO" produces a
    reply that answers nobody and silently does nothing. */
 function renderQuickReplies(body) {
-  const newest = body.outbox[0];
+  /* Every reply that moves money needs the single-use code from the
+     message, so the buttons carry the waiting order's -- otherwise the
+     mock path, which exists precisely so the loop can be demoed offline,
+     would send a bare "1" and be refused. The code is shown ON the
+     button rather than hidden in it, because what she has to type is
+     exactly what she should see.
+
+     There is no customer branch here any more: the customer's questions
+     are not on this screen, so there is nothing to disambiguate. */
+  const open = (body.escalations || []).filter((e) => !e.answered);
   const el = $("quickReplies");
 
-  if (newest && newest.audience === "customer") {
-    el.innerHTML =
-      `<p class="qr-hint">The last message asked the CUSTOMER — they answer YES or NO,
-         with the code, in the buyer console.</p>` +
-      `<div style="display:flex; gap:7px; width:100%">
-         <button class="qr-yes" data-reply="YES">YES</button>
-         <button class="qr-no" data-reply="NO">NO</button>
-       </div>`;
+  if (!open.length) {
+    el.innerHTML = `<p class="qr-hint">Nothing waiting on you.</p>`;
     return;
   }
 
-  /* Every reply that moves money needs the single-use code from the
-     message, so the buttons carry the waiting order's — otherwise the
-     mock path, which exists precisely so the loop can be demoed offline,
-     would send a bare "1" and be refused. The code is shown on the button
-     rather than hidden in it, because what she has to type is exactly
-     what she should see. */
-  const open = (body.escalations || []).filter((e) => !e.answered);
-  const code = open.length ? open[0].code : "";
-  const waiting = open.length;
-
+  const code = open[0].code || "";
   el.innerHTML =
-    `<p class="qr-hint">${waiting
-      ? `Amma has ${waiting} order${waiting === 1 ? "" : "s"} to answer — reply with the code.`
-      : "Nothing outstanding."}</p>` +
+    `<p class="qr-hint">Order #${open[0].order_id} — reply with the code.</p>` +
     `<div style="display:flex; gap:7px; width:100%">
        <button class="qr-yes" data-reply="1 ${code}">1 ${code} · Approve</button>
        <button class="qr-no" data-reply="2 ${code}">2 ${code} · Reject</button>
      </div>`;
 }
+
 
 document.addEventListener("click", (e) => {
   const btn = e.target.closest("#quickReplies button[data-reply]");

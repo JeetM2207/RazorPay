@@ -102,6 +102,7 @@ def create(
     routine_cap_inr: int | None = None,
     window_minutes: int = DEFAULT_WINDOW_MINUTES,
     source: str = "manual",
+    utc_offset_minutes: int | None = None,
 ) -> dict:
     """Record a standing order the customer has explicitly turned on.
 
@@ -141,6 +142,14 @@ def create(
         "setup_total_inr": setup_total,
         "status": "active",
         "source": source,
+        # The customer's own offset from UTC, sent by their browser. Their
+        # "08:00" means eight where THEY are; without this the gate
+        # measured it against UTC and a routine outside that zone could
+        # never fire.
+        "utc_offset_minutes": (
+            int(utc_offset_minutes) if utc_offset_minutes is not None
+            else _server_offset_minutes()
+        ),
         "created_at": datetime.now(timezone.utc).isoformat(),
         "last_fired_at": None,
         "next_expected_at": None,
@@ -177,20 +186,50 @@ def set_status(routine_id: str, status: str) -> dict | None:
 
 # ------------------------------------------------------ the confidence gate
 
+def _local(now: datetime, routine: dict) -> datetime:
+    """`now` as the customer's own wall clock.
+
+    A routine's time is what somebody TYPED -- "08:00" means eight in the
+    morning where they are. Everything internal runs in UTC, so comparing
+    the two directly is wrong by the whole offset: a customer in India who
+    asked for 22:13 was measured against 16:43 UTC and their routine could
+    never fire at all. Silent, and it only shows up if you set one up and
+    wait.
+
+    So the offset is recorded when the routine is created, from the
+    customer's own browser, and `now` is converted into that zone before
+    any hour is read off it. Routines made before this defaulted to the
+    server's offset, which is right whenever the kitchen and the customer
+    share a timezone -- a neighbourhood food business, usually.
+    """
+    offset = routine.get("utc_offset_minutes")
+    if offset is None:
+        offset = _server_offset_minutes()
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    return now.astimezone(timezone(timedelta(minutes=int(offset))))
+
+
+def _server_offset_minutes() -> int:
+    local = datetime.now().astimezone()
+    return int(local.utcoffset().total_seconds() // 60)
+
+
 def _within_window(now: datetime, routine: dict) -> tuple[bool, str]:
-    day = DAYS[now.weekday()]
+    here = _local(now, routine)
+    day = DAYS[here.weekday()]
     if day not in routine["days"]:
         return False, (
             f"today is {day}, and this routine repeats on "
             f"{', '.join(routine['days'])}"
         )
     hour, minute = (int(p) for p in routine["time"].split(":"))
-    expected = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
-    drift = abs((now - expected).total_seconds()) / 60
+    expected = here.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    drift = abs((here - expected).total_seconds()) / 60
     window = routine.get("window_minutes", DEFAULT_WINDOW_MINUTES)
     if drift > window:
         return False, (
-            f"it is {now.strftime('%H:%M')} and this routine expects "
+            f"it is {here.strftime('%H:%M')} and this routine expects "
             f"{routine['time']} give or take {int(window)} minutes"
         )
     return True, ""
@@ -348,8 +387,9 @@ def _already_fired_this_occurrence(routine: dict, now: datetime) -> bool:
     if fired_at.tzinfo is None:
         fired_at = fired_at.replace(tzinfo=timezone.utc)
 
+    here = _local(now, routine)
     hour, minute = (int(p) for p in routine["time"].split(":"))
-    expected = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    expected = here.replace(hour=hour, minute=minute, second=0, microsecond=0)
     window = routine.get("window_minutes", DEFAULT_WINDOW_MINUTES)
     return fired_at >= expected - timedelta(minutes=window)
 
