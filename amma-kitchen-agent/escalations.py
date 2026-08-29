@@ -23,10 +23,11 @@ import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Form
+from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import PlainTextResponse
 
 import notification_service
+import reply_auth
 
 router = APIRouter()
 
@@ -261,8 +262,20 @@ def resolve(action: str, order_id: int | None = None) -> dict:
 # --------------------------------------------------------------- webhook
 
 @router.post("/webhook/sms-reply")
-async def sms_reply(Body: str = Form(default=""), From: str = Form(default="")) -> PlainTextResponse:
+async def sms_reply(
+    request: Request,
+    Body: str = Form(default=""),
+    From: str = Form(default=""),
+) -> PlainTextResponse:
     """Inbound SMS/WhatsApp, in Twilio's form-encoded shape.
+
+    AUTHENTICATED FIRST, before anything is read or written. A reply of
+    "1" here approves a merchant order and releases food, so this is a
+    money action -- it gets the same treatment the Razorpay webhook has
+    always had. Two doors, no third: a real Twilio delivery proved by
+    `X-Twilio-Signature`, or a console reply box proved by
+    `X-Internal-Reply-Token`. See reply_auth.py, including why there is
+    deliberately no "skip when SMS_ENABLED=false" branch.
 
     One number serves two different conversations -- Amma deciding an
     escalation, and a customer saying what to order instead -- because
@@ -281,6 +294,18 @@ async def sms_reply(Body: str = Form(default=""), From: str = Form(default="")) 
     Replies in plain text so Twilio echoes it straight back to the sender.
     """
     import buyer_sms
+
+    # Twilio signs EVERY post parameter, not just the two this handler
+    # happens to use, so the whole form goes into the check. Starlette
+    # caches the parsed form, so this is the same object FastAPI already
+    # read for Body and From rather than a second read of the stream.
+    form = await request.form()
+    params = {k: str(v) for k, v in form.items()}
+
+    if reply_auth.authorise(request, params) is None:
+        # Nothing has been parsed, routed, resolved or logged at this
+        # point, and nothing will be.
+        raise HTTPException(status_code=403, detail="unauthenticated reply")
 
     parsed = parse_reply(Body)
     waiting_escalation = _oldest_unanswered()

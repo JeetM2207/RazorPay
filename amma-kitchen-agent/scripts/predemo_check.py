@@ -244,6 +244,37 @@ def check_messaging() -> None:
         report("PASS", "Twilio", f"{account.type} account")
 
 
+def check_reply_auth() -> None:
+    """Is the inbound reply endpoint actually shut?
+
+    /webhook/sms-reply approves merchant orders and releases food. This
+    posts a reply with no signature and no internal token and FAILS if it
+    is accepted -- the one check here that tries something it wants to be
+    refused.
+
+    Safe to run against a live server: the reply is deliberately
+    unparseable ("predemo-check-unsigned"), so even if it were let
+    through, `parse_reply` returns no action and nothing is resolved. It
+    is the STATUS CODE that is being checked, not the effect.
+    """
+    try:
+        resp = requests.post(
+            f"{LOCAL}/webhook/sms-reply",
+            data={"Body": "predemo-check-unsigned", "From": "+10000000000"},
+            timeout=15,
+        )
+    except Exception as exc:
+        report("WARN", "inbound reply is authenticated", f"could not test: {str(exc)[:70]}")
+        return
+
+    if resp.status_code == 403:
+        report("PASS", "inbound reply is authenticated", "an unsigned reply was refused")
+    else:
+        report("FAIL", "inbound reply is authenticated",
+               f"an UNSIGNED reply got HTTP {resp.status_code} -- this endpoint approves "
+               "orders and is open; restart the server if it predates reply_auth.py")
+
+
 # ------------------------------------------------------------- the model
 
 def check_model() -> None:
@@ -464,6 +495,7 @@ def main() -> int:
     check_mcp(public_url)
     check_state()
     check_routines()
+    check_reply_auth()
 
     fails = _RESULTS.count("FAIL")
     warns = _RESULTS.count("WARN")

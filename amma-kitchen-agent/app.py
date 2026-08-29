@@ -40,6 +40,7 @@ import catalog
 import dashboard
 import escalations
 import notification_service
+import reply_auth
 import trust
 import webhook_handler
 import merchant_config
@@ -54,6 +55,10 @@ async def _lifespan(fastapi_app: FastAPI):
     this the MCP endpoint 500s on the first request with "Task group is
     not initialized" -- the session manager never got started.
     """
+    # Said once, loudly, because a missing token otherwise fails at the
+    # worst possible moment: a live reply, mid-demo, 403'd in a way that
+    # looks like a bug in Twilio.
+    reply_auth.warn_if_misconfigured()
     async with adapter_mcp.app.router.lifespan_context(fastapi_app):
         yield
 
@@ -124,6 +129,25 @@ class BuyerCheckRequest(BaseModel):
     confirm_above_inr: int
 
 
+def _console(path: Path) -> HTMLResponse:
+    """Serve a console page with the internal reply credential in it.
+
+    The two pages with reply boxes post to /webhook/sms-reply, which is
+    now authenticated. They are not Twilio-signed, so they carry
+    INTERNAL_REPLY_TOKEN instead -- and the token is stamped into the
+    page at serve time rather than fetched from an endpoint, because an
+    endpoint that hands the credential to whoever asks is not a
+    credential. `no-store` keeps it out of the disk cache.
+
+    This is a stamp, not a login: see reply_auth.py on exactly how far it
+    goes and where it stops.
+    """
+    html = path.read_text(encoding="utf-8").replace(
+        "__INTERNAL_REPLY_TOKEN__", reply_auth.internal_token()
+    )
+    return HTMLResponse(html, headers={"Cache-Control": "no-store"})
+
+
 @app.get("/", response_class=HTMLResponse)
 def landing() -> FileResponse:
     return FileResponse(WEB_DIR / "index.html")
@@ -138,9 +162,9 @@ def buyer_profile() -> FileResponse:
 
 
 @app.get("/buyer/order", response_class=HTMLResponse)
-def buyer_order() -> FileResponse:
+def buyer_order() -> HTMLResponse:
     """Day-to-day: say what you want, watch the agent work."""
-    return FileResponse(WEB_DIR / "order.html")
+    return _console(WEB_DIR / "order.html")
 
 
 @app.get("/merchant", response_class=HTMLResponse)
@@ -150,9 +174,9 @@ def merchant_setup() -> FileResponse:
 
 
 @app.get("/merchant/orders", response_class=HTMLResponse)
-def merchant_console() -> FileResponse:
+def merchant_console() -> HTMLResponse:
     """Day-to-day: the escalation queue, trust, and the decision log."""
-    return FileResponse(WEB_DIR / "merchant.html")
+    return _console(WEB_DIR / "merchant.html")
 
 
 @app.get("/api/merchant-config")

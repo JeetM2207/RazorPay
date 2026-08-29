@@ -514,6 +514,18 @@
 
 <script>
 const $ = (id) => document.getElementById(id);
+/* The credential this page presents to /webhook/sms-reply.
+
+   That endpoint approves merchant orders and releases food, so it is
+   authenticated. A real WhatsApp reply proves itself with Twilio's
+   signature; these boxes cannot, so they carry this instead. It is
+   stamped into the page by the server at serve time -- an endpoint that
+   handed it to whoever asked would not be a credential at all.
+
+   The boxes still post to the SAME endpoint a real reply does, which is
+   the whole point of the mock path: it exercises the real handler. */
+const INTERNAL_REPLY_TOKEN = "__INTERNAL_REPLY_TOKEN__";
+
 const PROFILE_KEY = "ammas-kitchen-buyer-profile";
 const rupee = (n) => "₹" + n;
 const titleize = (s) => s.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -1184,7 +1196,10 @@ function waitForApproval(live, totalInr) {
     const answerHere = async (word) => {
       await fetch("/webhook/sms-reply", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
+        },
         body: new URLSearchParams({ Body: word, From: PROFILE.phone }),
       });
     };
@@ -1240,7 +1255,10 @@ function waitForWhatsAppReply(live) {
       // what a genuine WhatsApp reply would.
       await fetch("/webhook/sms-reply", {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
+        },
         body: new URLSearchParams({ Body: text, From: PROFILE.phone }),
       });
     };

@@ -33,7 +33,20 @@ def _escalate(client, agent_id="sms-buyer", item="chicken_biryani", qty=2):
 
 
 def _reply(client, body, sender="+919876543210"):
-    return client.post("/webhook/sms-reply", data={"Body": body, "From": sender})
+    """Post a reply the way a console reply box does.
+
+    /webhook/sms-reply is authenticated -- it approves merchant orders and
+    releases food -- so these go through the same internal-token door the
+    consoles use rather than the endpoint being left open for tests. The
+    auth layer itself is covered in tests/test_reply_auth.py.
+    """
+    import reply_auth
+
+    return client.post(
+        "/webhook/sms-reply",
+        data={"Body": body, "From": sender},
+        headers={reply_auth.INTERNAL_TOKEN_HEADER: reply_auth.internal_token()},
+    )
 
 
 # ------------------------------------------------------------ the parser

@@ -442,6 +442,18 @@
   </div>
 
 <script>
+/* The credential this page presents to /webhook/sms-reply.
+
+   That endpoint approves merchant orders and releases food, so it is
+   authenticated. A real WhatsApp reply proves itself with Twilio's
+   signature; this box cannot, so it carries this instead. It is stamped
+   into the page by the server at serve time -- an endpoint that handed
+   it to whoever asked would not be a credential at all.
+
+   The box still posts to the SAME endpoint a real reply does, which is
+   the whole point of the mock path: it exercises the real handler. */
+const INTERNAL_REPLY_TOKEN = "__INTERNAL_REPLY_TOKEN__";
+
 const $ = (id) => document.getElementById(id);
 const rupee = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
 
@@ -733,7 +745,10 @@ async function sendSmsReply() {
 
   const res = await fetch("/webhook/sms-reply", {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "X-Internal-Reply-Token": INTERNAL_REPLY_TOKEN,
+    },
     body: new URLSearchParams({ Body: text, From: "+91-merchant-console" }),
   });
   toast(await res.text());

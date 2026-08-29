@@ -175,6 +175,7 @@ amma-kitchen-agent/
 
   notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
   escalations.py          # merchant escalations + THE one inbound webhook + router
+  reply_auth.py           # who may POST a reply: Twilio signature or console token
   buyer_sms.py            # asking the customer: what instead? / approve this?
   mcp_orders.py           # the pay-first lifecycle (not MCP-only any more):
                           #   pay -> confirm -> refund if declined
@@ -183,7 +184,7 @@ amma-kitchen-agent/
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
-  scripts/predemo_check.py        # 15 checks, each one something that has broken
+  scripts/predemo_check.py        # 16 checks, each one something that has broken
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
   scripts/                # plus early plumbing probes, kept for reference
@@ -1044,6 +1045,10 @@ human decisions can arrive on a phone, not only on a screen:
 - **Customer approval** (`buyer_sms.py`) — "your agent wants to order X for Rs.440,
   above the Rs.400 you asked to be checked on. Reply YES or NO."
 
+**The endpoint is authenticated.** A reply of '1' approves an order and releases food,
+so it is treated as the money action it is: a Twilio signature or the consoles' own token,
+403 otherwise, no third path. See "Known gaps" for the whole shape of it.
+
 **Routing, because Twilio allows one webhook URL per number and in a demo the same
 person is often both parties.** Messages are routed by what they *are*, not only who sent
 them, in this order:
@@ -1777,7 +1782,7 @@ behind by a failed checkout — the unit suite was green through all of them.
 python scripts/predemo_check.py
 ```
 
-Fifteen checks, each one something that has actually broken: server and tunnel up, the
+Sixteen checks, each one something that has actually broken: server and tunnel up, the
 tunnel's domain actually allowed, a **signed** webhook `ping` accepted both locally and
 publicly (which is the only way to catch a running process holding a different secret
 than `.env`), Razorpay keys valid and link headroom left, a webhook registered *at the
@@ -1855,3 +1860,38 @@ Worth being able to answer rather than being caught by:
   before a demo, not during one.
 - **`success@razorpay` never actually gets pinged** on this account — the code sends the
   collect request and Razorpay declines the endpoint.
+
+**CLOSED — `/webhook/sms-reply` was an unauthenticated money endpoint.** It accepted any
+POST from anyone, and a reply of `1` from a number whose last ten digits matched a pending
+escalation approved a merchant order and released food; the Razorpay webhook had been
+signature-verified since it was built, and this one never was. It now takes exactly two
+doors and no third: a real Twilio delivery proved by `X-Twilio-Signature` (HMAC-SHA1 over
+the public URL plus the sorted POST params, `compare_digest`, never `==`), or the consoles'
+own reply boxes proved by `X-Internal-Reply-Token`. Everything else is `403` before a
+single thing is read, routed or written.
+
+Four decisions inside that are worth keeping:
+
+- **The signed URL has to be the PUBLIC one.** Behind ngrok, `request.url` reads `http` and
+  the internal host — the address the tunnel forwarded *to*, not the one Twilio signed. It
+  is rebuilt from `X-Forwarded-Proto`/`X-Forwarded-Host`, and that case has its own test,
+  plus its mirror, because getting it wrong makes *every* genuine reply 403 in a way that
+  looks like Twilio being broken rather than like a bug here.
+- **The console reply boxes stay unsigned, deliberately.** They post to the *same* endpoint
+  a real reply does, which is the entire value of the mock path — it exercises the real
+  handler rather than a stub beside it. So they got their own credential instead of an
+  exemption. It is stamped into the page at serve time, never fetchable: an endpoint that
+  hands the credential to whoever asks is not a credential.
+- **There is no "skip when `SMS_ENABLED=false`" branch, and there must never be one.** A
+  bypass keyed on a config flag is a bypass an attacker gets by reading this repository,
+  which is public. A test asserts `authorise()` names no such flag, so a future one fails
+  rather than quietly reopening it.
+- **An unset `TWILIO_AUTH_TOKEN` rejects rather than waves through**, with a loud startup
+  warning. A signed request that cannot be checked is a request that has not been checked.
+
+**The residual, stated rather than papered over:** this project has no user authentication
+anywhere, so anyone who can load `/merchant/orders` can read the internal token out of the
+page. What is closed is the blind unauthenticated POST — a scanner, a CSRF from another
+origin, anyone who never opened the console. Closing the rest means authenticating the
+consoles themselves, which is a larger piece of work and remains open. `predemo_check.py`
+now posts a deliberately unparseable unsigned reply and FAILs if it is accepted.
