@@ -188,6 +188,11 @@
   .daybox input { display: none; }
   .daybox label.on { background: var(--gold); border-color: var(--gold); color: #fff; }
   .routine-form { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 15px; }
+  .routine-summary {
+    margin: 12px 0 0; padding: 10px 14px; border-radius: 10px;
+    background: var(--card-2); border: 1px solid var(--line);
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--lilac);
+  }
   .routine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px; }
 
   /* ---- transactions drawer ---- */
@@ -522,16 +527,12 @@
             <div class="sec-label" style="font-size:11.5px; font-weight:600; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em">
               New standing order
             </div>
-            <p class="note" style="margin:6px 0 0">
-              <!-- The dish picker lives on the ordering side now, so this
-                   says where it is rather than "the box above", which was
-                   true when the two shared one column and is not now. -->
-              Uses whatever is in your basket.
-              <span id="routineBasket" class="mono"></span>
+            <p class="note" style="margin:6px 0 10px">
+              Pick what repeats. This is separate from whatever is in your
+              basket for an order you are placing now.
             </p>
-            <button class="btn btn-ghost btn-sm" id="pickDishesBtn" style="margin-top:10px">
-              Choose dishes &rarr;
-            </button>
+            <div class="dish-grid" id="routineDishGrid"></div>
+            <p class="routine-summary"><span id="routineSummary">Nothing chosen yet.</span></p>
             <div class="daybox" id="routineDays"></div>
             <div class="routine-grid">
               <div>
@@ -895,6 +896,7 @@ async function boot() {
 
   await refreshMenu();
   renderDayPicker();
+  renderRoutineDishes();
   syncRoutineForm();
   renderRoutines();
   renderBento();
@@ -923,6 +925,7 @@ async function refreshMenu() {
     if (JSON.stringify(fresh) === JSON.stringify(MENU)) return;
     MENU = fresh;
     renderDishes();
+    renderRoutineDishes();
     syncRoutineForm();
   } catch { /* keep whatever we last had */ }
 }
@@ -935,7 +938,8 @@ async function refreshMenu() {
    thali" rather than "1 veg thali, 1 veg thali", which is what the
    parser would otherwise have to untangle and what a customer would
    rightly find odd. */
-let PICKED = {};               // item_id -> qty
+let PICKED = {};               // item_id -> qty, for the order you are placing
+let ROUTINE_PICKED = {};       // item_id -> qty, for the standing order
 let pickerWroteBox = "";       // the last text the picker put in the box
 
 function pickedCount() {
@@ -991,13 +995,18 @@ function syncPicked() {
   renderDishes();
 }
 
-function renderDishes() {
-  const orderable = MENU.filter((m) => m.agent_orderable);
-  $("dishCount").textContent = `${orderable.length} of ${MENU.length} orderable`;
+/* The dish grid, drawn against whichever basket asked for it.
 
-  $("dishGrid").innerHTML = MENU.map((m) => {
+   There are two: the one for the order you are placing now, and the one
+   for a standing order. They used to be the same object, which meant
+   adding a dish to a repeat also put it in your next order -- and picking
+   dishes for a routine sent you to the other screen and back. Two
+   baskets, one renderer: the markup and the sale/in-person rules are
+   written once, and each screen owns its own contents. */
+function dishCardsHtml(basket) {
+  return MENU.map((m) => {
     const onSale = m.sale && m.list_price_inr && m.list_price_inr > m.price_inr;
-    const qty = PICKED[m.id] || 0;
+    const qty = basket[m.id] || 0;
     return `
       <div class="dish ${m.agent_orderable ? "" : "off"} ${qty ? "picked" : ""}">
         <div>
@@ -1022,9 +1031,31 @@ function renderDishes() {
   }).join("");
 }
 
+function renderDishes() {
+  const orderable = MENU.filter((m) => m.agent_orderable);
+  $("dishCount").textContent = `${orderable.length} of ${MENU.length} orderable`;
+  $("dishGrid").innerHTML = dishCardsHtml(PICKED);
+}
+
+function renderRoutineDishes() {
+  const grid = $("routineDishGrid");
+  if (grid) grid.innerHTML = dishCardsHtml(ROUTINE_PICKED);
+}
+
 $("dishGrid").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-bump]");
   if (btn) bumpDish(btn.dataset.id, Number(btn.dataset.bump));
+});
+
+$("routineDishGrid").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-bump]");
+  if (!btn) return;
+  const id = btn.dataset.id;
+  const next = Math.max(0, (ROUTINE_PICKED[id] || 0) + Number(btn.dataset.bump));
+  if (next === 0) delete ROUTINE_PICKED[id];
+  else ROUTINE_PICKED[id] = next;
+  renderRoutineDishes();
+  syncRoutineForm();
 });
 
 $("cartBar").addEventListener("click", (e) => {
@@ -2054,13 +2085,19 @@ function chosenDays() {
 /* The basket above IS the item picker -- there is deliberately not a
    second one. */
 function syncRoutineForm() {
-  const items = Object.entries(PICKED).filter(([, q]) => q > 0);
-  const total = pickedTotal();
-  $("routineBasket").textContent = items.length
-    ? `Using: ${pickedText().replace(/^Order /, "")} · ${rupee(total)}`
-    : "Your basket is empty.";
-  const pick = $("pickDishesBtn");
-  if (pick) pick.hidden = items.length > 0;
+  const items = Object.entries(ROUTINE_PICKED).filter(([, q]) => q > 0);
+  const total = items.reduce((sum, [id, qty]) => {
+    const dish = MENU.find((m) => m.id === id);
+    return sum + (dish ? dish.price_inr * qty : 0);
+  }, 0);
+  const named = items.map(([id, qty]) => {
+    const dish = MENU.find((m) => m.id === id);
+    return `${qty} ${(dish ? dish.title : id.replace(/_/g, " ")).toLowerCase()}`;
+  });
+  $("routineSummary").textContent = named.length
+    ? `${named.join(", ")} · ${rupee(total)} each time`
+    : "Nothing chosen yet.";
+  $("routineCreate").disabled = !named.length;
   if (items.length && !$("routineCap").dataset.touched) {
     // Her own default from signup wins; otherwise a little headroom over
     // this cart, so a small price move doesn't trip the gate on day one.
@@ -2151,12 +2188,9 @@ $("routineList").addEventListener("click", async (e) => {
 $("routineCap").addEventListener("input", () => { $("routineCap").dataset.touched = "1"; });
 
 $("routineCreate").addEventListener("click", async () => {
-  const items = Object.entries(PICKED).filter(([, q]) => q > 0)
+  const items = Object.entries(ROUTINE_PICKED).filter(([, q]) => q > 0)
     .map(([item_id, qty]) => ({ item_id, qty }));
-  if (!items.length) {
-    toast("Pick the dishes first — Order now, then add them to your basket.", true);
-    return goPickDishes();
-  }
+  if (!items.length) return toast("Choose the dishes for this standing order first.", true);
   const days = chosenDays();
   if (!days.length) return toast("Pick at least one day.", true);
 
@@ -2175,7 +2209,9 @@ $("routineCreate").addEventListener("click", async () => {
       }),
     });
     toast("Standing order on. Your agent will place it automatically inside that cap.");
-    clearPicked();
+    ROUTINE_PICKED = {};
+    renderRoutineDishes();
+    syncRoutineForm();
     delete $("routineCap").dataset.touched;
     renderRoutines();
   } catch (err) {
@@ -2185,18 +2221,8 @@ $("routineCreate").addEventListener("click", async () => {
 
 $("deployBtn").addEventListener("click", deploy);
 
-/* One basket, two places that use it. Rather than a second dish picker
-   on this stage -- which would mean two grids to keep in step -- this
-   sends you to the one that exists. */
-function goPickDishes() {
-  for (const b of $("modeSwitch").querySelectorAll("button")) {
-    b.classList.toggle("on", b.dataset.mode === "now");
-  }
-  showStage("compose");
-  $("dishGrid").scrollIntoView({ block: "center",
-                                 behavior: REDUCED_MOTION ? "auto" : "smooth" });
-}
-$("pickDishesBtn").addEventListener("click", goPickDishes);
+/* No cross-stage jump any more: the standing order has its own picker,
+   so there is nowhere to send anybody. */
 
 $("modeSwitch").addEventListener("click", (e) => {
   const btn = e.target.closest("button[data-mode]");
