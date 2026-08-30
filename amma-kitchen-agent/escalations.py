@@ -339,6 +339,24 @@ async def sms_reply_verify(request: Request) -> PlainTextResponse:
     raise HTTPException(status_code=403, detail="verification failed")
 
 
+def _from_textbee_payload(payload: dict) -> tuple[str, str] | None:
+    """Pull (body, sender) out of TextBee's envelope, or None.
+
+    Only MESSAGE_RECEIVED is an answer. The same webhook carries other
+    events, and reading a delivery notification as an inbound "1" would
+    approve an order nobody replied to -- the same trap Meta's read
+    receipts set.
+    """
+    if payload.get("event") != "MESSAGE_RECEIVED":
+        return None
+    data = payload.get("data") or {}
+    message = data.get("message")
+    sender = data.get("sender")
+    if not message or not sender:
+        return None
+    return str(message), str(sender)
+
+
 def _from_meta_payload(payload: dict) -> tuple[str, str] | None:
     """Pull (body, sender) out of Meta's envelope, or None.
 
@@ -407,7 +425,10 @@ async def sms_reply(request: Request) -> PlainTextResponse:
             payload = json.loads(raw or b"{}")
         except ValueError:
             payload = {}
-        extracted = _from_meta_payload(payload)
+        # Two JSON senders now, distinguished by what they carry rather
+        # than by a header: TextBee names its event, Meta nests entries.
+        extracted = (_from_textbee_payload(payload)
+                     or _from_meta_payload(payload))
         if extracted is None:
             # A delivery or read receipt. Acknowledge it -- Meta retries
             # anything it does not get a 200 for -- and do nothing else.

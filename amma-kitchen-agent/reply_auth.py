@@ -165,6 +165,37 @@ def meta_signature_ok(request, raw_body: bytes) -> bool:
     return hmac.compare_digest(header[len("sha256="):], expected)
 
 
+TEXTBEE_SIGNATURE_HEADER = "X-Signature"
+
+
+def textbee_signature_ok(request, raw_body: bytes) -> bool:
+    """TextBee signs the webhook payload with HMAC-SHA256 and sends the
+    hex digest as `X-Signature`.
+
+    Verified against the RAW BODY, which is the JSON they serialised and
+    therefore the bytes they hashed. Re-encoding a parsed dict here would
+    be a different string the moment key order or spacing differed, and
+    the check would fail for reasons nothing in the logs would explain.
+
+    An unset secret rejects rather than waving through, exactly as the
+    Twilio and Meta checks do. A signed request that cannot be checked is
+    a request that has not been checked.
+    """
+    secret = os.environ.get("TEXTBEE_WEBHOOK_SECRET", "")
+    if not secret:
+        return False
+    supplied = request.headers.get(TEXTBEE_SIGNATURE_HEADER, "")
+    if not supplied:
+        return False
+    # Tolerate a "sha256=" prefix in case it is ever added; compare the
+    # digest either way.
+    if supplied.startswith("sha256="):
+        supplied = supplied[len("sha256="):]
+    expected = hmac.new(secret.encode("utf-8"), raw_body,
+                        hashlib.sha256).hexdigest()
+    return hmac.compare_digest(supplied, expected)
+
+
 def authorise(request, params: dict, raw_body: bytes | None = None) -> str | None:
     """Which door this request came through, or None if none of them.
 
@@ -176,6 +207,8 @@ def authorise(request, params: dict, raw_body: bytes | None = None) -> str | Non
         return "twilio"
     if raw_body is not None and meta_signature_ok(request, raw_body):
         return "meta"
+    if raw_body is not None and textbee_signature_ok(request, raw_body):
+        return "textbee"
     if _internal_ok(request):
         return "console"
     return None

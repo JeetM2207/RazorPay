@@ -49,12 +49,38 @@ _META_API = os.environ.get("META_API_VERSION", "v21.0")
 
 META_CONFIGURED = bool(SMS_ENABLED and _META_PHONE_ID and _META_TOKEN and MERCHANT_PHONE)
 
+# ------------------------------------------------------------- TextBee
+# Your own Android phone as the gateway: the app on the handset sends the
+# message over its own SIM, and this posts to their API to ask it to.
+#
+# It is the best fit of the three for this project, for one reason that
+# is specific to India. A2P SMS to Indian numbers needs TRAI/DLT sender
+# registration -- days of business paperwork -- which is why this project
+# used WhatsApp at all. DLT governs commercial routes through operators
+# and aggregators; a text your own handset sends is an ordinary
+# person-to-person message and needs none of it.
+#
+# It also has no 24-hour window. That rule belongs to the WhatsApp
+# platform and has been the thing quietly dropping messages here; plain
+# SMS simply arrives.
+#
+# The costs of that trade, stated plainly: it is SMS, so no formatting;
+# it comes from your own number rather than a business identity; and the
+# phone has to be on, in signal, with the app running.
+_TEXTBEE_KEY = os.environ.get("TEXTBEE_API_KEY", "")
+_TEXTBEE_DEVICE = os.environ.get("TEXTBEE_DEVICE_ID", "")
+_TEXTBEE_API = os.environ.get(
+    "TEXTBEE_API_BASE", "https://api.textbee.dev/api/v1")
+
+TEXTBEE_CONFIGURED = bool(SMS_ENABLED and _TEXTBEE_KEY and _TEXTBEE_DEVICE
+                          and MERCHANT_PHONE)
+
 
 @dataclass
 class SentMessage:
     to: str
     body: str
-    transport: str          # "meta" | "twilio" | "mock"
+    transport: str          # "textbee" | "meta" | "twilio" | "mock"
     sent_at: str
     error: str | None = None
     # Who the message was written FOR. The two sides are asked different
@@ -175,18 +201,65 @@ def _send_via_meta(body: str, recipient: str) -> str | None:
     return None
 
 
+def _plain_number(recipient: str) -> str:
+    """TextBee wants an ordinary E.164 number -- it is sending a text, not
+    addressing a WhatsApp identity, so the `whatsapp:` scheme has to go."""
+    number = recipient.replace("whatsapp:", "").strip()
+    return number if number.startswith("+") else f"+{number}"
+
+
+def _send_via_textbee(body: str, recipient: str) -> str | None:
+    """Ask the phone to send one SMS. Returns an error string, or None.
+
+    Like every other transport here it returns the failure rather than
+    raising it: a transport failure must never break an order, and it
+    must not vanish either -- it is recorded on the message so a screen
+    can show it.
+    """
+    import requests
+
+    try:
+        response = requests.post(
+            f"{_TEXTBEE_API}/gateway/devices/{_TEXTBEE_DEVICE}/send-sms",
+            headers={"x-api-key": _TEXTBEE_KEY},
+            json={"recipients": [_plain_number(recipient)], "message": body},
+            timeout=20,
+        )
+    except Exception as exc:
+        return str(exc)
+
+    if response.status_code >= 300:
+        # Worth surfacing verbatim: "device is offline" and "daily quota
+        # reached" are both things you want to read on the console rather
+        # than guess at from a status code.
+        try:
+            detail = response.json().get("error") or response.json().get("message")
+        except Exception:
+            detail = response.text[:200]
+        return f"{response.status_code}: {detail}"
+    return None
+
+
 def send_sms(body: str, to: str | None = None, audience: str = "merchant") -> SentMessage:
     """`audience` is "merchant" or "customer": who this text is asking.
 
     Defaults to the merchant because the default recipient is hers -- a
     send with no `to` goes to MERCHANT_PHONE.
 
-    Meta is preferred over Twilio when both are configured, because its
-    free tier is the one that survives a demo. Neither configured means
-    the mock outbox, which drives the identical loop offline.
+    Order of preference is TextBee, then Meta, then Twilio, then the mock
+    outbox. TextBee first because it is the only one of the three with
+    nothing between the message and the handset: no DLT registration, and
+    no 24-hour window to fall outside of.
     """
     recipient = to or MERCHANT_PHONE or "+91-merchant-mock"
     now = datetime.now(timezone.utc).isoformat()
+
+    if TEXTBEE_CONFIGURED:
+        error = _send_via_textbee(body, recipient)
+        message = SentMessage(recipient, body, "textbee", now,
+                              error=error, audience=audience)
+        _OUTBOX.append(message)
+        return message
 
     if META_CONFIGURED:
         error = _send_via_meta(body, recipient)
