@@ -52,9 +52,51 @@ def received(text: str, sender: str = "+918306610707") -> dict:
 
 # ------------------------------------------------------------ reading it
 
-def test_an_inbound_sms_is_read_as_a_reply():
+def live_payload(text: str, sender: str = "+919023016845") -> dict:
+    """The shape TextBee ACTUALLY posts, captured off the wire.
+
+    Not the shape its docs describe. Pinned verbatim because writing the
+    reader to the documented shape made every real reply return None --
+    accepted with a 200 and silently ignored, which is the worst way for
+    an approval to fail.
+    """
+    return {
+        "smsId": "6a949464f3dc6f0f7ba621b6",
+        "message": text,
+        "deviceId": "6a948ef4f3dc6f0f7ba26e61",
+        "webhookSubscriptionId": "6a949038f3dc6f0f7ba35198",
+        "webhookEvent": "MESSAGE_RECEIVED",
+        "idempotencyKey": "0d8a5430-c8c7-47cd-9c62-b8a1304c1fcd",
+        "sender": sender,
+        "receivedAt": "2026-08-30T20:36:50.000Z",
+    }
+
+
+def test_the_real_flat_payload_is_read_as_a_reply():
+    assert escalations._from_textbee_payload(live_payload("YES 2169")) == (
+        "YES 2169", "+919023016845")
+
+
+def test_a_send_notification_in_the_real_shape_is_not_a_reply():
+    sent = live_payload("Amma's Kitchen: your agent wants to order...")
+    sent["webhookEvent"] = "MESSAGE_SENT"
+    assert escalations._from_textbee_payload(sent) is None
+
+
+def test_the_documented_nested_shape_still_works():
+    """Kept because it is what the service documents, and either could
+    change under us."""
     assert escalations._from_textbee_payload(received("1 4417")) == (
         "1 4417", "+918306610707")
+
+
+def test_a_live_shaped_reply_reaches_the_router(client):
+    """End to end over HTTP, in the real shape: signed, accepted, and
+    answered with something rather than an empty 200."""
+    body = json.dumps(live_payload("YES 2169")).encode()
+    r = client.post("/webhook/sms-reply", content=body, headers=signed(body))
+    assert r.status_code == 200
+    assert r.text.strip(), "a real reply must be answered, not silently ignored"
 
 
 @pytest.mark.parametrize("payload, why", [

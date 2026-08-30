@@ -145,6 +145,10 @@ def test_meta_is_preferred_when_both_are_configured(monkeypatch):
     """Its free tier is the one that survives a demo."""
     import notification_service as ns
 
+    # TextBee outranks Meta, so it has to be off for this to test what it
+    # says. Not defaulted off in the fixture: a test that silently
+    # depended on the developer's own .env is how this broke.
+    monkeypatch.setattr(ns, "TEXTBEE_CONFIGURED", False)
     monkeypatch.setattr(ns, "META_CONFIGURED", True)
     monkeypatch.setattr(ns, "TWILIO_CONFIGURED", True)
     monkeypatch.setattr(ns, "_send_via_meta", lambda body, to: None)
@@ -159,6 +163,7 @@ def test_a_send_failure_is_recorded_on_the_message_not_raised(monkeypatch):
     sat behind an order that had completed correctly."""
     import notification_service as ns
 
+    monkeypatch.setattr(ns, "TEXTBEE_CONFIGURED", False)
     monkeypatch.setattr(ns, "META_CONFIGURED", True)
     monkeypatch.setattr(ns, "_send_via_meta",
                         lambda body, to: "131047: outside the 24 hour window")

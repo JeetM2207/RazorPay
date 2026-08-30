@@ -342,16 +342,37 @@ async def sms_reply_verify(request: Request) -> PlainTextResponse:
 def _from_textbee_payload(payload: dict) -> tuple[str, str] | None:
     """Pull (body, sender) out of TextBee's envelope, or None.
 
-    Only MESSAGE_RECEIVED is an answer. The same webhook carries other
-    events, and reading a delivery notification as an inbound "1" would
-    approve an order nobody replied to -- the same trap Meta's read
-    receipts set.
+    TWO SHAPES, because the documented one is not the one that arrives.
+    The docs describe {"event", "data": {"sender", "message"}}; a real
+    delivery is flat and names the event differently:
+
+        {"smsId", "message", "deviceId", "webhookSubscriptionId",
+         "webhookEvent": "MESSAGE_RECEIVED", "idempotencyKey",
+         "sender", "receivedAt"}
+
+    Written to the documented shape first, this returned None for every
+    real reply -- so the customer's "YES 2169" was accepted with a 200
+    and did nothing at all, which is the worst way for it to fail. Found
+    by reading the actual request body off ngrok's inspector rather than
+    trusting the page. Both are accepted now: the flat one because it is
+    what the service sends, the nested one because it is what the service
+    documents and either could change.
+
+    Only MESSAGE_RECEIVED is an answer. The same webhook carries send
+    notifications, and reading one as an inbound "1" would approve an
+    order nobody replied to.
     """
-    if payload.get("event") != "MESSAGE_RECEIVED":
+    event = payload.get("webhookEvent") or payload.get("event")
+    if event != "MESSAGE_RECEIVED":
         return None
-    data = payload.get("data") or {}
-    message = data.get("message")
-    sender = data.get("sender")
+
+    # Flat first -- that is the live shape.
+    message = payload.get("message")
+    sender = payload.get("sender")
+    if not (message and sender):
+        data = payload.get("data") or {}
+        message = data.get("message")
+        sender = data.get("sender")
     if not message or not sender:
         return None
     return str(message), str(sender)
