@@ -132,6 +132,16 @@
   .work-body { padding: 26px 30px 60px; }
   @media (max-width: 640px) { .work-top { padding: 12px 16px; } .work-body { padding: 20px 16px 48px; } }
 
+  /* The board says when it has STOPPED being live. A screen that has
+     quietly stopped refreshing looks identical to one where nothing is
+     happening, which is the worst confusion possible on a page somebody
+     is watching for orders. */
+  .live.stale {
+    color: var(--amber); background: var(--rust-soft); border-color: var(--rust-line);
+  }
+  .live.stale .dot { background: var(--amber); animation: none; }
+  .live.stale::after { content: " — not refreshing"; }
+
   .panel { display: none; }
   .panel.on { display: block; animation: fade .2s ease; }
   @keyframes fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; } }
@@ -382,7 +392,7 @@
   <div class="work">
     <!-- The numbers worth watching while working, on every section. -->
     <div class="work-top">
-      <span class="live"><span class="dot"></span> live</span>
+      <span class="live" id="liveDot"><span class="dot"></span> live</span>
       <div class="kpis">
         <div class="kpi rev"><span class="n" id="kpiRevenue">₹0</span><span class="l">Today's revenue</span></div>
         <div class="kpi"><span class="n" id="kpiAgents">0</span><span class="l">Active agents</span></div>
@@ -757,9 +767,39 @@ async function boot() {
   setInterval(tick, 2000);
 }
 
+/* One panel failing must not take the board down.
+
+   This was Promise.all, which rejects on the FIRST failure -- so a single
+   panel erroring (a blip, a slow query, a 429) threw an unhandled
+   rejection every two seconds and the remaining panels' results were
+   discarded. allSettled lets each panel succeed or fail on its own, and a
+   failure is reported once rather than silently.
+
+   The interval itself is never allowed to die: a board that has quietly
+   stopped refreshing looks exactly like a board where nothing is
+   happening, which is the worst possible confusion on a screen someone
+   is watching for orders. */
+let tickFailures = 0;
+
 async function tick() {
-  await Promise.all([renderQueue(), renderAgents(), renderEvents(), renderSms(),
-                     renderDemand(), renderDisputes()]);
+  const panels = {
+    queue: renderQueue, agents: renderAgents, events: renderEvents,
+    sms: renderSms, demand: renderDemand, disputes: renderDisputes,
+  };
+  const names = Object.keys(panels);
+  const results = await Promise.allSettled(names.map((n) => panels[n]()));
+
+  const broken = names.filter((_, i) => results[i].status === "rejected");
+  if (!broken.length) { tickFailures = 0; $("liveDot").classList.remove("stale"); return; }
+
+  // Say so once, not every two seconds.
+  if (tickFailures === 0) {
+    const why = results.find((r) => r.status === "rejected").reason;
+    toast(`Could not refresh ${broken.join(", ")}: ${why && why.message ? why.message : why}`,
+          true);
+  }
+  tickFailures += 1;
+  $("liveDot").classList.add("stale");
 }
 
 /* -------------------------------------------------------- disputes */
