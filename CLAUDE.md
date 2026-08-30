@@ -1812,10 +1812,15 @@ real browser -- the same lesson as every other section here.
 
 ### What calls it
 
-`scheduler.py`, every minute, for whatever `routines.due_now()` says is due. The
-**Simulate next occurrence** button stays exactly as it was and is still the right demo
-control -- nobody wants to wait until Tuesday at eight on camera, and `at` lets a future
-occurrence be checked without the clock moving.
+`scheduler.py`, every minute, for whatever `routines.due_now()` says is due. The console
+button calls the SAME `check_and_fire()`, so the gate a person triggers by hand and the
+gate the clock triggers unattended are one code path, not two that can drift.
+
+That button used to say **Simulate next occurrence**, and it was a lie: it does not
+simulate anything. If the gate passes it places the order and charges the card, exactly as
+the clock would. A control that promises a preview and delivers a purchase is the wrong
+control, so it now says **Run it now** and confirms before it charges. `at` still lets a
+future occurrence be checked without waiting for the day to come round.
 
 `due_now()` is the part that matters, and it is why a scheduler can safely be pointed at
 `check_and_fire` at all. See "The clock" below: ticking every routine every minute would

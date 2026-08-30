@@ -2138,7 +2138,12 @@ async function renderRoutines() {
             </div>
             <div class="routine-acts">
               <button class="btn btn-sm btn-ghost" data-act="toggle">${paused ? "Resume" : "Pause"}</button>
-              <button class="btn btn-sm btn-ghost" data-act="simulate">Simulate next occurrence</button>
+              <!-- "Simulate" was a lie: this runs the real thing. If every
+                   check passes it places the order and charges the card,
+                   exactly as the clock would at the scheduled time. A
+                   button that promises a preview and delivers a purchase
+                   is the wrong button. -->
+              <button class="btn btn-sm btn-ghost" data-act="simulate">Run it now</button>
               <button class="btn btn-sm btn-ghost" data-act="delete">Remove</button>
             </div>
             <div class="routine-out" id="out-${escHtml(r.id)}"></div>
@@ -2165,7 +2170,16 @@ $("routineList").addEventListener("click", async (e) => {
       const now = btn.textContent.trim() === "Pause" ? "paused" : "active";
       await api(`/api/routines/${id}/status?status=${now}`, { method: "POST" });
     } else {
-      $("out-" + id).innerHTML = `<span class="muted">Running the confidence gate…</span>`;
+      // It charges. Ask first, because the old label implied it did not.
+      if (!confirm("Run this standing order now?
+
+It makes the same checks the clock "
+                 + "would make at its scheduled time, and if they all pass it places the "
+                 + "order and charges your card.")) {
+        btn.disabled = false;
+        return;
+      }
+      $("out-" + id).innerHTML = `<span class="muted">Running the checks…</span>`;
       const res = await api(`/api/routines/${id}/simulate`, { method: "POST" });
       answer = res.fired
         ? `<span class="ok"><b>Placed automatically.</b> ${rupee(res.total_inr)} charged to
