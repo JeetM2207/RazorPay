@@ -478,9 +478,17 @@ def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH) -> dict:
 
     paid = [
         row for row in rows
-        # `pay_` and not `sim_`: a real Razorpay capture, not our own note
-        # that we would have taken the money if we could.
-        if (row["payment_id"] or "").startswith("pay_") and row["id"] not in undone
+        # Anything but a simulation. `pay_` is a real Razorpay capture and
+        # `demo_` is seeded history; both are settled orders as far as a
+        # summary of trading goes. `sim_` is not -- it is our own note
+        # that we would have taken the money if the account let us.
+        #
+        # This used to require `pay_` specifically, which disagreed with
+        # every other reader in the project (the dashboard, the merchant
+        # KPIs and the statement all test for "not sim_"), so the same
+        # order could count as revenue on one screen and not on another.
+        if (row["payment_id"] or "") and not (row["payment_id"] or "").startswith("sim_")
+        and row["id"] not in undone
     ]
 
     demand: dict[str, int] = {}

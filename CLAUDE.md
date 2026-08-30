@@ -2078,6 +2078,46 @@ prevent, and `COUNTER_OFFER` would claim alternatives that do not exist. `Veloci
 is an `HTTPException`, so FastAPI answers **429** on its own and not one adapter knows this
 rule exists. The in-process caller that needs the detail — `routines` — catches it.
 
+## The demo dataset
+
+The trail this project accumulated while being built was a record of it *being built*:
+596 rows from one debugging agent, ten load-test agents named `agent-0`...`agent-9`, 1,397
+escalations, 61 velocity refusals. Every panel read it correctly and every panel looked
+broken -- Rs.0 revenue, 171 interventions, 0% from standing orders. None of those numbers
+were wrong; they were answers about development, not about a business.
+
+`seed_demo.py` replaces it with thirty days of plausible trading. It backs the database up
+first (`backups/`, restore with `--restore LAST`), is deterministic on a fixed seed so a
+rehearsal and the real pitch look identical, and is re-runnable -- it wipes only what it
+wrote.
+
+**It never writes a `pay_` reference.** In this project `pay_` means a real Razorpay
+capture that opens in the dashboard, and the whole trail is worth nothing the moment that
+stops being true. Seeded settlements are **`demo_`**, which counts as revenue everywhere a
+capture does and claims nothing about Razorpay. The 17 genuine `pay_` captures already in
+the trail are **preserved**, along with every lifecycle row hanging off them -- they are
+the answer when somebody asks whether any of this is real.
+
+That exposed one genuine inconsistency, now fixed: `growth_stats()` tested for `pay_`
+specifically while the dashboard, the merchant KPIs and the customer's statement all test
+for "not `sim_`", so the same order could count as revenue on one screen and not another.
+
+What it seeds, and why each piece has to be there:
+
+| Seeded | Because |
+| --- | --- |
+| 8 named agents (`Jeet's Agent`, `Priya's Agent`, `mcp:claude`...) | the old random handles (`agent-aniyp`, `shopper-m45qe`) were the same few actors under a scheme since replaced; they are folded into the cast, renaming the **actor**, never the payment |
+| NEW / STANDARD / TRUSTED all represented | one agent pinned at NEW by a disallowed-category attempt, one customer who arrived this week -- the tier ladder is only legible if each rung has a reason behind it |
+| four standing orders, ~21% of settled revenue | the KPI is computed over the whole window, not today, so a weekly routine has to span weeks to say anything |
+| `filter_coffee` riding along in many paid carts | the "bought together before" upsell reads co-occurrence across **paid** carts, so the history has to contain the pairing it is later supposed to have learned |
+| full pay-first lifecycles, incl. a rejection and a timeout | both ending in `REFUNDED`, which is what makes the pay-first defence demonstrable |
+| two orders at `PENDING_MERCHANT_APPROVAL` | **the only kind of pending item that can be seeded.** A pre-payment escalation lives in its adapter's memory and does not survive a restart, so seeding one writes a row no screen will ever show. The paid lifecycle is rebuilt from the trail -- and it is the better beat anyway |
+| `routines.json` written through `routines.create()` | a separate store from the trail: seeding one without the other gives a buyer console showing no standing orders beside a merchant board reporting 21% of revenue from them |
+
+Resulting board: **Rs.43,720 settled over 190 orders, AOV Rs.229**, today's revenue live, 2
+interventions rather than 171, 21% from standing orders, pizza the clear top off-menu ask
+at 5 requests, and the buyer console's gated split at **88/12** rather than 53/47.
+
 ## Before a demo, run the check
 
 Every bug in this project's history was invisible until a real request went through a
