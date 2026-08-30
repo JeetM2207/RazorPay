@@ -104,8 +104,28 @@ def test_the_terminal_types_instantly_under_reduced_motion():
     """The information still has to arrive; only the motion goes."""
     order = (WEB / "order.html").read_text(encoding="utf-8")
     assert "prefers-reduced-motion" in order, "order.html never reads the query"
-    assert "if (REDUCED_MOTION || !total) return Promise.resolve();" in order, (
+    assert "if (REDUCED_MOTION || document.hidden || !total) return Promise.resolve();" in order, (
         "typeInto must print the line whole rather than animating it"
+    )
+
+
+def test_the_terminal_is_not_blanked_in_a_background_tab():
+    """typeInto() empties the line's text and reveals it from a
+    requestAnimationFrame loop -- and rAF does not run in a hidden tab. A
+    run watched from another window therefore came back to a terminal of
+    timestamps with every message erased: the one surface that proves the
+    gates are real, blank, with nothing erroring anywhere.
+
+    Two ways in, so both are pinned. Hidden when the line is written must
+    never blank it; hidden part-way through must finish it, because the
+    loop that would have finished it is about to stop."""
+    order = (WEB / "order.html").read_text(encoding="utf-8")
+
+    assert "REDUCED_MOTION || document.hidden" in order, (
+        "typeInto blanks the line before a loop that cannot run while hidden"
+    )
+    assert "visibilitychange" in order and "flushTyping" in order, (
+        "nothing completes a line the tab was backgrounded part-way through"
     )
 
 

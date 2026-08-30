@@ -711,11 +711,32 @@ function markLimits(message, kind) {
    the run is unchanged from before the effect existed.
 
    Reduced motion prints the line whole. The information is the point;
-   the motion is not. */
+   the motion is not.
+
+   So does a BACKGROUND TAB, and that one is not a nicety. This blanks the
+   text before revealing it, and requestAnimationFrame does not fire in a
+   hidden tab -- so a run watched from another window came back to a
+   terminal of timestamps with every message erased. The one surface that
+   is supposed to prove the gates are real, blank, with no error anywhere.
+   Same fault countUp() already had, and worse here, because a KPI stuck
+   at zero is ugly while this destroys the evidence.
+
+   Two ways in, so both are covered: hidden when the line is written means
+   never blank it, and hidden PART-WAY THROUGH means finish it now, since
+   the loop that would have finished it is about to stop. */
 
 const REDUCED_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const TYPE_MS_PER_CHAR = 9;
 const TYPE_MAX_MS = 340;
+
+/* Lines still being revealed, each able to complete itself on demand. */
+const TYPING = new Set();
+function flushTyping() {
+  for (const finish of [...TYPING]) finish();
+}
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) flushTyping();
+});
 
 function textNodesOf(el) {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -728,15 +749,28 @@ function typeInto(el) {
   const nodes = textNodesOf(el);
   const full = nodes.map((n) => n.nodeValue);
   const total = full.reduce((n, s) => n + s.length, 0);
-  if (REDUCED_MOTION || !total) return Promise.resolve();
+  if (REDUCED_MOTION || document.hidden || !total) return Promise.resolve();
 
   for (const n of nodes) n.nodeValue = "";
   const perChar = Math.min(TYPE_MS_PER_CHAR, TYPE_MAX_MS / total);
 
   return new Promise((resolve) => {
     let shown = 0;
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      TYPING.delete(finish);
+      for (let i = 0; i < nodes.length; i++) nodes[i].nodeValue = full[i];
+      $("term").scrollTop = $("term").scrollHeight;
+      resolve();
+    };
+    TYPING.add(finish);
+
     const tick = () => {
+      if (done) return;
       shown += Math.max(1, Math.round(16 / perChar));   // one frame's worth
+      if (shown >= total) return finish();
       let left = shown;
       for (let i = 0; i < nodes.length; i++) {
         const take = Math.max(0, Math.min(full[i].length, left));
@@ -744,8 +778,7 @@ function typeInto(el) {
         left -= take;
       }
       $("term").scrollTop = $("term").scrollHeight;
-      if (shown < total) requestAnimationFrame(tick);
-      else resolve();
+      requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
   });
@@ -1317,9 +1350,17 @@ async function deploy() {
     const limited = /rate limit|spend limit/i.test(err.message || "");
     if (limited) {
       log("&gt; " + err.message, "warn");
+      /* Say when it clears, because that is the question anyone asks next
+         -- and say it about the limit that ACTUALLY fired. There are two
+         windows, an hour and a day, and telling someone who has spent
+         their day's budget to wait an hour is simply wrong. */
+      const daily = /spend limit/i.test(err.message || "");
       log("&gt; Nothing was charged, and the kitchen was not disturbed. This is her "
-          + "limit on how fast one agent may order — it frees up as your earlier "
-          + "orders age out of the hour.", "quiet");
+          + "limit on how much one agent may order"
+          + (daily
+              ? " in a day — it frees up as your earlier orders pass 24 hours old."
+              : " in an hour — it frees up as your earlier orders age out of the hour."),
+          "quiet");
       setState("RATE LIMITED", "#FFB020");
     } else {
       log("&gt; " + err.message, "err");
@@ -2171,11 +2212,10 @@ $("routineList").addEventListener("click", async (e) => {
       await api(`/api/routines/${id}/status?status=${now}`, { method: "POST" });
     } else {
       // It charges. Ask first, because the old label implied it did not.
-      if (!confirm("Run this standing order now?
-
-It makes the same checks the clock "
-                 + "would make at its scheduled time, and if they all pass it places the "
-                 + "order and charges your card.")) {
+      if (!confirm("Run this standing order now?\n\n"
+                 + "It makes the same checks the clock would make at its scheduled "
+                 + "time, and if they all pass it places the order and charges your "
+                 + "card.")) {
         btn.disabled = false;
         return;
       }

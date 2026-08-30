@@ -898,6 +898,23 @@ async function renderSms() {
         const answered = body.escalations.find(
           (e) => m.body.includes(`Order #${e.order_id}`) && e.answered
         );
+        /* Not everything sent to her is a question. A velocity alert
+           says in as many words "no action needed", and an
+           auto-confirmed order is a notification -- yet both used to
+           carry an amber "awaiting reply", because the badge was chosen
+           by failing to find an answer rather than by asking whether
+           anything had been asked. A board that shows work she does not
+           owe is the same fault as one that hides work she does.
+
+           Decided from the message itself, because the message is the
+           only thing that knows. The two that want an answer both say
+           "reply" and none of the notices do -- an escalation asking for
+           "1 <code>", the pay-first order asking for ACCEPT or REJECT,
+           against an auto-confirm, a failed refund and a velocity alert.
+           Deliberately not keyed on the digits: "reply ACCEPT or REJECT"
+           has none, and a first attempt that looked for them marked a
+           real question as needing nothing. */
+        const asks = /\breply\b/i.test(m.body);
         return `
           <div class="bubble">
             <span class="bubble-tag">Amma's Kitchen bot</span>
@@ -906,7 +923,9 @@ async function renderSms() {
               <span class="bubble-to">to ${esc(m.to)}</span>
               ${answered
                 ? `<span class="badge ${answered.outcome === "APPROVED" ? "badge-ok" : "badge-stop"}">${esc(answered.outcome)}</span>`
-                : `<span class="badge badge-warn">awaiting reply</span>`}
+                : asks
+                  ? `<span class="badge badge-warn">awaiting reply</span>`
+                  : `<span class="badge badge-mute">no reply needed</span>`}
             </div>
             ${m.error ? `<div class="bubble-fail">delivery failed: ${esc(m.error)}</div>` : ""}
           </div>`;
