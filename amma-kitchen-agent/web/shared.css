@@ -151,10 +151,19 @@
 
 * { box-sizing: border-box; }
 
+/* The ground lives on <html>, and <body> is transparent so the field can
+   be seen at all.
+
+   Both used to paint --bg. Once the canvas moved to z-index -1 that
+   became fatal: a negative-z layer paints above the ROOT background but
+   below the background of every in-flow block, body included -- so an
+   opaque body hides the field completely. <html> keeps the ground, which
+   means a page with no canvas (index, login) looks exactly as before and
+   nothing ever renders on bare white. */
 html { background: var(--bg); }
 body {
   margin: 0;
-  background: var(--bg);
+  background: transparent;
   color: var(--ink);
   font-family: var(--font);
   font-size: 15px;
@@ -192,9 +201,26 @@ body {
    pointer-events: none is not a nicety. A fixed full-screen canvas that
    swallows clicks is a worse regression than no background at all. */
 #bgCanvas {
-  position: fixed; inset: 0; z-index: 0;
+  position: fixed; inset: 0;
   display: block; width: 100%; height: 100%;
   pointer-events: none;
+
+  /* z-index -1, NOT 0, and this is the whole reason the merchant console
+     went blank. A fixed element at z-index 0 paints ABOVE every
+     non-positioned block in the page -- so an opaque canvas covers any
+     content that has not explicitly opted into a layer.
+
+     The old aurora sat at 0 and got away with it: its blobs were
+     transparent radial gradients with mix-blend-mode: screen, so text
+     underneath blended through rather than disappearing. This fills
+     every pixel with the ground colour, so it does not.
+
+     Opting content in one container at a time is how this broke: the
+     rule below lifts .topbar/.page/.page-narrow/.toast, the buyer
+     console lives inside .page and was fine, and the merchant console's
+     sidebar layout was not on the list. -1 needs nothing to opt in and
+     cannot be got wrong by a layout added later. */
+  z-index: -1;
 }
 .blob {
   position: absolute; border-radius: 50%;

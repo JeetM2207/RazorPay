@@ -60,7 +60,64 @@ def test_the_canvas_never_swallows_a_click():
         assert "pointer-events: none" in rule.group(1), (
             f"{name}: #bgCanvas would swallow every click on the page"
         )
-        assert "z-index: 0" in rule.group(1), f"{name}: the field is not behind"
+        assert "z-index: -1" in rule.group(1), f"{name}: the field is not behind"
+
+
+def test_the_field_sits_behind_everything_not_merely_early():
+    """This is the one that went wrong, and it blanked the merchant
+    console's headings in production.
+
+    A `position: fixed` element at `z-index: 0` paints ABOVE every
+    non-positioned block in the page. The old aurora got away with that
+    because its blobs were transparent and blended; this canvas fills
+    every pixel with the ground colour, so anything that had not
+    explicitly opted into a layer was simply painted over. shared.css
+    lifts .topbar/.page/.page-narrow/.toast -- the buyer console lives in
+    .page and was fine, and the merchant console's sidebar layout was not
+    on that list.
+
+    -1 requires nothing to opt in, so a layout added later cannot
+    reintroduce it."""
+    for name, source in (("shared.css", CSS), ("dashboard.py", DASHBOARD)):
+        rule = re.search(r"#bgCanvas\s*\{\{?(.*?)\}\}?", source, re.S)
+        assert rule, f"{name} does not style #bgCanvas"
+        assert "z-index: -1" in rule.group(1), (
+            f"{name}: an opaque full-screen canvas at z-index 0 or above "
+            "paints over every non-positioned block on the page"
+        )
+
+
+def test_body_is_transparent_so_the_field_can_be_seen():
+    """The other half of the same fact, and it hid the field completely
+    the first time round.
+
+    A negative-z layer paints above the ROOT background but below the
+    background of every in-flow block -- body included. So the ground has
+    to live on <html> and body has to be transparent, or the canvas is
+    painted and then covered by body.
+    """
+    assert re.search(r"^html\s*\{[^}]*background:", CSS, re.M), (
+        "shared.css: nothing paints the ground on <html>, so a transparent "
+        "body would render on whatever the browser defaults to"
+    )
+    body = re.search(r"^body\s*\{(.*?)^\}", CSS, re.S | re.M)
+    assert body, "shared.css has no body rule"
+    assert "background: transparent" in body.group(1), (
+        "shared.css: an opaque body hides the field entirely"
+    )
+
+    # And page-local overrides, which is exactly how merchant.html hid it
+    # again after shared.css had been fixed.
+    for name in FIELD_PAGES:
+        page = _without_print_rules((WEB / name).read_text(encoding="utf-8"))
+        for match in re.finditer(r"^\s*body\s*\{([^}]*)\}", page, re.M):
+            decl = match.group(1)
+            if "background" not in decl:
+                continue
+            assert "transparent" in decl, (
+                f"{name} sets an opaque body background, which paints over "
+                f"the field: {decl.strip()!r}"
+            )
 
 
 def test_every_console_page_carries_it():
@@ -86,6 +143,35 @@ def test_a_page_never_runs_both_backgrounds():
 
 
 # ------------------------------------------------- what it must NOT be
+
+def _without_print_rules(css: str) -> str:
+    """Drop @media print blocks, matching braces rather than guessing.
+
+    evidence.html legitimately paints a white body for its print sheet --
+    Ctrl+P is this project's PDF exporter. A first version of this test
+    tried to detect that by comparing rfind() positions and flagged it,
+    which is the "test that cries wolf" failure this repo already has a
+    note about.
+    """
+    out, i = [], 0
+    while True:
+        at = css.find("@media print", i)
+        if at == -1:
+            out.append(css[i:])
+            return "".join(out)
+        out.append(css[i:at])
+        brace = css.find("{", at)
+        if brace == -1:
+            return "".join(out)
+        depth, j = 1, brace + 1
+        while j < len(css) and depth:
+            if css[j] == "{":
+                depth += 1
+            elif css[j] == "}":
+                depth -= 1
+            j += 1
+        i = j
+
 
 def _code_only(src: str) -> str:
     """Strip comments before scanning for forbidden calls.

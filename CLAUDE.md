@@ -318,6 +318,27 @@ different blur scales read as mud and double a full-screen composite. `index.htm
 
 Three things worth keeping:
 
+- **`z-index: -1`, not 0 — this one shipped broken and blanked the merchant console.**
+  A `position: fixed` element at `z-index: 0` paints *above* every non-positioned block in
+  the page. The old aurora sat at 0 and got away with it because its blobs were
+  transparent and blended; this canvas fills every pixel with the ground colour, so it
+  covered anything that had not opted into a layer. `shared.css` lifts
+  `.topbar/.page/.page-narrow/.toast` — the buyer console lives inside `.page` and was
+  fine, and the merchant console's sidebar layout was not on that list, so its headings,
+  lede and mandate strip were painted over. `-1` needs nothing to opt in.
+
+  Its other half: a negative-z layer paints above the **root** background but below the
+  background of every in-flow block, body included — so the ground moved to `html` and
+  **`body` is transparent**. `merchant.html` had its own `body { background: var(--bg) }`
+  and hid the field again after `shared.css` was fixed. Both facts have tests, each
+  confirmed failing with the bug put back.
+
+  **What let it through is the lesson.** The contrast sweep read `getComputedStyle`, which
+  said `opacity: 1`, `visibility: visible`, the right colour — every element was *styled*
+  correctly and simply not *visible*. Computed style cannot see occlusion. The check that
+  finds it is `elementFromPoint` at the element's own box, and it now runs over text, not
+  only over the interactive elements the first pass checked — those happened to sit in
+  positioned containers and all passed while the headings behind them did not.
 - **`pointer-events: none` is load-bearing**, in `shared.css` *and* again in
   `dashboard.py`, which carries its own stylesheet. A fixed full-screen canvas without it
   breaks every button on the site and nothing errors. Verified by walking 31 interactive

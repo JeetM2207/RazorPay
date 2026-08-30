@@ -9,7 +9,11 @@
   /* THE BOARD. This page is where the machine works, so it sits on the
      coffee ground while the customer's pages stay on paper. The queue is
      drawn as chits pinned to it. */
-  body { background: var(--bg); color: var(--ink); }
+  /* Transparent, not --bg. The field sits at z-index -1, which paints
+     above the root background but BELOW the background of every in-flow
+     block -- so an opaque body hides it completely. <html> carries the
+     ground in shared.css, so nothing is left unpainted. */
+  body { background: transparent; color: var(--ink); }
   .page h1 { color: var(--ink); }
   .page > .lede { color: #948FA8; }
   .page h2 { color: var(--ink); }

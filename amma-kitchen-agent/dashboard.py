@@ -315,21 +315,27 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Consolas, monospace;
   }}
   * {{ box-sizing: border-box; }}
+  /* Ground on <html>, body transparent -- the canvas sits at z-index -1,
+     which is above the root background but below every in-flow block's,
+     so an opaque body would hide the field entirely. */
+  html {{ background: var(--paper); }}
   body {{
     margin: 0; padding: 32px;
     font: 15px/1.55 var(--font-body);
-    background: var(--paper); color: var(--ink);
+    background: transparent; color: var(--ink);
   }}
   /* The same violet field as the consoles -- see web/bg.js. This page has
      no stylesheet of its own to put it in, hence the second declaration.
      pointer-events: none, or a fixed full-screen canvas eats every click
      on the trail underneath it. */
+  /* z-index -1 so it sits behind content that has not opted into a
+     layer. At 0 a fixed element paints above every non-positioned block
+     and an opaque canvas simply covers the page -- see shared.css. */
   #bgCanvas {{
-    position: fixed; inset: 0; z-index: 0;
+    position: fixed; inset: 0; z-index: -1;
     display: block; width: 100%; height: 100%;
     pointer-events: none;
   }}
-  body > *:not(#bgCanvas) {{ position: relative; z-index: 1; }}
   h1 {{ margin: 0 0 4px; font-weight: 800; font-size: 32px; letter-spacing: -.025em; }}
   h2 {{ margin: 32px 0 12px; font-family: var(--font-mono); font-size: 11px;
         text-transform: uppercase; letter-spacing: .12em; color: var(--lilac); }}
