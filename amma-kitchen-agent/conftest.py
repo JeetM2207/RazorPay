@@ -7,6 +7,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 @pytest.fixture(autouse=True)
+def _isolate_messaging(monkeypatch):
+    """The suite must not care which SMS provider the developer has set up.
+
+    Every one of these tests was written when nothing was configured, so
+    they assumed the mock outbox and a particular MERCHANT_PHONE. The
+    moment a real provider went into .env they started failing --
+    `assert 'textbee' == 'mock'`, and an outbox message addressed to the
+    merchant's new number instead of the old one. Nothing was broken;
+    the suite was reading someone's personal configuration.
+
+    The transport flags are module attributes computed at import, so the
+    environment variables are not enough on their own -- the flags are
+    set directly. Tests that want a specific provider turn its flag back
+    on themselves, which also makes that intent visible in the test
+    rather than inherited from a file it never mentions.
+    """
+    import notification_service
+
+    monkeypatch.setattr(notification_service, "TEXTBEE_CONFIGURED", False)
+    monkeypatch.setattr(notification_service, "META_CONFIGURED", False)
+    monkeypatch.setattr(notification_service, "TWILIO_CONFIGURED", False)
+    monkeypatch.setattr(notification_service, "MERCHANT_PHONE", "+918306610707")
+    notification_service.clear_outbox()
+    yield
+    notification_service.clear_outbox()
+
+
+@pytest.fixture(autouse=True)
 def _isolate_audit_db(tmp_path, monkeypatch):
     """The suite must never write to the real audit trail.
 
