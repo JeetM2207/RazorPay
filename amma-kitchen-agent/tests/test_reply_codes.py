@@ -184,10 +184,24 @@ def test_a_wrong_code_and_an_unknown_order_read_identically(client):
 
 
 def test_a_refusal_never_names_the_order_or_the_code(client):
+    """A wrong code must not tell an attacker which order numbers are live.
+
+    The re-ask carries a worked example -- "like '1 4417' to approve" --
+    so the example is stripped before looking for a leak. Without that,
+    a single-digit order id matches the example's own digits and the test
+    fails on its own hint text.
+
+    Worth recording why this only surfaced now: it used to pass because
+    the suite wrote into the REAL audit database, where ids were four
+    digits deep. Once the suite got its own database the ids started at
+    1 and the collision appeared. The test was always this brittle; the
+    pollution was hiding it.
+    """
     escalation = _escalate(client)
     text = _reply(client, "1 0000" if escalation.code != "0000" else "1 1111").text
-    assert escalation.code not in text.replace("4417", "")   # 4417 is the example in REASK
-    assert str(escalation.order_id) not in text
+    sanitised = text.replace("1 4417", "").replace("2 4417", "").replace("4417", "")
+    assert escalation.code not in sanitised
+    assert str(escalation.order_id) not in sanitised
 
 
 # --------------------------------------------------- the customer's side

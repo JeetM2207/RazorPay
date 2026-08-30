@@ -7,6 +7,54 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 
 @pytest.fixture(autouse=True)
+def _isolate_audit_db(tmp_path, monkeypatch):
+    """The suite must never write to the real audit trail.
+
+    It did, for the whole life of this project, and the damage was
+    invisible because the trail is append-only and nothing ever looked
+    wrong: `agent-code`, `agent-0` through `agent-11`, `agent-A`,
+    `auth-test` and fourteen hundred escalations were all pytest, sitting
+    in the same database the consoles read. Every panel dutifully
+    reported it. That is where "Rs.0 revenue, 171 interventions" came
+    from -- not a bug in the panels, a suite writing into production.
+
+    The nasty part is HOW the path is bound. `db_path: str =
+    DEFAULT_DB_PATH` is evaluated once, when the function is defined, so
+    monkeypatching the module attribute does nothing for the sixty
+    functions that already captured it -- CLAUDE.md records the same trap
+    biting get_events_for_agent. So the defaults are rewritten too, on
+    every function that captured the old value.
+    """
+    import audit_log
+
+    real = audit_log.DEFAULT_DB_PATH
+    # Deliberately NOT "audit.db": tests that build their own database in
+    # tmp_path use that name, and this fixture would have created it
+    # first, so they failed with "table audit_events already exists".
+    sandbox = str(tmp_path / "_suite_audit.db")
+    monkeypatch.setattr(audit_log, "DEFAULT_DB_PATH", sandbox)
+
+    # Rebind every already-captured default. Done by value rather than by
+    # name so a function taking the path under any argument name is still
+    # covered, and so this keeps working if one is added later.
+    for module_name in ("audit_log", "idempotency", "trust", "evidence",
+                        "velocity", "mcp_orders", "routines", "orchestrator"):
+        try:
+            module = __import__(module_name)
+        except ImportError:
+            continue
+        for obj in vars(module).values():
+            defaults = getattr(obj, "__defaults__", None)
+            if not defaults or real not in defaults:
+                continue
+            obj.__defaults__ = tuple(
+                sandbox if d == real else d for d in defaults)
+
+    audit_log.init_db(sandbox)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def _isolate_merchant_config(tmp_path, monkeypatch):
     """Every test starts from the shipped defaults.
 
