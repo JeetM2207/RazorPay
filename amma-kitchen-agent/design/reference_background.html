@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Amma's Kitchen — Background Options</title>
+<style>
+  :root{
+    --bg:#0A0714; --card:#170F28; --card-2:#1E1638; --line:rgba(255,255,255,0.09);
+    --ink:#F5F3FA; --muted:#948FA8; --violet:#8A5CFF; --lilac:#C7B8FF; --amber:#FFB020;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Consolas, monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{ margin:0; background:var(--bg); height:100%; }
+  body{ color:var(--ink); font-family:var(--font); position:relative; overflow-x:hidden; }
+  #bgCanvas{ position:fixed; inset:0; z-index:0; display:block; }
+
+  .switcher{
+    position:fixed; top:22px; left:50%; transform:translateX(-50%); z-index:5;
+    display:flex; flex-wrap:wrap; justify-content:center; max-width:92vw; gap:4px; background:rgba(23,15,40,0.85); backdrop-filter:blur(10px);
+    border:1px solid var(--line); border-radius:12px; padding:4px;
+  }
+  .switcher button{
+    font-family:var(--font); font-size:12.5px; font-weight:600; color:var(--muted);
+    background:transparent; border:none; padding:9px 16px; border-radius:9px; cursor:pointer;
+  }
+  .switcher button.active{ background:var(--card-2); color:var(--ink); }
+
+  .content{ position:relative; z-index:1; max-width:900px; margin:0 auto; padding:110px 32px 60px; text-align:center; }
+  h1{ font-size:42px; font-weight:800; letter-spacing:-0.03em; line-height:1.15; margin:0 0 16px; }
+  .sub{ font-size:15px; color:var(--muted); max-width:480px; margin:0 auto 30px; line-height:1.6; }
+  .sub b{ color:var(--lilac); }
+  .order-card{
+    display:inline-flex; gap:8px; background:rgba(23,15,40,0.75); backdrop-filter:blur(10px);
+    border:1px solid var(--line); border-radius:18px; padding:8px; max-width:560px; width:100%;
+  }
+  .order-card input{ flex:1; background:transparent; border:none; color:var(--ink); font-size:14.5px; padding:13px 16px; font-family:var(--font); }
+  .order-card input:focus{ outline:none; }
+  .order-card button{ background:var(--violet); border:none; color:#fff; border-radius:12px; padding:0 22px; font-weight:800; font-size:13.5px; cursor:pointer; }
+  .caption{ margin-top:34px; font-size:12.5px; color:var(--muted); max-width:420px; margin-left:auto; margin-right:auto; line-height:1.6; }
+</style>
+</head>
+<body>
+
+  <canvas id="bgCanvas"></canvas>
+
+  <div class="switcher">
+    <button class="active" onclick="setMode('aurora', this)">✦ Aurora</button>
+    <button onclick="setMode('quiet', this)">Quiet</button>
+    <button onclick="setMode('flow', this)">Flow</button>
+    <button onclick="setMode('flowSunset', this)">Sunset</button>
+    <button onclick="setMode('flowOcean', this)">Ocean</button>
+    <button onclick="setMode('flowEmber', this)">Ember</button>
+    <button onclick="setMode('flowNeon', this)">Neon</button>
+    <button onclick="setMode('flowMono', this)">Mono</button>
+    <button onclick="setMode('network', this)">Network</button>
+    <button onclick="setMode('orbs', this)">Soft orbs</button>
+    <button onclick="setMode('blueprint', this)">Blueprint</button>
+    <button onclick="setMode('ripple', this)">Ripple</button>
+    <button onclick="setMode('threads', this)">Threads</button>
+  </div>
+
+  <div class="content">
+    <h1>An Agent That Orders.<br>And Never Oversteps.</h1>
+    <div class="sub">Built native to <b>Razorpay</b></div>
+    <div class="order-card">
+      <input value="Order 1 paneer bhurji and 4 tandoori roti">
+      <button>Deploy</button>
+    </div>
+    <div class="caption" id="caption">Thousands of points of light, each following invisible currents — drifting, braiding, never repeating. Move your cursor through it and watch the current bend.</div>
+  </div>
+
+<script>
+  const canvas = document.getElementById('bgCanvas');
+  const ctx = canvas.getContext('2d');
+  let w, h;
+  function resize(){ w = canvas.width = innerWidth; h = canvas.height = innerHeight; }
+  resize(); addEventListener('resize', resize);
+  let mouse = { x:-9999, y:-9999 };
+  addEventListener('mousemove', e=>{ mouse.x=e.clientX; mouse.y=e.clientY; });
+
+  const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let mode = 'aurora';
+  const captions = {
+    aurora: "Thousands of points of light, each following invisible currents — drifting, braiding, never repeating. Move your cursor through it and watch the current bend.",
+    network: "A live network of buyer and merchant agents — amber sparks are orders settling. Move your cursor through it.",
+    ripple: "Every order sends a ripple through the grid. Move your cursor — it's your own agent, touching the network.",
+    threads: "Three threads: the buyer's request, the negotiation, the settlement — always moving, never tangled.",
+    quiet: "Quiet by default — one soft light follows your cursor, like your own agent quietly present, never overstepping.",
+    blueprint: "A faint engineering grid — precise, structured, occasionally scanned. This is what 'bounded and gated' looks like as a surface.",
+    orbs: "Soft, overlapping fields of light drifting slowly. Warmer and more organic than Quiet, still nothing competing for attention.",
+    flow: "Five colors flowing and blending across the whole screen — violet into magenta into blue into teal. Nothing sharp, nothing sudden.",
+    flowSunset: "Sunset — amber, rose and deep plum bleeding into each other. Warm, human, less 'tech company'.",
+    flowOcean: "Ocean — deep navy through teal to aqua. Cool and calm; the most 'trustworthy fintech' of the set.",
+    flowEmber: "Ember — coals and gold on near-black. Rich and warm, and it makes anything white on top of it pop hard.",
+    flowNeon: "Neon — hot pink, cyan and violet at full saturation. The loudest option here. Confident, but it will compete with your UI.",
+    flowMono: "Mono — a single violet, five depths of it. No color mixing at all, just light and shadow. The most restrained, and it never clashes with anything you put on top."
+  };
+  function setMode(m, btn){
+    mode = m;
+    if(typeof aurPrimed !== 'undefined') aurPrimed = false;
+    document.getElementById('caption').textContent = captions[m];
+    btn.parentElement.querySelectorAll('button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+  }
+
+  /* ---------------- MODE 1: network (nodes + links + settlement pulses) ---------------- */
+  const NODE_COUNT = reduced ? 0 : 68, LINK_DIST = 130;
+  const nodes = [];
+  for(let i=0;i<NODE_COUNT;i++) nodes.push({ x:Math.random()*w, y:Math.random()*h, vx:(Math.random()-0.5)*0.22, vy:(Math.random()-0.5)*0.22, r:1.3+Math.random()*1.3 });
+  const pulses = [], bursts = [];
+  function spawnPulse(){
+    if(Math.random()<0.018 && nodes.length>1){
+      const a = nodes[(Math.random()*nodes.length)|0];
+      let best=null,bestD=Infinity;
+      for(const n of nodes){ if(n===a) continue; const d=Math.hypot(n.x-a.x,n.y-a.y); if(d<LINK_DIST && d<bestD){bestD=d;best=n;} }
+      if(best) pulses.push({a,b:best,t:0,dur:650+Math.random()*450});
+    }
+  }
+  function drawNetwork(){
+    for(const n of nodes){
+      n.x+=n.vx; n.y+=n.vy;
+      if(n.x<0||n.x>w) n.vx*=-1; if(n.y<0||n.y>h) n.vy*=-1;
+      const dx=mouse.x-n.x, dy=mouse.y-n.y, d=Math.hypot(dx,dy);
+      if(d<160){ n.x+=dx*0.0018; n.y+=dy*0.0018; }
+    }
+    for(let i=0;i<nodes.length;i++) for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i], b=nodes[j], d=Math.hypot(a.x-b.x,a.y-b.y);
+      if(d<LINK_DIST){ ctx.strokeStyle=`rgba(167,139,250,${(1-d/LINK_DIST)*0.32})`; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); }
+    }
+    for(const n of nodes){
+      const dm=Math.hypot(mouse.x-n.x,mouse.y-n.y), glow=dm<160?(1-dm/160):0;
+      ctx.beginPath(); ctx.fillStyle = glow>0?`rgba(199,184,255,${0.55+glow*0.45})`:'rgba(138,92,255,0.5)';
+      ctx.arc(n.x,n.y,n.r+glow*1.6,0,Math.PI*2); ctx.fill();
+    }
+    spawnPulse();
+    for(let i=pulses.length-1;i>=0;i--){
+      const p=pulses[i]; p.t+=16; const f=Math.min(1,p.t/p.dur);
+      const x=p.a.x+(p.b.x-p.a.x)*f, y=p.a.y+(p.b.y-p.a.y)*f;
+      ctx.beginPath(); ctx.fillStyle='#FFB020'; ctx.arc(x,y,2.6,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.fillStyle='rgba(255,176,32,0.22)'; ctx.arc(x,y,6,0,Math.PI*2); ctx.fill();
+      if(f>=1){ bursts.push({x:p.b.x,y:p.b.y,t:0}); pulses.splice(i,1); }
+    }
+    for(let i=bursts.length-1;i>=0;i--){
+      const b=bursts[i]; b.t+=16; const bf=b.t/320;
+      if(bf>=1){ bursts.splice(i,1); continue; }
+      ctx.beginPath(); ctx.strokeStyle=`rgba(255,176,32,${1-bf})`; ctx.lineWidth=1.5; ctx.arc(b.x,b.y,3+bf*15,0,Math.PI*2); ctx.stroke();
+    }
+  }
+
+  /* ---------------- MODE 2: ripple grid ---------------- */
+  const GRID_GAP = 46;
+  const gridDots = [];
+  function buildGrid(){
+    gridDots.length = 0;
+    for(let x=GRID_GAP/2; x<w; x+=GRID_GAP) for(let y=GRID_GAP/2; y<h; y+=GRID_GAP) gridDots.push({x,y});
+  }
+  buildGrid(); addEventListener('resize', buildGrid);
+  const ripples = [];
+  let lastAutoRipple = 0, lastMouseRipple = 0;
+  function drawRipple(now){
+    if(!reduced && now - lastAutoRipple > 2600){
+      ripples.push({ x:Math.random()*w, y:Math.random()*h, start:now, life:2200 });
+      lastAutoRipple = now;
+    }
+    if(now - lastMouseRipple > 550 && mouse.x > 0){
+      ripples.push({ x:mouse.x, y:mouse.y, start:now, life:1500 });
+      lastMouseRipple = now;
+    }
+    for(let i=ripples.length-1;i>=0;i--) if(now - ripples[i].start > ripples[i].life) ripples.splice(i,1);
+    for(const d of gridDots){
+      let boost = 0;
+      for(const r of ripples){
+        const age = now - r.start, f = age / r.life;
+        const radius = f * Math.max(w,h) * 0.5;
+        const dist = Math.hypot(d.x-r.x, d.y-r.y);
+        const band = Math.abs(dist - radius);
+        if(band < 40) boost = Math.max(boost, (1-f) * (1 - band/40));
+      }
+      const size = 1.1 + boost*2.6;
+      ctx.beginPath();
+      ctx.fillStyle = boost>0.05 ? `rgba(199,184,255,${0.25+boost*0.7})` : 'rgba(138,92,255,0.22)';
+      ctx.arc(d.x, d.y, size, 0, Math.PI*2); ctx.fill();
+    }
+  }
+
+  /* ---------------- MODE 3: silk threads ---------------- */
+  const THREADS = [
+    { baseY:0.32, amp:34, freq:0.0026, speed:0.010, color:'138,92,255' },
+    { baseY:0.5,  amp:46, freq:0.0019, speed:0.007, color:'199,184,255' },
+    { baseY:0.68, amp:28, freq:0.0031, speed:0.013, color:'255,176,32' },
+  ];
+  let threadPhase = 0;
+  function drawThreads(){
+    threadPhase += reduced ? 0 : 1;
+    for(const t of THREADS){
+      const baseY = h * t.baseY;
+      ctx.beginPath();
+      for(let x=0; x<=w; x+=6){
+        const y = baseY + Math.sin(x*t.freq + threadPhase*t.speed) * t.amp
+                 + Math.sin(x*t.freq*2.3 + threadPhase*t.speed*1.7) * (t.amp*0.25);
+        if(x===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+      }
+      ctx.strokeStyle = `rgba(${t.color},0.5)`; ctx.lineWidth = 1.6; ctx.stroke();
+      ctx.strokeStyle = `rgba(${t.color},0.12)`; ctx.lineWidth = 7; ctx.stroke();
+    }
+  }
+
+  /* ---------------- MODE 4: quiet — visible but calm, no interactivity ---------------- */
+  function makeNoiseTile(size){
+    const c = document.createElement('canvas'); c.width = c.height = size;
+    const tctx = c.getContext('2d');
+    const img = tctx.createImageData(size, size);
+    for(let i=0;i<img.data.length;i+=4){
+      const v = Math.random()*255;
+      img.data[i]=v; img.data[i+1]=v; img.data[i+2]=v;
+      img.data[i+3] = Math.random()*26; // visible grain, still textural not flashy
+    }
+    tctx.putImageData(img,0,0);
+    return c;
+  }
+  const noiseTile = makeNoiseTile(140);
+  const noisePattern = ctx.createPattern(noiseTile, 'repeat');
+  let quietT = 0;
+  let followX = -9999, followY = -9999;
+  function drawQuiet(){
+    quietT += reduced ? 0 : 0.006;
+    ctx.fillStyle = '#0A0714';
+    ctx.fillRect(0,0,w,h);
+    const g1x = w*0.25 + Math.sin(quietT)*70, g1y = h*0.2 + Math.cos(quietT*0.8)*50;
+    const g2x = w*0.75 + Math.sin(quietT*0.7+2)*70, g2y = h*0.7 + Math.cos(quietT*0.6+1)*50;
+    let g = ctx.createRadialGradient(g1x,g1y,0,g1x,g1y, Math.max(w,h)*0.55);
+    g.addColorStop(0,'rgba(138,92,255,0.22)'); g.addColorStop(1,'rgba(138,92,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    g = ctx.createRadialGradient(g2x,g2y,0,g2x,g2y, Math.max(w,h)*0.5);
+    g.addColorStop(0,'rgba(78,161,255,0.16)'); g.addColorStop(1,'rgba(78,161,255,0)');
+    ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+
+    /* cursor-following glow — "your own agent," quietly present, never demanding attention */
+    if(mouse.x > 0){
+      if(reduced){ followX = mouse.x; followY = mouse.y; }
+      else { followX += (mouse.x-followX)*0.045; followY += (mouse.y-followY)*0.045; }
+      const cg = ctx.createRadialGradient(followX,followY,0,followX,followY,230);
+      cg.addColorStop(0,'rgba(199,184,255,0.16)'); cg.addColorStop(1,'rgba(199,184,255,0)');
+      ctx.fillStyle = cg; ctx.fillRect(0,0,w,h);
+    }
+
+    ctx.fillStyle = noisePattern; ctx.fillRect(0,0,w,h);
+    const vg = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.25,w/2,h/2,Math.max(w,h)*0.75);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,w,h);
+  }
+
+  /* ---------------- MODE 5: blueprint — faint technical grid with a slow scan line ---------------- */
+  const BP_GAP = 52;
+  let scanY = -200, scanActive = false, lastScan = 0;
+  function drawBlueprint(now){
+    ctx.fillStyle = '#0A0714'; ctx.fillRect(0,0,w,h);
+    ctx.strokeStyle = 'rgba(138,92,255,0.07)'; ctx.lineWidth = 1;
+    for(let x=0; x<w; x+=BP_GAP){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for(let y=0; y<h; y+=BP_GAP){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+    // soft highlight near cursor, on the grid lines only
+    if(mouse.x > 0){
+      const cg = ctx.createRadialGradient(mouse.x,mouse.y,0,mouse.x,mouse.y,180);
+      cg.addColorStop(0,'rgba(199,184,255,0.10)'); cg.addColorStop(1,'rgba(199,184,255,0)');
+      ctx.fillStyle = cg; ctx.fillRect(0,0,w,h);
+    }
+    // occasional slow vertical scan line
+    if(!reduced){
+      if(now - lastScan > 7000 && !scanActive){ scanActive = true; scanY = -100; lastScan = now; }
+      if(scanActive){
+        const g = ctx.createLinearGradient(0,scanY-80,0,scanY+80);
+        g.addColorStop(0,'rgba(78,161,255,0)'); g.addColorStop(0.5,'rgba(78,161,255,0.06)'); g.addColorStop(1,'rgba(78,161,255,0)');
+        ctx.fillStyle = g; ctx.fillRect(0,scanY-80,w,160);
+        scanY += 2.2;
+        if(scanY > h+100) scanActive = false;
+      }
+    }
+    const vg = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.3,w/2,h/2,Math.max(w,h)*0.75);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,w,h);
+  }
+
+  /* ---------------- MODE 6: soft orbs — warm overlapping bokeh, very slow ---------------- */
+  const ORBS = [
+    { x:0.2, y:0.3, r:0.34, color:'138,92,255', speed:0.005, phase:0 },
+    { x:0.75,y:0.25,r:0.30, color:'255,176,32', speed:0.004, phase:2 },
+    { x:0.6, y:0.75,r:0.36, color:'78,161,255', speed:0.006, phase:4 },
+    { x:0.25,y:0.7, r:0.26, color:'199,184,255',speed:0.0045,phase:1 },
+  ];
+  let orbT = 0;
+  function drawOrbs(){
+    orbT += reduced ? 0 : 1;
+    ctx.fillStyle = '#0A0714'; ctx.fillRect(0,0,w,h);
+    for(const o of ORBS){
+      const x = w*o.x + Math.sin(orbT*o.speed+o.phase)*60;
+      const y = h*o.y + Math.cos(orbT*o.speed*0.8+o.phase)*40;
+      const r = Math.max(w,h)*o.r;
+      const g = ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0, `rgba(${o.color},0.20)`); g.addColorStop(1, `rgba(${o.color},0)`);
+      ctx.fillStyle = g; ctx.fillRect(0,0,w,h);
+    }
+    ctx.fillStyle = noisePattern; ctx.fillRect(0,0,w,h);
+    const vg = ctx.createRadialGradient(w/2,h/2,Math.min(w,h)*0.25,w/2,h/2,Math.max(w,h)*0.75);
+    vg.addColorStop(0,'rgba(0,0,0,0)'); vg.addColorStop(1,'rgba(0,0,0,0.4)');
+    ctx.fillStyle = vg; ctx.fillRect(0,0,w,h);
+  }
+
+  /* ---------------- MODE 7: flow — full-screen blending color mesh, additive light mixing ---------------- */
+  const FLOW_PALETTES = {
+    flow: { bg:'#0A0714', colors:['138,92,255','232,95,255','78,161,255','52,226,210','167,139,250'] },
+    flowSunset: { bg:'#140A11', colors:['255,138,76','255,94,142','186,85,211','255,183,94','132,68,180'] },
+    flowOcean: { bg:'#040E18', colors:['32,86,196','52,226,210','78,161,255','24,178,168','120,200,255'] },
+    flowEmber: { bg:'#120705', colors:['255,94,58','255,163,44','214,52,64','255,206,92','150,40,80'] },
+    flowNeon: { bg:'#0A0518', colors:['255,52,164','52,226,255','168,84,255','255,120,220','96,255,214'] },
+    flowMono: { bg:'#0A0714', colors:['138,92,255','108,66,220','167,139,250','76,44,168','199,184,255'] },
+  };
+  const MESH_POS = [
+    { bx:0.15, by:0.22, r:0.62 },
+    { bx:0.85, by:0.18, r:0.58 },
+    { bx:0.5,  by:0.55, r:0.66 },
+    { bx:0.18, by:0.82, r:0.56 },
+    { bx:0.82, by:0.8,  r:0.6  },
+  ];
+  let flowT = 0;
+  function drawFlow(){
+    const pal = FLOW_PALETTES[mode] || FLOW_PALETTES.flow;
+    flowT += reduced ? 0 : 0.0032;
+    ctx.fillStyle = pal.bg;
+    ctx.fillRect(0,0,w,h);
+    ctx.globalCompositeOperation = 'lighter';
+    for(let i=0;i<MESH_POS.length;i++){
+      const o = MESH_POS[i];
+      const col = pal.colors[i];
+      const x = w*o.bx + Math.sin(flowT*0.9 + i*1.4)*130 + Math.cos(flowT*1.4 + i)*70;
+      const y = h*o.by + Math.cos(flowT*0.7 + i*2.0)*110 + Math.sin(flowT*1.1 + i*0.8)*70;
+      const r = Math.max(w,h) * o.r;
+      const g = ctx.createRadialGradient(x,y,0,x,y,r);
+      g.addColorStop(0, `rgba(${col},0.16)`);
+      g.addColorStop(1, `rgba(${col},0)`);
+      ctx.fillStyle = g;
+      ctx.fillRect(0,0,w,h);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* ---------------- MODE 8: AURORA — flow-field light streams ----------------
+     Thousands of particles each read an invisible vector field and move along it,
+     leaving glowing trails. The field itself slowly morphs, so the currents braid
+     and reshape forever without ever repeating. Cursor bends the field locally. */
+  const AUR_COUNT = reduced ? 0 : 1500;
+  const aurP = [];
+  function initAurora(){
+    aurP.length = 0;
+    for(let i=0;i<AUR_COUNT;i++){
+      aurP.push({ x:Math.random()*w, y:Math.random()*h, life:Math.random()*260 });
+    }
+  }
+  initAurora();
+  addEventListener('resize', initAurora);
+  let aurT = 0;
+  let aurPrimed = false;
+
+  function fieldAngle(x,y,t){
+    return (Math.sin(x*0.0016 + t*0.30)
+          + Math.cos(y*0.0019 - t*0.25)
+          + Math.sin((x+y)*0.0011 + t*0.40)) * 1.9;
+  }
+
+  function drawAurora(){
+    if(!aurPrimed){ ctx.fillStyle='#08060F'; ctx.fillRect(0,0,w,h); aurPrimed = true; }
+    // soft fade instead of clearing — this is what creates the glowing trails
+    ctx.fillStyle = 'rgba(8,6,15,0.052)';
+    ctx.fillRect(0,0,w,h);
+
+    aurT += reduced ? 0 : 0.0018;
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineWidth = 1.1;
+
+    for(const p of aurP){
+      let a = fieldAngle(p.x, p.y, aurT);
+
+      // cursor bends the current nearby — a swirl, not a push
+      if(mouse.x > 0){
+        const dx = p.x-mouse.x, dy = p.y-mouse.y, d = Math.hypot(dx,dy);
+        if(d < 260){ a += (1 - d/260) * 2.2; }
+      }
+
+      const px = p.x, py = p.y;
+      p.x += Math.cos(a) * 1.45;
+      p.y += Math.sin(a) * 1.45;
+      p.life--;
+
+      // palette drifts across the screen: teal → blue → violet → magenta
+      const hue = 196 + (p.x/w)*104 + Math.sin(p.y*0.0022 + aurT*2.4)*22;
+      ctx.strokeStyle = `hsla(${hue}, 92%, 66%, 0.30)`;
+      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(p.x,p.y); ctx.stroke();
+
+      if(p.life < 0 || p.x < -20 || p.x > w+20 || p.y < -20 || p.y > h+20){
+        p.x = Math.random()*w; p.y = Math.random()*h; p.life = 120 + Math.random()*260;
+      }
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  function loop(now){
+    if(mode==='aurora'){ drawAurora(); requestAnimationFrame(loop); return; }
+    if(mode==='quiet'){ drawQuiet(); requestAnimationFrame(loop); return; }
+    if(mode==='blueprint'){ drawBlueprint(now||0); requestAnimationFrame(loop); return; }
+    if(mode==='orbs'){ drawOrbs(); requestAnimationFrame(loop); return; }
+    if(FLOW_PALETTES[mode]){ drawFlow(); requestAnimationFrame(loop); return; }
+    ctx.clearRect(0,0,w,h);
+    if(mode==='network') drawNetwork();
+    else if(mode==='ripple') drawRipple(now||0);
+    else drawThreads();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+</script>
+</body>
+</html>

@@ -71,7 +71,7 @@
 </head>
 <body>
 
-  <div class="aurora aurora-quiet" aria-hidden="true"><div class="blob blob-1"></div><div class="blob blob-2"></div><div class="blob blob-3"></div></div>
+  <canvas id="bgCanvas" aria-hidden="true"></canvas>
 
   <div class="topbar">
     <div class="brand">
@@ -301,5 +301,6 @@ $("addDish").addEventListener("click", () => $("dishes").appendChild(dishRow()))
 $("saveBtn").addEventListener("click", save);
 boot();
 </script>
+<script src="/static/bg.js" defer></script>
 </body>
 </html>

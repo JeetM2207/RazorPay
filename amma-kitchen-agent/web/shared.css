@@ -68,7 +68,11 @@
   --line-2:rgba(255,255,255,0.16);
   --ink:#F5F3FA;
   --muted:#948FA8;
-  --muted-2:#7C769A;      /* lifted from #635D78: 4.1:1 was under AA on --card */
+  /* Lifted twice now, both times for the same measured reason: from
+     #635D78 (4.1:1, under AA on --card), and again from #7C769A, which
+     read 4.67:1 on the near-black ground -- no headroom at all, so the
+     moment anything sat behind it, footnotes fell to 2.6:1. */
+  --muted-2:#8A85A2;
   --violet:#8A5CFF;
   --violet-dim:#4A2FA0;
   --lilac:#C7B8FF;
@@ -172,6 +176,26 @@ body {
    on its own layer so the drift animates without repainting the page. */
 
 .aurora { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+
+/* ------------------------------------------------ the violet field */
+/* The background proper: five radial gradients of ONE violet, drifting
+   and blending additively. See web/bg.js -- the effect is there; this is
+   only where it sits.
+
+   It REPLACES the three blobs above on every page that carries it. Both
+   at once would be two violet gradient systems at different blur scales
+   fighting each other, which reads as mud rather than as depth, and it
+   would double a full-screen composite on a page that has to hold frame
+   rate during a live demo. The aurora rules stay because index.html and
+   login.html still use them.
+
+   pointer-events: none is not a nicety. A fixed full-screen canvas that
+   swallows clicks is a worse regression than no background at all. */
+#bgCanvas {
+  position: fixed; inset: 0; z-index: 0;
+  display: block; width: 100%; height: 100%;
+  pointer-events: none;
+}
 .blob {
   position: absolute; border-radius: 50%;
   filter: blur(64px); opacity: .5; mix-blend-mode: screen;
@@ -287,8 +311,15 @@ h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
    of the system is built from. The name stays because the consoles' JS
    and every page's markup already use it. */
 
+/* Translucent, so the moving light is visible THROUGH the panels and not
+   only in the gaps between them -- most of these pages is card, so an
+   opaque surface hides the whole effect. The token itself is untouched:
+   this is one rule about one surface, not a repainted palette, and every
+   other var(--card) in the project still resolves to the solid colour. */
 .chit, .card {
-  background: var(--card);
+  background: rgba(26, 19, 48, .72);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 22px 24px;

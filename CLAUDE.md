@@ -294,6 +294,51 @@ present the mockup as a product screenshot, and a real page has no business bein
 screenshot inside another screenshot. The consoles get `.aurora-quiet` (30% opacity):
 a working board is a place to work, not a hero.
 
+### The violet field, which replaced the aurora on the consoles
+
+`web/bg.js` — a full-viewport `<canvas>` behind `order.html`, `merchant.html`,
+`profile.html`, `shop.html`, `evidence.html` and the `dashboard.py`-rendered `/audit`.
+Five large radial gradients of **one violet at five depths** drift on overlapping sine
+paths and blend with `globalCompositeOperation = 'lighter'`, which *is* the effect —
+without it they paint over each other and it is five flat blobs. Ported from
+`design/reference_background.html` ("Mono"), which is committed.
+
+**It is decorative and inert.** It reads no data, decides nothing, and does not track the
+cursor; a test asserts it never reaches for `fetch`, `/api/`, the audit trail or a mouse
+event. A background that reacts is a background people watch, and the surface that
+deserves watching here is the terminal.
+
+**The single hue is the whole reason it can be this large.** Amber (waiting on a human),
+coral (refused) and green (cleared) stay the only non-violet things on screen, so a status
+still catches the eye instantly. A test asserts all five palette entries are violets.
+
+The three-blob CSS aurora is **replaced, not layered** — two violet gradient systems at
+different blur scales read as mud and double a full-screen composite. `index.html` and
+`login.html` keep the aurora, being arrival screens rather than places anyone works.
+
+Three things worth keeping:
+
+- **`pointer-events: none` is load-bearing**, in `shared.css` *and* again in
+  `dashboard.py`, which carries its own stylesheet. A fixed full-screen canvas without it
+  breaks every button on the site and nothing errors. Verified by walking 31 interactive
+  elements on a full scroll and asserting `elementFromPoint` never returns the canvas.
+- **Alpha is 0.072, not the reference's 0.16.** A sweep of every text element over the
+  field found six — section ledes and footnotes on four pages — between 2.6:1 and 4.5:1,
+  where they had been fine on the near-black ground. `--muted-2` had to be lifted from
+  `#7C769A` to `#8A85A2` for the same reason it was lifted from `#635D78` once before: at
+  4.67:1 on the ground it had no headroom, so *anything* behind it fell under AA. All
+  pages now measure zero failures, checked against the brightest pixel on the page rather
+  than one moment.
+- **`render()` paints a frame unconditionally.** `resize()` clears the canvas, so leaving
+  the repaint to a future frame leaves it black in exactly the states where no frame comes
+  next — reduced motion, and a hidden tab, where `requestAnimationFrame` does not fire.
+  Same trap as the terminal typewriter, three sections down.
+
+Measured on the buyer console with an order actually running and the terminal typing:
+**60.2fps average, p95 17ms, one dropped frame in 240** (60Hz display, so this is the cap).
+Rendered at half resolution and stretched by CSS — invisible on an image with no hard edge
+in it, and a quarter of the fill cost.
+
 ### The terminal, and why it types
 
 **This is the part that mattered most.** The design pass shipped a typewriter that looped

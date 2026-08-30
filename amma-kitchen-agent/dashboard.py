@@ -306,7 +306,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   :root {{
     --paper:#0A0714; --paper-card:#1A1330; --paper-border:rgba(255,255,255,0.09);
     --card-2:#211A3D;
-    --ink:#F5F3FA; --ink-soft:#948FA8; --muted-2:#7C769A;
+    --ink:#F5F3FA; --ink-soft:#948FA8; --muted-2:#8A85A2;
     --coffee:#0B0716; --gold:#8A5CFF; --gold-deep:#A98BFF; --lilac:#C7B8FF;
     --leaf:#3DE8A0; --rust:#FFB020; --brick:#FF7A5C; --steel:#4EA1FF;
     --radius-chit: 18px;
@@ -320,6 +320,16 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     font: 15px/1.55 var(--font-body);
     background: var(--paper); color: var(--ink);
   }}
+  /* The same violet field as the consoles -- see web/bg.js. This page has
+     no stylesheet of its own to put it in, hence the second declaration.
+     pointer-events: none, or a fixed full-screen canvas eats every click
+     on the trail underneath it. */
+  #bgCanvas {{
+    position: fixed; inset: 0; z-index: 0;
+    display: block; width: 100%; height: 100%;
+    pointer-events: none;
+  }}
+  body > *:not(#bgCanvas) {{ position: relative; z-index: 1; }}
   h1 {{ margin: 0 0 4px; font-weight: 800; font-size: 32px; letter-spacing: -.025em; }}
   h2 {{ margin: 32px 0 12px; font-family: var(--font-mono); font-size: 11px;
         text-transform: uppercase; letter-spacing: .12em; color: var(--lilac); }}
@@ -332,13 +342,16 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
   .mandate b {{ color: var(--ink); }}
   .cards {{ display: flex; flex-wrap: wrap; gap: 12px; }}
   .card {{
-    flex: 1 1 150px; background: var(--paper-card); border: 1px solid var(--paper-border);
+    flex: 1 1 150px; background: rgba(26, 19, 48, .72);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--paper-border);
     border-radius: var(--radius-chit); padding: 16px 18px; position: relative;
   }}
   .card .num {{ font-family: var(--font-mono); font-size: 26px; font-weight: 700;
                 letter-spacing: -.02em; font-variant-numeric: tabular-nums; }}
   .card .lbl {{ font-size: 12px; color: var(--ink-soft); margin-top: 2px; }}
-  .wrap {{ overflow-x: auto; background: var(--paper-card);
+  .wrap {{ overflow-x: auto; background: rgba(26, 19, 48, .72);
+           backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
            border: 1px solid var(--paper-border); border-radius: var(--radius-chit); }}
   table {{ border-collapse: collapse; width: 100%; font-size: 13.5px; }}
   th {{
@@ -395,6 +408,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 </style>
 </head>
 <body>
+  <canvas id="bgCanvas" aria-hidden="true"></canvas>
   <h1>Amma's Kitchen &mdash; Agent Audit Trail</h1>
   <p class="sub">Every decision this system has made, and whether money moved.</p>
 
@@ -437,6 +451,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     was made &mdash; shown above as &ldquo;no Razorpay call made&rdquo;. The same negotiation
     core produced every row, whichever protocol the request arrived on.
   </p>
+<script src="/static/bg.js" defer></script>
 </body>
 </html>"""
 
