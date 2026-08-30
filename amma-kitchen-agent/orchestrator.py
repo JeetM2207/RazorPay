@@ -344,11 +344,33 @@ def create_payment_for_cart(
         total_inr = result.total_inr
 
     description = " + ".join(f"{qty}x {name}" for name, qty in cart)
-    link = razorpay_client.create_payment_link(
-        amount_inr=total_inr,
-        description=f"Amma's Kitchen order: {description}",
-        reference_id=f"order-{event_id}-{uuid.uuid4().hex[:6]}",
-    )
+    try:
+        link = razorpay_client.create_payment_link(
+            amount_inr=total_inr,
+            description=f"Amma's Kitchen order: {description}",
+            reference_id=f"order-{event_id}-{uuid.uuid4().hex[:6]}",
+        )
+    except Exception as exc:
+        # Razorpay test mode caps an account at 30 payment links EVER
+        # created -- cancelling them does not give the quota back, which
+        # is easy to assume and wrong. Past that every checkout dies here,
+        # and the customer was being shown a bare "HTTP 500": no idea
+        # whether their order was wrong, the kitchen was shut, or the
+        # money had moved.
+        #
+        # Nothing about the order was wrong. It cleared both mandates and
+        # every rule; the account simply cannot mint another link. Say
+        # exactly that, and say it as a 503 -- the service is unavailable,
+        # the request was fine.
+        if "limit of 30" in str(exc) or "payment_link" in str(exc).lower():
+            raise HTTPException(
+                status_code=503,
+                detail="Razorpay test-mode payment links are used up (30 of 30 "
+                       "created; cancelling them does not free the quota). Nothing "
+                       "is wrong with this order -- it passed every check. Create a "
+                       "fresh Razorpay test account and swap the keys in .env.",
+            ) from exc
+        raise
     audit_log.attach_payment_link(event_id, link["id"], db_path=db_path)
     return link
 

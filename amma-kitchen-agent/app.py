@@ -793,6 +793,33 @@ def evidence_pack(order_id: int) -> dict:
     return pack
 
 
+@app.post("/api/orders/{order_id}/raise-dispute")
+def raise_dispute(order_id: int) -> dict:
+    """The CUSTOMER says they did not authorise this order.
+
+    Deliberately not behind the merchant login, because the merchant is
+    not the person who disputes a charge. In the real world the customer
+    raises it with their bank, the merchant receives the notice, and the
+    merchant is the one who has to produce evidence. The merchant console
+    keeps its own entry point for logging a dispute that arrived by that
+    route -- this is the other end of the same fact.
+
+    Safe to leave open because it moves nothing. It writes one timestamp
+    that marks a record as contested and makes its evidence pack the
+    featured view. No money, no status change, no notification.
+
+    It is honestly unauthenticated rather than pretending otherwise: this
+    project has no per-customer accounts (the buyer profile lives in the
+    browser's own localStorage), so there is nobody to check the claimant
+    against. Real multi-tenancy would need authentication nothing here
+    has, and that is a known gap rather than an oversight.
+    """
+    if audit_log.get_event(order_id, db_path=audit_log.DEFAULT_DB_PATH) is None:
+        raise HTTPException(404, f"no order #{order_id} in the audit trail")
+    audit_log.mark_disputed(order_id, db_path=audit_log.DEFAULT_DB_PATH)
+    return {"order_id": order_id, "disputed": True}
+
+
 @app.post("/api/orders/{order_id}/dispute", dependencies=[Depends(merchant_auth.require_merchant)])
 def mark_order_disputed(order_id: int) -> dict:
     """Flag an order as disputed. One timestamp, no workflow.

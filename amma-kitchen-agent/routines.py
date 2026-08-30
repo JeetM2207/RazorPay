@@ -332,6 +332,29 @@ def describe(routine: dict) -> str:
     )
 
 
+def _occurrence_open(now: datetime, routine: dict) -> bool:
+    """Has this occurrence's moment arrived -- and not yet passed?
+
+    The confidence gate tolerates the scheduled time give or take its
+    window, which is right for a CHECK: a routine examined a few minutes
+    either side is still the same occurrence. It is wrong for FIRING. A
+    20:00 dinner became due at 19:15, so the food arrived three quarters
+    of an hour before anybody wanted it, every week.
+
+    So firing opens AT the scheduled minute and stays open for the rest
+    of the window. Late is recoverable -- a tick was missed, the machine
+    was asleep, the order still wants placing. Early is just wrong.
+    """
+    here = _local(now, routine)
+    if DAYS[here.weekday()] not in routine["days"]:
+        return False
+    hour, minute = (int(p) for p in routine["time"].split(":"))
+    expected = here.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    late_by = (here - expected).total_seconds() / 60
+    window = routine.get("window_minutes", DEFAULT_WINDOW_MINUTES)
+    return 0 <= late_by <= window
+
+
 def due_now(now: datetime | None = None) -> list[str]:
     """Routines whose occurrence is happening and has not run yet.
 
@@ -361,8 +384,7 @@ def due_now(now: datetime | None = None) -> list[str]:
     for routine in all_routines():
         if routine.get("status") != "active":
             continue
-        inside, _ = _within_window(now, routine)
-        if not inside:
+        if not _occurrence_open(now, routine):
             continue
         if _already_fired_this_occurrence(routine, now):
             continue

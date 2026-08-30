@@ -188,6 +188,20 @@
   .daybox input { display: none; }
   .daybox label.on { background: var(--gold); border-color: var(--gold); color: #fff; }
   .routine-form { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 15px; }
+  .tx-dispute {
+    appearance: none; background: transparent; cursor: pointer;
+    border: 1px solid var(--line-2); border-radius: 7px;
+    color: var(--muted); font-family: var(--font-body); font-size: 11.5px;
+    padding: 3px 9px; margin-top: 7px;
+    transition: color .15s ease, border-color .15s ease;
+  }
+  .tx-dispute:hover { color: var(--coral); border-color: var(--coral); }
+  .tx-dispute:disabled { opacity: .5; cursor: default; }
+  .tx-disputed {
+    display: inline-block; margin-top: 7px; font-size: 11.5px;
+    color: var(--coral); text-decoration: none; font-weight: 600;
+  }
+  .tx-disputed:hover { text-decoration: underline; }
   .routine-summary {
     margin: 12px 0 0; padding: 10px 14px; border-radius: 10px;
     background: var(--card-2); border: 1px solid var(--line);
@@ -517,9 +531,11 @@
             <span class="badge badge-mute" id="routineCount">none</span>
           </div>
           <p class="note" style="margin:0 0 12px">
-            Your agent will place these automatically, within the cap you set, without
-            asking first &mdash; unless something looks different from usual, in which case
-            it messages you and waits.
+            You never press anything. At the time you set, your agent checks the kitchen's
+            live menu &mdash; is every dish still there, still in stock, still near the
+            price you agreed? If it all looks right it places the order inside your cap and
+            tells you. <b>If anything has moved it does not order.</b> It messages you with
+            what changed, and only places it if you reply <b>YES</b>.
           </p>
           <div id="routineList"></div>
 
@@ -1871,6 +1887,10 @@ async function openTransactions() {
                   ${TX_NOTE[tx.kind] ? "&middot; " + TX_NOTE[tx.kind] : ""}
                 </div>
                 ${tx.reference ? `<div class="tx-ref">${escHtml(tx.reference)}</div>` : ""}
+                ${tx.direction === "out" && tx.order_ref ? `
+                  <button class="tx-dispute" data-dispute="${escHtml(tx.order_ref)}">
+                    I didn't authorise this
+                  </button>` : ""}
               </div>
               <div class="tx-amt">${tx.direction === "in" ? "+" : "\u2212"}${rupee(tx.amount_inr)}</div>
             </div>`;
@@ -1880,6 +1900,35 @@ async function openTransactions() {
     $("txList").innerHTML = `<div class="empty">Couldn't load: ${escHtml(err.message)}</div>`;
   }
 }
+
+/* Disputing is the CUSTOMER's move, so it lives on the customer's
+   statement. The merchant console has its own way in -- she logs a
+   dispute that reached her by another route -- but she is not the person
+   who contests her own sale, and a board where she was the only one who
+   could raise one described the wrong world.
+
+   It moves no money and changes no status. It marks the record as
+   contested, which makes its evidence pack the featured view for both
+   sides. */
+$("txList").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-dispute]");
+  if (!btn) return;
+  const id = btn.dataset.dispute;
+  if (!confirm(`Raise a dispute on order #${id}?\n\n`
+             + "This does not cancel anything or move any money. It marks the "
+             + "order as contested, and both you and the kitchen get the full "
+             + "record of what was authorised and what was decided.")) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/orders/${id}/raise-dispute`, { method: "POST" });
+    btn.outerHTML = `<a class="tx-disputed" href="/evidence/${encodeURIComponent(id)}">
+                       Disputed &mdash; see the record &rarr;</a>`;
+    toast(`Order #${id} marked as disputed. The kitchen has the full record.`);
+  } catch (err) {
+    btn.disabled = false;
+    toast(err.message, true);
+  }
+});
 
 function closeTransactions() {
   $("txBack").style.display = "none";
@@ -2179,12 +2228,13 @@ async function renderRoutines() {
             </div>
             <div class="routine-acts">
               <button class="btn btn-sm btn-ghost" data-act="toggle">${paused ? "Resume" : "Pause"}</button>
-              <!-- "Simulate" was a lie: this runs the real thing. If every
-                   check passes it places the order and charges the card,
-                   exactly as the clock would at the scheduled time. A
-                   button that promises a preview and delivers a purchase
-                   is the wrong button. -->
-              <button class="btn btn-sm btn-ghost" data-act="simulate">Run it now</button>
+              <!-- There is deliberately no "run it now". A standing order
+                   that needs pressing is not a standing order, and the
+                   button was also the only place in this project where a
+                   person triggered a charge by hand. The clock does it:
+                   scheduler.py checks every minute, and from the
+                   scheduled time onward it runs the same five checks and
+                   either places the order or messages you instead. -->
               <button class="btn btn-sm btn-ghost" data-act="delete">Remove</button>
             </div>
             <div class="routine-out" id="out-${escHtml(r.id)}"></div>
@@ -2210,25 +2260,6 @@ $("routineList").addEventListener("click", async (e) => {
     } else if (btn.dataset.act === "toggle") {
       const now = btn.textContent.trim() === "Pause" ? "paused" : "active";
       await api(`/api/routines/${id}/status?status=${now}`, { method: "POST" });
-    } else {
-      // It charges. Ask first, because the old label implied it did not.
-      if (!confirm("Run this standing order now?\n\n"
-                 + "It makes the same checks the clock would make at its scheduled "
-                 + "time, and if they all pass it places the order and charges your "
-                 + "card.")) {
-        btn.disabled = false;
-        return;
-      }
-      $("out-" + id).innerHTML = `<span class="muted">Running the checks…</span>`;
-      const res = await api(`/api/routines/${id}/simulate`, { method: "POST" });
-      answer = res.fired
-        ? `<span class="ok"><b>Placed automatically.</b> ${rupee(res.total_inr)} charged to
-             your card on file — every check passed, so you were not asked. A message has
-             gone to your phone.</span>`
-        : `<span class="fail"><b>Not placed. You have been asked first, and nothing has been
-             charged.</b><br>` +
-          (res.failures || []).map((f) => `· ${escHtml(f.why)}`).join("<br>") +
-          `</span>`;
     }
   } catch (err) {
     answer = `<span class="fail">${escHtml(err.message)}</span>`;
