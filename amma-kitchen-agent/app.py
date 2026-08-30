@@ -956,7 +956,9 @@ def sms_state() -> dict:
     """What the merchant console shows in place of a real phone: the
     messages that went out, and what is still awaiting a reply."""
     return {
-        "transport": "twilio" if notification_service.TWILIO_CONFIGURED else "mock",
+        "transport": ("meta" if notification_service.META_CONFIGURED
+                      else "twilio" if notification_service.TWILIO_CONFIGURED
+                      else "mock"),
         "outbox": notification_service.outbox(),
         "escalations": escalations.pending(),
     }

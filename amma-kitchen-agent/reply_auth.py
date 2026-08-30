@@ -137,15 +137,45 @@ def _internal_ok(request) -> bool:
     return hmac.compare_digest(supplied, internal_token())
 
 
-def authorise(request, params: dict) -> str | None:
-    """Which door this request came through, or None if neither.
+META_SIGNATURE_HEADER = "X-Hub-Signature-256"
 
-    Returns "twilio" or "console" so the caller can say so; the caller
-    turns None into a 403. Both comparisons use `compare_digest` -- `==`
-    on a secret leaks its prefix through timing.
+
+def meta_signature_ok(request, raw_body: bytes) -> bool:
+    """Meta signs the RAW REQUEST BODY with the app secret, HMAC-SHA256,
+    and sends it as `sha256=<hex>`.
+
+    Deliberately different from the Twilio check in one way that matters:
+    Twilio signs a URL plus sorted parameters, so it needs the public URL
+    rebuilt behind a tunnel. Meta signs bytes, so there is nothing about
+    the hostname to get wrong -- but it does mean the body must be the
+    exact bytes received, never a re-serialised parse.
+
+    An unset app secret rejects rather than waving through, for the same
+    reason an unset Twilio token does: a signed request that cannot be
+    checked is a request that has not been checked.
+    """
+    secret = os.environ.get("META_APP_SECRET", "")
+    if not secret:
+        return False
+    header = request.headers.get(META_SIGNATURE_HEADER, "")
+    if not header.startswith("sha256="):
+        return False
+    expected = hmac.new(secret.encode("utf-8"), raw_body,
+                        hashlib.sha256).hexdigest()
+    return hmac.compare_digest(header[len("sha256="):], expected)
+
+
+def authorise(request, params: dict, raw_body: bytes | None = None) -> str | None:
+    """Which door this request came through, or None if none of them.
+
+    Returns "twilio", "meta" or "console" so the caller can say so; the
+    caller turns None into a 403. Every comparison uses `compare_digest`
+    -- `==` on a secret leaks its prefix through timing.
     """
     if _signature_ok(request, params):
         return "twilio"
+    if raw_body is not None and meta_signature_ok(request, raw_body):
+        return "meta"
     if _internal_ok(request):
         return "console"
     return None

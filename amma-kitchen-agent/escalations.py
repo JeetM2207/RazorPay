@@ -20,6 +20,8 @@ Design notes worth keeping:
 """
 
 import hmac
+import json
+import os
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -312,12 +314,55 @@ def resolve(action: str, order_id: int | None = None,
 
 # --------------------------------------------------------------- webhook
 
+@router.get("/webhook/sms-reply")
+async def sms_reply_verify(request: Request) -> PlainTextResponse:
+    """Meta's webhook handshake.
+
+    Before Meta will deliver anything it GETs this URL once with
+    `hub.mode=subscribe`, a `hub.verify_token` you chose, and a
+    `hub.challenge`. Echo the challenge back as plain text and the
+    subscription goes live; get it wrong and the dashboard just says the
+    callback could not be verified, with no further detail.
+
+    The token is compared with `compare_digest` like every other secret
+    here, and an unset one refuses -- otherwise a deployment with no
+    token configured would verify anybody's subscription.
+    """
+    params = request.query_params
+    expected = os.environ.get("META_VERIFY_TOKEN", "")
+    supplied = params.get("hub.verify_token", "")
+    challenge = params.get("hub.challenge", "")
+
+    if (params.get("hub.mode") == "subscribe" and expected
+            and hmac.compare_digest(supplied, expected)):
+        return PlainTextResponse(challenge)
+    raise HTTPException(status_code=403, detail="verification failed")
+
+
+def _from_meta_payload(payload: dict) -> tuple[str, str] | None:
+    """Pull (body, sender) out of Meta's envelope, or None.
+
+    Meta wraps messages several layers deep and sends the same envelope
+    for things that are not messages at all -- delivery receipts, read
+    receipts, status changes. Those must be acknowledged and ignored
+    rather than parsed as a reply: treating a "delivered" callback as an
+    inbound "1" would approve an order nobody answered.
+    """
+    try:
+        value = payload["entry"][0]["changes"][0]["value"]
+    except (KeyError, IndexError, TypeError):
+        return None
+    messages = value.get("messages")
+    if not messages:
+        return None                      # a status callback, not a reply
+    message = messages[0]
+    if message.get("type") != "text":
+        return None                      # an image or a sticker is not an answer
+    return message.get("text", {}).get("body", ""), message.get("from", "")
+
+
 @router.post("/webhook/sms-reply")
-async def sms_reply(
-    request: Request,
-    Body: str = Form(default=""),
-    From: str = Form(default=""),
-) -> PlainTextResponse:
+async def sms_reply(request: Request) -> PlainTextResponse:
     """Inbound SMS/WhatsApp, in Twilio's form-encoded shape.
 
     AUTHENTICATED FIRST, before anything is read or written. A reply of
@@ -346,14 +391,40 @@ async def sms_reply(
     """
     import buyer_sms
 
-    # Twilio signs EVERY post parameter, not just the two this handler
-    # happens to use, so the whole form goes into the check. Starlette
-    # caches the parsed form, so this is the same object FastAPI already
-    # read for Body and From rather than a second read of the stream.
-    form = await request.form()
-    params = {k: str(v) for k, v in form.items()}
+    # Two wire shapes reach this one handler. Twilio posts a form; Meta
+    # posts JSON. Read the raw bytes first because Meta signs exactly
+    # those -- a re-serialised parse would not match its signature.
+    # Read the raw bytes FIRST and parse from them. This used to declare
+    # Body and From as Form(...) parameters, which meant FastAPI consumed
+    # the request stream during dependency resolution -- so reading the
+    # body here raised "Stream consumed", and Meta's signature covers
+    # exactly those bytes and nothing else.
+    raw = await request.body()
+    Body, From = "", ""
+    params: dict = {}
+    if request.headers.get("content-type", "").startswith("application/json"):
+        try:
+            payload = json.loads(raw or b"{}")
+        except ValueError:
+            payload = {}
+        extracted = _from_meta_payload(payload)
+        if extracted is None:
+            # A delivery or read receipt. Acknowledge it -- Meta retries
+            # anything it does not get a 200 for -- and do nothing else.
+            if reply_auth.authorise(request, {}, raw_body=raw) is None:
+                raise HTTPException(status_code=403, detail="unauthenticated reply")
+            return PlainTextResponse("")
+        Body, From = extracted
+    else:
+        # Twilio signs EVERY post parameter, not just the two this handler
+        # happens to use, so the whole form goes into the check. Starlette
+        # serves this from the body it has already cached.
+        form = await request.form()
+        params = {k: str(v) for k, v in form.items()}
+        Body = str(form.get("Body", ""))
+        From = str(form.get("From", ""))
 
-    if reply_auth.authorise(request, params) is None:
+    if reply_auth.authorise(request, params, raw_body=raw) is None:
         # Nothing has been parsed, routed, resolved or logged at this
         # point, and nothing will be.
         raise HTTPException(status_code=403, detail="unauthenticated reply")

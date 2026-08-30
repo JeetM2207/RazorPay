@@ -32,12 +32,29 @@ SMS_ENABLED = os.environ.get("SMS_ENABLED", "true").lower() not in ("false", "0"
 
 TWILIO_CONFIGURED = bool(SMS_ENABLED and _ACCOUNT_SID and _AUTH_TOKEN and _FROM and MERCHANT_PHONE)
 
+# ---------------------------------------------------------------- Meta
+# WhatsApp Cloud API, straight from Meta rather than through a reseller.
+# Worth having as an alternative because the free tier suits a demo far
+# better than a Twilio trial: Meta hands you a test sender number, and it
+# messages up to five recipient numbers you verify, with no daily cap and
+# no sandbox to re-join.
+#
+# It does NOT escape WhatsApp's 24-hour rule -- free-form messages are
+# only deliverable within 24h of the recipient's last message to you.
+# That rule belongs to the WhatsApp platform, not to any one provider,
+# and it follows you everywhere.
+_META_PHONE_ID = os.environ.get("META_PHONE_NUMBER_ID", "")
+_META_TOKEN = os.environ.get("META_ACCESS_TOKEN", "")
+_META_API = os.environ.get("META_API_VERSION", "v21.0")
+
+META_CONFIGURED = bool(SMS_ENABLED and _META_PHONE_ID and _META_TOKEN and MERCHANT_PHONE)
+
 
 @dataclass
 class SentMessage:
     to: str
     body: str
-    transport: str          # "twilio" | "mock"
+    transport: str          # "meta" | "twilio" | "mock"
     sent_at: str
     error: str | None = None
     # Who the message was written FOR. The two sides are asked different
@@ -113,14 +130,70 @@ def _match_channel(recipient: str) -> str:
     return recipient
 
 
+def _meta_number(recipient: str) -> str:
+    """Meta wants a bare E.164 number with no `whatsapp:` scheme and no
+    leading `+`. Twilio wants the opposite. The rest of this project
+    stores one canonical form and each transport bends it here."""
+    return recipient.replace("whatsapp:", "").replace("+", "").strip()
+
+
+def _send_via_meta(body: str, recipient: str) -> str | None:
+    """POST one text message. Returns an error string, or None on success.
+
+    A non-2xx is turned into an error rather than raised, for the same
+    reason the Twilio path swallows exceptions: a transport failure must
+    never break an order. The failure is recorded ON the message so it is
+    visible instead of silent -- a lesson this project learned when a
+    customer's order completed correctly and three WhatsApps failed.
+    """
+    import requests
+
+    try:
+        response = requests.post(
+            f"https://graph.facebook.com/{_META_API}/{_META_PHONE_ID}/messages",
+            headers={"Authorization": f"Bearer {_META_TOKEN}"},
+            json={
+                "messaging_product": "whatsapp",
+                "to": _meta_number(recipient),
+                "type": "text",
+                "text": {"preview_url": False, "body": body},
+            },
+            timeout=20,
+        )
+    except Exception as exc:
+        return str(exc)
+
+    if response.status_code >= 300:
+        # Meta's errors are genuinely useful -- "Recipient phone number not
+        # in allowed list" and "message outside the 24 hour window" are
+        # both things you want to read, not a bare status code.
+        try:
+            detail = response.json()["error"]["message"]
+        except Exception:
+            detail = response.text[:200]
+        return f"{response.status_code}: {detail}"
+    return None
+
+
 def send_sms(body: str, to: str | None = None, audience: str = "merchant") -> SentMessage:
     """`audience` is "merchant" or "customer": who this text is asking.
 
     Defaults to the merchant because the default recipient is hers -- a
     send with no `to` goes to MERCHANT_PHONE.
+
+    Meta is preferred over Twilio when both are configured, because its
+    free tier is the one that survives a demo. Neither configured means
+    the mock outbox, which drives the identical loop offline.
     """
     recipient = to or MERCHANT_PHONE or "+91-merchant-mock"
     now = datetime.now(timezone.utc).isoformat()
+
+    if META_CONFIGURED:
+        error = _send_via_meta(body, recipient)
+        message = SentMessage(recipient, body, "meta", now,
+                              error=error, audience=audience)
+        _OUTBOX.append(message)
+        return message
 
     if not TWILIO_CONFIGURED:
         message = SentMessage(recipient, body, "mock", now, audience=audience)
