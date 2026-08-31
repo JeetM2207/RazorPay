@@ -242,10 +242,13 @@ def merchant_login(
     the signed cookie -- so from here on the answer to "whose orders may
     this session read" comes from something the caller cannot edit.
     """
-    if not merchant_auth.password_is_correct(password):
-        return _login_page(next, "That password was not right.")
     if merchant_id and not merchants.exists(merchant_id):
         return _login_page(next, "That kitchen is not on the platform.")
+    # Checked as a PAIR. The kitchen chosen in the dropdown and the
+    # password have to belong to each other, or the dropdown would be an
+    # invitation to sign in as somebody else.
+    if not merchant_auth.password_is_correct(password, merchant_id or None):
+        return _login_page(next, "That is not the password for that kitchen.")
 
     # Only ever a path on this site: an open redirect would turn the
     # login into a way to send somebody somewhere else.

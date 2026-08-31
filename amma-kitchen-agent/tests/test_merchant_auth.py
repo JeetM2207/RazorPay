@@ -124,7 +124,10 @@ def test_a_logged_in_merchant_gets_through(merchant, method, path):
 def test_the_wrong_password_does_not_let_anyone_in(client):
     resp = client.post("/merchant/login", data={"password": "not-it"})
     assert merchant_auth.COOKIE_NAME not in client.cookies
-    assert "not right" in resp.text
+    # The wording names the PAIR now, because on a platform "wrong
+    # password" is ambiguous -- it may be the right key for a different
+    # kitchen.
+    assert "not the password for that kitchen" in resp.text
 
 
 def test_an_unset_password_refuses_everything(client, monkeypatch):

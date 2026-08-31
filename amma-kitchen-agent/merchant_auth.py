@@ -71,8 +71,32 @@ def _secret() -> bytes:
     return (os.environ.get("SECRET_KEY") or _EPHEMERAL_SECRET).encode("utf-8")
 
 
-def _password() -> str:
-    return os.environ.get("MERCHANT_CONSOLE_PASSWORD") or ""
+def _env_key(merchant_id: str) -> str:
+    """MERCHANT_PASSWORD_LAHORI_GRILL, and so on."""
+    return "MERCHANT_PASSWORD_" + merchant_id.upper().replace("-", "_")
+
+
+def _password(merchant_id: str | None = None) -> str:
+    """The password for ONE kitchen.
+
+    Each kitchen has its own, because a marketplace where one password
+    opens every board is a marketplace with one merchant wearing three
+    hats. Before this, the login's kitchen dropdown was an invitation:
+    the shared password let anybody who had it sign in as anybody, read
+    their orders and reprice their menu.
+
+    MERCHANT_CONSOLE_PASSWORD remains the DEFAULT kitchen's, so the
+    scripts that log in with it -- demo.py, predemo_check.py, the buyer
+    agents -- keep working without a bypass flag. A kitchen with its own
+    key does not accept it.
+    """
+    merchant_id = merchant_id or merchants.default_id()
+    specific = os.environ.get(_env_key(merchant_id))
+    if specific:
+        return specific
+    if merchant_id == merchants.default_id():
+        return os.environ.get("MERCHANT_CONSOLE_PASSWORD") or ""
+    return ""
 
 
 def warn_if_misconfigured() -> list[str]:
@@ -160,14 +184,24 @@ def merchant_from_cookie(value: str | None, now: float | None = None) -> str | N
     return merchant_id if merchants.exists(merchant_id) else None
 
 
-def password_is_correct(supplied: str) -> bool:
-    """`compare_digest`, never `==`: equality on a secret leaks its prefix
+def password_is_correct(supplied: str, merchant_id: str | None = None) -> bool:
+    """Is this the password for THIS kitchen?
+
+    `compare_digest`, never `==`: equality on a secret leaks its prefix
     through timing. An unset password rejects everything rather than
-    letting anything through."""
-    expected = _password()
+    letting anything through -- so a kitchen nobody has issued a key for
+    simply cannot be signed into, which is the right failure.
+    """
+    expected = _password(merchant_id)
     if not expected:
         return False
     return hmac.compare_digest(supplied or "", expected)
+
+
+def kitchens_without_a_password() -> list[str]:
+    """Named for the startup warning, because a kitchen nobody can sign
+    into is a kitchen whose board nobody is watching."""
+    return [m["id"] for m in merchants.all() if not _password(m["id"])]
 
 
 # ------------------------------------------------------- the dependency
