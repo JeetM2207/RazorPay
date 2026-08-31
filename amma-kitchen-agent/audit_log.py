@@ -292,6 +292,7 @@ def record_unmatched_demand(
     protocol: str,
     requested: str,
     db_path: str = DEFAULT_DB_PATH,
+    merchant_id: str | None = None,
 ) -> int:
     """Someone asked for something this merchant does not sell.
 
@@ -315,6 +316,7 @@ def record_unmatched_demand(
         reason=requested.strip(),
         total_inr=0,
         db_path=db_path,
+        merchant_id=merchant_id,
     )
 
 

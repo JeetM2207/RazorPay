@@ -151,9 +151,43 @@ def test_an_expired_cookie_is_rejected(client):
 
 def test_the_expiry_cannot_be_edited_without_breaking_the_signature(client):
     """The expiry is inside what is signed, not beside it."""
-    issued, _expires, signature = merchant_auth.issue_cookie().split(":")
-    tampered = f"{issued}:{int(time.time()) + 999999}:{signature}"
+    issued, _expires, kitchen, signature = merchant_auth.issue_cookie().split(":")
+    tampered = f"{issued}:{int(time.time()) + 999999}:{kitchen}:{signature}"
     assert merchant_auth.cookie_is_valid(tampered) is False
+
+
+def test_the_kitchen_cannot_be_edited_without_breaking_the_signature(client):
+    """This is the whole security of multi-tenancy: the merchant id in
+    this cookie is what every merchant-facing read is scoped by, so a
+    session that could be re-pointed at another kitchen would be a
+    session that could read somebody else's orders."""
+    cookie = merchant_auth.issue_cookie(merchant_id="lahori-grill")
+    assert merchant_auth.merchant_from_cookie(cookie) == "lahori-grill"
+
+    tampered = cookie.replace("lahori-grill", "ammas-kitchen")
+    assert merchant_auth.merchant_from_cookie(tampered) is None
+    assert merchant_auth.cookie_is_valid(tampered) is False
+
+
+def test_a_cookie_from_before_the_platform_still_signs_in(client):
+    """Three parts and no kitchen. Honoured as the default rather than
+    rejected: the signature still proves it, and logging every open
+    session out to add a field is a worse answer than reading the one it
+    was issued under."""
+    import merchants
+
+    now = int(time.time())
+    payload = f"{now}:{now + 3600}"
+    legacy = f"{payload}:{merchant_auth._sign(payload)}"
+    assert merchant_auth.merchant_from_cookie(legacy) == merchants.default_id()
+
+
+def test_a_kitchen_that_is_not_on_the_platform_proves_nothing(client):
+    """Signed correctly, but naming a shop that does not exist."""
+    now = int(time.time())
+    payload = f"{now}:{now + 3600}:no-such-kitchen"
+    forged = f"{payload}:{merchant_auth._sign(payload)}"
+    assert merchant_auth.merchant_from_cookie(forged) is None
 
 
 def test_a_cookie_signed_with_another_key_is_rejected(client, monkeypatch):

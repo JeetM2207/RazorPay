@@ -214,6 +214,9 @@ def _login_page(next_path: str, error: str = "") -> HTMLResponse:
     html = (WEB_DIR / "login.html").read_text(encoding="utf-8")
     banner = f'<p class="login-err">{escape(error)}</p>' if error else ""
     html = html.replace("__NEXT__", escape(next_path or "/merchant/orders"))
+    html = html.replace("__KITCHENS__", "".join(
+        f'<option value="{escape(m["id"])}">{escape(m["name"])}</option>'
+        for m in merchants.all()))
     html = html.replace("__ERROR__", banner)
     return HTMLResponse(html, headers={"Cache-Control": "no-store"})
 
@@ -229,11 +232,20 @@ def merchant_login_page(request: Request, next: str = "/merchant/orders") -> HTM
 def merchant_login(
     password: str = Form(default=""),
     next: str = Form(default="/merchant/orders"),
+    merchant_id: str = Form(default=""),
 ):
     """Neither the password nor the cookie value is logged, here or
-    anywhere else -- a credential in a log file is a credential."""
+    anywhere else -- a credential in a log file is a credential.
+
+    `merchant_id` says which kitchen is signing in. It is validated
+    against the register rather than trusted, and it is then baked INTO
+    the signed cookie -- so from here on the answer to "whose orders may
+    this session read" comes from something the caller cannot edit.
+    """
     if not merchant_auth.password_is_correct(password):
         return _login_page(next, "That password was not right.")
+    if merchant_id and not merchants.exists(merchant_id):
+        return _login_page(next, "That kitchen is not on the platform.")
 
     # Only ever a path on this site: an open redirect would turn the
     # login into a way to send somebody somewhere else.
@@ -242,7 +254,7 @@ def merchant_login(
     response = RedirectResponse(destination, status_code=303)
     response.set_cookie(
         merchant_auth.COOKIE_NAME,
-        merchant_auth.issue_cookie(),
+        merchant_auth.issue_cookie(merchant_id=merchant_id or None),
         max_age=merchant_auth.SESSION_SECONDS,
         httponly=True,
         samesite="lax",
@@ -365,8 +377,8 @@ def merchant_console() -> HTMLResponse:
 
 
 @app.get("/api/merchant-config", dependencies=[Depends(merchant_auth.require_merchant)])
-def get_merchant_config() -> dict:
-    return merchant_config.as_dict()
+def get_merchant_config(request: Request) -> dict:
+    return merchant_config.as_dict(merchant_auth.signed_in_merchant(request))
 
 
 class MerchantConfigRequest(BaseModel):
@@ -380,11 +392,13 @@ class MerchantConfigRequest(BaseModel):
 
 
 @app.post("/api/merchant-config", dependencies=[Depends(merchant_auth.require_merchant)])
-def save_merchant_config(req: MerchantConfigRequest) -> dict:
+def save_merchant_config(request: Request, req: MerchantConfigRequest) -> dict:
     """Save the shop. These values are what negotiation.py decides
     against from the next order onward -- the page is not decorative."""
     try:
-        return merchant_config.save(req.profile, req.mandate, req.menu, req.velocity)
+        return merchant_config.save(
+            req.profile, req.mandate, req.menu, req.velocity,
+            merchant_id=merchant_auth.signed_in_merchant(request))
     except (ValueError, TypeError) as exc:
         raise HTTPException(400, str(exc))
 
@@ -701,14 +715,16 @@ def pending() -> dict:
 
 
 @app.get("/api/demand")
-def unmatched_demand() -> dict:
+def unmatched_demand(request: Request) -> dict:
     """What agents asked for that the merchant doesn't sell.
 
     Surfaced because a signal nobody can see is a signal nobody acts on --
     which is the same mistake as logging an escalation that never reaches
     her queue.
     """
-    return {"demand": audit_log.get_unmatched_demand(db_path=audit_log.DEFAULT_DB_PATH)}
+    return {"demand": audit_log.get_unmatched_demand(
+        db_path=audit_log.DEFAULT_DB_PATH,
+        merchant_id=merchant_auth.signed_in_merchant(request))}
 
 
 class RoutineItemIn(BaseModel):
@@ -887,9 +903,10 @@ def mark_order_disputed(order_id: int) -> dict:
 
 
 @app.get("/api/disputes", dependencies=[Depends(merchant_auth.require_merchant)])
-def disputes() -> dict:
+def disputes(request: Request) -> dict:
     """Orders someone has asked for the record on, newest first."""
-    rows = audit_log.get_disputed(db_path=audit_log.DEFAULT_DB_PATH)
+    rows = audit_log.get_disputed(db_path=audit_log.DEFAULT_DB_PATH,
+                                  merchant_id=merchant_auth.signed_in_merchant(request))
     return {
         "disputes": [
             {
@@ -950,7 +967,7 @@ def order_outcomes(minutes: int = 30) -> dict:
 
 
 @app.post("/api/merchant/optimize-prices", dependencies=[Depends(merchant_auth.require_merchant)])
-def optimize_prices() -> dict:
+def optimize_prices(request: Request) -> dict:
     """Discount what is piling up; restore what is running out.
 
     Writes only to the live merchant config, through the same
@@ -964,14 +981,15 @@ def optimize_prices() -> dict:
     the button.
     """
     try:
-        return merchant_config.optimize_prices()
+        return merchant_config.optimize_prices(
+            merchant_auth.signed_in_merchant(request))
     except ValueError as exc:
         # save() refused. Her shop is untouched, and she gets the reason.
         raise HTTPException(400, str(exc))
 
 
 @app.get("/api/insights", dependencies=[Depends(merchant_auth.require_merchant)])
-def growth_insights(hours: int = 24) -> dict:
+def growth_insights(request: Request, hours: int = 24) -> dict:
     """Read-only growth insights: her own numbers, plus two sentences of
     advice drawn from them.
 
@@ -985,7 +1003,8 @@ def growth_insights(hours: int = 24) -> dict:
     an error page.
     """
     hours = max(1, min(int(hours), 24 * 30))
-    stats = audit_log.growth_stats(hours, db_path=audit_log.DEFAULT_DB_PATH)
+    stats = audit_log.growth_stats(hours, db_path=audit_log.DEFAULT_DB_PATH,
+                                   merchant_id=merchant_auth.signed_in_merchant(request))
 
     if not os.environ.get("OPENROUTER_API_KEY"):
         return {"stats": stats, "insight": None,
@@ -1018,9 +1037,11 @@ def sms_state() -> dict:
 
 
 @app.get("/api/agents")
-def agents() -> dict:
+def agents(request: Request) -> dict:
     db_path = audit_log.DEFAULT_DB_PATH
-    events = audit_log.get_all_events(db_path=db_path, limit=1000)
+    events = audit_log.get_all_events(
+        db_path=db_path, limit=1000,
+        merchant_id=merchant_auth.signed_in_merchant(request))
     rows = []
     for agent_id in sorted({e["agent_id"] for e in events}):
         rows.append(
@@ -1034,8 +1055,10 @@ def agents() -> dict:
 
 
 @app.get("/api/events")
-def events(limit: int = 40) -> dict:
-    return {"events": audit_log.get_all_events(db_path=audit_log.DEFAULT_DB_PATH, limit=limit)}
+def events(request: Request, limit: int = 40) -> dict:
+    return {"events": audit_log.get_all_events(
+        db_path=audit_log.DEFAULT_DB_PATH, limit=limit,
+        merchant_id=merchant_auth.signed_in_merchant(request))}
 
 
 @app.get("/api/payment-status/{payment_link_id}")

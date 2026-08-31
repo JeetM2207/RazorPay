@@ -47,6 +47,8 @@ import hashlib
 import hmac
 import logging
 import os
+
+import merchants
 import secrets
 import time
 
@@ -96,14 +98,18 @@ def _sign(payload: str) -> str:
     return hmac.new(_secret(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def issue_cookie(now: float | None = None) -> str:
-    """A signed proof of login with an expiry baked into what is signed.
+def issue_cookie(now: float | None = None, merchant_id: str | None = None) -> str:
+    """A signed proof of login, for ONE kitchen, with an expiry baked in.
 
-    The expiry is inside the signature rather than beside it, so it
-    cannot be edited without invalidating the whole thing.
+    Both the expiry and the kitchen are inside the signature rather than
+    beside it. That is the whole security of multi-tenancy here: the
+    merchant id in this cookie is what every merchant-facing read is
+    scoped by, so a session that could be edited to name a different
+    kitchen would be a session that could read somebody else's orders.
     """
     now = now or time.time()
-    payload = f"{int(now)}:{int(now + SESSION_SECONDS)}"
+    merchant_id = merchant_id or merchants.default_id()
+    payload = f"{int(now)}:{int(now + SESSION_SECONDS)}:{merchant_id}"
     return f"{payload}:{_sign(payload)}"
 
 
@@ -114,20 +120,44 @@ def cookie_is_valid(value: str | None, now: float | None = None) -> bool:
     up is the ordinary case here, not an exceptional one, so it returns
     False rather than raising.
     """
-    if not value:
-        return False
-    parts = value.split(":")
-    if len(parts) != 3:
-        return False
+    return merchant_from_cookie(value, now) is not None
 
-    issued, expires, signature = parts
-    if not hmac.compare_digest(signature, _sign(f"{issued}:{expires}")):
-        return False
+
+def merchant_from_cookie(value: str | None, now: float | None = None) -> str | None:
+    """Which kitchen this session is for, or None if it proves nothing.
+
+    Deliberately tolerant of a malformed value -- a cookie somebody made
+    up is the ordinary case here, not an exceptional one, so it returns
+    None rather than raising.
+
+    A cookie issued before kitchens existed has three parts and no id.
+    It is honoured as the default kitchen rather than rejected: the
+    signature still proves it, and logging every open session out to add
+    a field would be a worse answer than reading the one it was issued
+    under.
+    """
+    if not value:
+        return None
+    parts = value.split(":")
+    if len(parts) == 3:
+        issued, expires, signature = parts
+        merchant_id = merchants.default_id()
+        payload = f"{issued}:{expires}"
+    elif len(parts) == 4:
+        issued, expires, merchant_id, signature = parts
+        payload = f"{issued}:{expires}:{merchant_id}"
+    else:
+        return None
+
+    if not hmac.compare_digest(signature, _sign(payload)):
+        return None
 
     try:
-        return (now or time.time()) < int(expires)
+        if (now or time.time()) >= int(expires):
+            return None
     except ValueError:
-        return False
+        return None
+    return merchant_id if merchants.exists(merchant_id) else None
 
 
 def password_is_correct(supplied: str) -> bool:
@@ -144,6 +174,18 @@ def password_is_correct(supplied: str) -> bool:
 
 def is_authenticated(request: Request) -> bool:
     return cookie_is_valid(request.cookies.get(COOKIE_NAME))
+
+
+def signed_in_merchant(request: Request) -> str:
+    """The kitchen this request is signed in as.
+
+    THE one source of truth for whose data a merchant surface may read.
+    Taken from the signed cookie and never from a query string or a
+    header, because those are things the caller chooses -- and a merchant
+    id a caller can choose is a merchant id a caller can change.
+    """
+    return (merchant_from_cookie(request.cookies.get(COOKIE_NAME))
+            or merchants.default_id())
 
 
 def require_merchant(request: Request) -> None:

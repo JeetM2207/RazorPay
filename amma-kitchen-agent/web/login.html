@@ -50,6 +50,11 @@
     color: var(--coral); background: var(--brick-soft); border: 1px solid var(--brick-line);
   }
 
+  select {
+    width: 100%; padding: 11px 13px; border-radius: 10px;
+    background: var(--card-2); color: var(--ink);
+    border: 1px solid var(--line); font-family: var(--font); font-size: 14px;
+  }
 </style>
 </head>
 <body>
@@ -86,7 +91,13 @@
 
       <form method="post" action="/merchant/login">
         <input type="hidden" name="next" value="__NEXT__">
-        <label for="password">Password</label>
+        <!-- Which kitchen is signing in. Validated against the register
+             server-side and then baked into the signed cookie, so it is
+             not something a caller can edit afterwards to read somebody
+             else's orders. -->
+        <label for="merchant_id">Your kitchen</label>
+        <select id="merchant_id" name="merchant_id">__KITCHENS__</select>
+        <label for="password" style="margin-top:14px; display:block">Password</label>
         <input type="password" id="password" name="password" autocomplete="current-password"
                autofocus required>
         <button class="btn" type="submit" style="width:100%; margin-top:16px">Sign in</button>
