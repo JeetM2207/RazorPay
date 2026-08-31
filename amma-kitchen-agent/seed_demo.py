@@ -46,6 +46,7 @@ from pathlib import Path
 
 import audit_log
 import merchant_config
+import merchants
 
 DB = Path(audit_log.DEFAULT_DB_PATH)
 BACKUP_DIR = DB.parent / "backups"
@@ -222,14 +223,14 @@ class Trail:
                 "INSERT INTO audit_events (ts, agent_id, protocol, cart_json, "
                 " decision, reason, total_inr, payment_id, order_ref, "
                 " limits_snapshot, source, routine_id, buyer_reasoning, "
-                " delivery_name, delivery_phone, delivery_address) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                " delivery_name, delivery_phone, delivery_address, merchant_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (row["ts"], row["agent_id"], row["protocol"], row["cart_json"],
                  row["decision"], row["reason"], row["total_inr"],
                  row["payment_id"], order_ref,
                  json.dumps(limits) if limits else None,
                  row["source"], row["routine_id"], row["buyer_reasoning"],
-                 d[0], d[1], d[2]),
+                 d[0], d[1], d[2], merchants.default_id()),
             )
             ids[row["_key"]] = cur.lastrowid
         return len(self.rows)
@@ -672,9 +673,14 @@ def main() -> int:
 
     with sqlite3.connect(DB) as conn:
         placeholders = ",".join("?" * len(keep)) or "NULL"  # noqa: E501
+        # Scoped to the DEFAULT kitchen. This script owns Amma's history
+        # and nobody else's -- unscoped it deleted every other kitchen on
+        # the platform, which is a thing you notice only after running
+        # the seeder that rebuilt them.
         conn.execute(
-            f"DELETE FROM audit_events WHERE id NOT IN ({placeholders})",
-            tuple(keep))
+            f"DELETE FROM audit_events WHERE id NOT IN ({placeholders}) "
+            "AND (merchant_id = ? OR merchant_id IS NULL)",
+            (*keep, merchants.default_id()))
         written = trail.write(conn)
         renamed = rename_legacy_agents(conn)
         disputed = flag_disputes(conn)
