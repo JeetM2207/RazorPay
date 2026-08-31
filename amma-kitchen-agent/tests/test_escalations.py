@@ -13,6 +13,7 @@ import audit_log
 import buyer_sms
 import escalations
 import reply_codes
+import merchants
 import notification_service
 
 
@@ -155,7 +156,10 @@ def test_escalation_sends_an_sms_in_the_specified_format(client):
     messages = notification_service.outbox()
     assert len(messages) == 1
     text = messages[0]["body"]
-    assert text.startswith("[Amma's Kitchen AI Alert]")
+    # Branded with the PLATFORM, not one kitchen: on a marketplace the
+    # recipient's relationship is with the platform, and a merchant who
+    # sells through it gets alerts that say who is writing.
+    assert text.startswith(f"[{merchants.Platform.name} alert]")
     assert f"Order #{body['decision_detail']['event_id']}" in text
     assert "sms-buyer" in text
     assert "2x Chicken Biryani (Rs.440)" in text

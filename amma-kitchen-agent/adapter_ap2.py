@@ -71,6 +71,12 @@ class Intent(BaseModel):
 class IntentMandateRequest(BaseModel):
     agent_id: str
     intent: Intent
+    # Which kitchen on the platform this is for. It selects a tenant and
+    # grants nothing: that tenant's own menu, caps, category list and
+    # rate limits then apply in full, exactly as they did when there was
+    # only one. Absent means the platform's default kitchen, which is
+    # what every buyer written before the marketplace sends.
+    merchant_id: str | None = None
 
 
 class AcceptAlternativeRequest(BaseModel):
@@ -89,6 +95,7 @@ def _apply_intent_decision(intent_id: str, cart: list[tuple[str, int]]) -> dict:
         # Snapshotted alongside the decision, so the order's record keeps
         # saying what the customer had authorised even after they change it.
         buyer_mandate=mandate.get("buyer_limits"),
+        merchant_id=mandate.get("merchant_id"),
     )
     mandate["cart"] = cart
     mandate["detail"] = detail
@@ -147,6 +154,12 @@ def create_intent_mandate(req: IntentMandateRequest) -> dict:
         "agent_id": req.agent_id,
         "auto_confirm_limit_inr": req.intent.auto_confirm_limit_inr,
         "buyer_limits": req.intent.buyer_limits.model_dump() if req.intent.buyer_limits else None,
+        # Pinned on the mandate at the moment it opens. Every later step
+        # of this chain -- alternatives, human confirm, the payment
+        # mandate -- reads it from here rather than being told again, so
+        # a cart cannot be priced against one kitchen and settled against
+        # another.
+        "merchant_id": req.merchant_id,
     }
     return _apply_intent_decision(intent_id, cart)
 

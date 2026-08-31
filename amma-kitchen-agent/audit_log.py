@@ -181,7 +181,8 @@ def mark_paid(event_id: int, payment_id: str, db_path: str = DEFAULT_DB_PATH) ->
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         before = conn.execute(
-            "SELECT payment_id, cart_json FROM audit_events WHERE id = ?", (event_id,)
+            "SELECT payment_id, cart_json, merchant_id FROM audit_events WHERE id = ?",
+            (event_id,),
         ).fetchone()
         conn.execute(
             "UPDATE audit_events SET payment_id = ? WHERE id = ?", (payment_id, event_id)
@@ -191,7 +192,11 @@ def mark_paid(event_id: int, payment_id: str, db_path: str = DEFAULT_DB_PATH) ->
         return                       # unknown row, or already paid for
 
     try:
-        merchant_config.adjust_stock(json.loads(before["cart_json"] or "[]"), -1)
+        # Whose shelf. Read off the ORDER rather than passed in, because
+        # the capture paths (a webhook, the reconciler, x402) know a
+        # payment and an event id and have no idea which kitchen sold it.
+        merchant_config.adjust_stock(json.loads(before["cart_json"] or "[]"), -1,
+                                     merchant_id=before["merchant_id"])
     except Exception:
         # The capture is the fact that matters and it is already written.
         # A shop file that will not save must not unwind somebody's

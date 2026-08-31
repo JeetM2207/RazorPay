@@ -179,10 +179,10 @@ def current_menu(merchant_id: str | None = None) -> dict[str, MenuItem]:
 
 def as_dict(merchant_id: str | None = None) -> dict:
     """Everything the setup page needs to render itself."""
-    mandate = current_mandate()
+    mandate = current_mandate(merchant_id)
     raw = _load(merchant_id)["menu"]
     return {
-        "profile": profile(),
+        "profile": profile(merchant_id),
         "mandate": {
             "budget_cap_inr": mandate.budget_cap_inr,
             "human_confirm_threshold_inr": mandate.human_confirm_threshold_inr,
@@ -201,7 +201,7 @@ def as_dict(merchant_id: str | None = None) -> dict:
                 "stock": item.stock,
                 "agent_orderable": item.category in mandate.allowed_categories,
             }
-            for item in current_menu().values()
+            for item in current_menu(merchant_id).values()
         ],
     }
 
@@ -223,7 +223,7 @@ def _normalise_request(text: str) -> str:
     return " ".join(words)
 
 
-def resolve_item(text: str) -> str | None:
+def resolve_item(text: str, merchant_id: str | None = None) -> str | None:
     """Best-effort free-text -> catalog item_id, deliberately conservative.
 
     Exists because a caller may report something it could not match, and
@@ -241,7 +241,7 @@ def resolve_item(text: str) -> str | None:
     if not query:
         return None
 
-    menu = current_menu()
+    menu = current_menu(merchant_id)
     by_id = {name: _normalise_request(name.replace("_", " ")) for name in menu}
 
     for item_id, title in by_id.items():
@@ -293,7 +293,7 @@ def _read_qty(phrase: str) -> tuple[int, str]:
     return max(1, min(qty, 99)), phrase[match.end():].strip()
 
 
-def parse_request(text: str) -> dict:
+def parse_request(text: str, merchant_id: str | None = None) -> dict:
     """Free text -> a cart proposal, with no model involved.
 
     The fallback for when the LLM that normally does this is unreachable.
@@ -323,7 +323,7 @@ def parse_request(text: str) -> dict:
         if not phrase:
             continue
         qty, remainder = _read_qty(phrase)
-        item_id = resolve_item(remainder) or resolve_item(phrase)
+        item_id = resolve_item(remainder) or resolve_item(phrase, merchant_id)
         if item_id:
             # Summed, not appended: "a thali and another thali" is two
             # thalis, the same rule the console's basket follows.
@@ -345,14 +345,15 @@ def _slug(text: str) -> str:
 
 
 def save(profile_in: dict, mandate_in: dict, menu_in: list[dict],
-         velocity_in: dict | None = None) -> dict:
+         velocity_in: dict | None = None,
+         merchant_id: str | None = None) -> dict:
     """Replace the shop's configuration wholesale.
 
     Validation is strict and returns a plain message, because a merchant
     mis-typing a cap should get told, not silently get a shop that
     behaves differently from what the screen showed.
     """
-    state = _load()
+    state = _load(merchant_id)
 
     shop_name = (profile_in.get("shop_name") or "").strip()
     if not shop_name:
@@ -376,7 +377,7 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict],
     # Falls back to what she ALREADY has, not to the shipped defaults: a
     # caller that only means to edit the menu must not silently reset her
     # rate limits, and `velocity=None` is exactly that caller.
-    defaults = current_velocity_limits()
+    defaults = current_velocity_limits(merchant_id)
     velocity_in = velocity_in or {}
     max_orders = int(velocity_in.get("max_orders_per_hour") or defaults.max_orders_per_hour)
     max_spend = int(
@@ -454,8 +455,8 @@ def save(profile_in: dict, mandate_in: dict, menu_in: list[dict],
     }
     state["menu"] = menu
 
-    _persist()
-    return as_dict()
+    _persist(merchant_id)
+    return as_dict(merchant_id)
 
 
 # ------------------------------------------------- inventory-led pricing
@@ -481,7 +482,8 @@ def _sale_price(list_price: int) -> int:
     return max(1, int(list_price * (100 - DISCOUNT_PCT) // 100))
 
 
-def adjust_stock(cart: list, direction: int = -1) -> list[dict]:
+def adjust_stock(cart: list, direction: int = -1,
+                 merchant_id: str | None = None) -> list[dict]:
     """Move stock by a paid order. -1 consumes it, +1 puts it back.
 
     THE ONE WRITER. Everything else in this project reads stock -- the
@@ -501,7 +503,7 @@ def adjust_stock(cart: list, direction: int = -1) -> list[dict]:
     going negative would be a number nobody can act on, and it would drag
     a dish below LOW_STOCK and silently end its sale.
     """
-    state = _load()
+    state = _load(merchant_id)
     rows, moved = [], []
 
     wanted = {}
@@ -516,7 +518,7 @@ def adjust_stock(cart: list, direction: int = -1) -> list[dict]:
         if item_id:
             wanted[item_id] = wanted.get(item_id, 0) + int(qty or 0)
 
-    for item in as_dict()["menu"]:
+    for item in as_dict(merchant_id)["menu"]:
         row = dict(item)
         qty = wanted.get(row["id"], 0)
         if qty:
@@ -528,11 +530,11 @@ def adjust_stock(cart: list, direction: int = -1) -> list[dict]:
         rows.append(row)
 
     if moved:
-        save(profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
+        save(merchant_id=merchant_id, profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
     return moved
 
 
-def optimize_prices() -> dict:
+def optimize_prices(merchant_id: str | None = None) -> dict:
     """Discount what is piling up, restore what is running out.
 
     Three bands, and the middle one is deliberately inert: above
@@ -548,11 +550,11 @@ def optimize_prices() -> dict:
     nothing in the system would have flagged it. A test runs this five
     times and asserts the price does not move after the first.
     """
-    state = _load()
+    state = _load(merchant_id)
     changed = []
 
     rows = []
-    for item in as_dict()["menu"]:
+    for item in as_dict(merchant_id)["menu"]:
         row = dict(item)
         list_price = int(row.get("list_price_inr") or row["price_inr"])
         row["list_price_inr"] = list_price
@@ -576,7 +578,7 @@ def optimize_prices() -> dict:
             })
         rows.append(row)
 
-    save(profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
+    save(merchant_id=merchant_id, profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
     return {
         "changed": changed,
         "discounted": sum(1 for c in changed if c["sale"]),

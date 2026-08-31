@@ -294,7 +294,8 @@ def _refund(order: dict, status: str, reason: str) -> dict:
     # attempted because it is local and cannot fail the way Razorpay can,
     # and a shop file that will not save must not stop a refund.
     try:
-        merchant_config.adjust_stock(_cart_of(order), +1)
+        merchant_config.adjust_stock(_cart_of(order), +1,
+                                     merchant_id=order.get("merchant_id"))
     except Exception:
         pass
 

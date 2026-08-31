@@ -17,13 +17,18 @@ router = APIRouter()
 
 
 @router.get("/catalog")
-def get_catalog() -> dict:
+def get_catalog(merchant_id: str | None = None) -> dict:
+    """The agent-readable feed for ONE kitchen.
+
+    `merchant_id` picks whose. Absent means the platform's default, which
+    is what a buyer agent written before the marketplace fetches.
+    """
     # Sale state lives in the config rather than on MenuItem, because
     # MenuItem is what negotiation.py is handed and the core has no
     # business knowing whether a price is a sale price.
-    sale_state = {row["id"]: row for row in merchant_config.as_dict()["menu"]}
+    sale_state = {row["id"]: row for row in merchant_config.as_dict(merchant_id)["menu"]}
     return {
-        "merchant": {"name": merchant_config.profile()["shop_name"], "currency": "INR"},
+        "merchant": {"name": merchant_config.profile(merchant_id)["shop_name"], "currency": "INR"},
         "items": [
             {
                 "id": item.name,
@@ -36,25 +41,25 @@ def get_catalog() -> dict:
                 # Published honestly: some items the merchant genuinely
                 # sells are still not orderable by an autonomous agent.
                 # Saying so here saves the agent a wasted round-trip.
-                "agent_orderable": item.category in _m().allowed_categories,
+                "agent_orderable": item.category in _m(merchant_id).allowed_categories,
                 # Published so a buyer agent can see value rather than
                 # just a number. list_price is what it normally costs.
                 "sale": bool(sale_state.get(item.name, {}).get("sale")),
                 "list_price": sale_state.get(item.name, {}).get("list_price_inr", item.price_inr),
             }
-            for item in merchant_config.current_menu().values()
+            for item in merchant_config.current_menu(merchant_id).values()
         ],
         "order_limits": {
-            "max_order_inr": _m().budget_cap_inr,
-            "human_confirm_at_inr": _m().human_confirm_threshold_inr,
-            "allowed_categories": list(_m().allowed_categories),
+            "max_order_inr": _m(merchant_id).budget_cap_inr,
+            "human_confirm_at_inr": _m(merchant_id).human_confirm_threshold_inr,
+            "allowed_categories": list(_m(merchant_id).allowed_categories),
         },
     }
 
 
 
-def _m():
-    return merchant_config.current_mandate()
+def _m(merchant_id=None):
+    return merchant_config.current_mandate(merchant_id)
 
 
 app = FastAPI(title="Amma's Kitchen Agent Catalog")

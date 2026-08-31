@@ -177,9 +177,18 @@ def test_an_empty_reply_asks_again_rather_than_ordering_nothing(client):
     assert buyer_sms.status("agent-1")["answered"] is False
 
 
-def test_status_is_404_when_nothing_was_asked(client):
-    assert client.get("/api/buyer-sms/status/never-asked").status_code == 404
+def test_status_reports_no_open_question_rather_than_erroring(client):
+    """"Nothing to answer" is the NORMAL state, not a failure.
 
+    The buyer console polls this from page load now, so that it can
+    surface a question raised by a standing order while nobody was
+    watching. Answering the idle case with a 404 filled the browser
+    console with red on a page where nothing was wrong -- and that is
+    exactly where somebody looks for a real problem mid-demo.
+    """
+    body = client.get("/api/buyer-sms/status/nobody").json()
+    assert body["open"] is False
+    assert body.get("code") in (None, "")
 
 def test_a_reply_from_an_unrelated_number_is_not_taken_as_the_answer(client):
     _ask(client)

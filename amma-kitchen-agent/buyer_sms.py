@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 import notification_service
+import merchants
 import reply_codes
 
 # Conversations expire so a reply that arrives an hour later doesn't
@@ -143,7 +144,18 @@ def _same_number(a: str, b: str) -> bool:
 
 # ---------------------------------------------------------------- asking
 
-def _compose(unmatched: list[str], available: list[dict], shop_name: str,
+def _signature(shop_name: str | None) -> str:
+    """How a message signs itself: platform first, kitchen second.
+
+    A customer who gets "Amma's Kitchen: your agent wants to order..."
+    from a number they have never seen has no idea who is writing to
+    them. On a marketplace the platform is the relationship they have
+    and the kitchen is only what this order is about.
+    """
+    return merchants.message_prefix(shop_name)
+
+
+def _compose(unmatched: list[str], available: list[dict], shop_name: str | None,
              code: str = "") -> str:
     missing = ", ".join(unmatched) if unmatched else "that"
     lines = [
@@ -165,7 +177,7 @@ def ask(
     original_request: str,
     unmatched: list[str],
     available: list[dict],
-    shop_name: str = "Amma's Kitchen",
+    shop_name: str | None = None,
 ) -> Conversation:
     """Message the customer and open a conversation awaiting their answer."""
     normalised = normalise_phone(phone)
@@ -196,7 +208,7 @@ def ask_approval(
     cart_label: str,
     total_inr: int,
     soft_cap_inr: int,
-    shop_name: str = "Amma's Kitchen",
+    shop_name: str | None = None,
     why: str | None = None,
     routine_id: str | None = None,
 ) -> Conversation:

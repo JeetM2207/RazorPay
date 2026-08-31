@@ -14,6 +14,8 @@ This module knows nothing about negotiation. It formats and delivers.
 """
 
 import os
+
+import merchants
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -134,7 +136,7 @@ def format_escalation_alert(
         "Reply '1' to APPROVE, '2' to REJECT."
     )
     return (
-        "[Amma's Kitchen AI Alert]\n"
+        f"[{merchants.Platform.name} alert]\n"
         f"Order #{order_id} from {agent_id}:\n"
         f"Items: {items} (Rs.{total_inr})\n"
         f"Reason: {reason}.\n"

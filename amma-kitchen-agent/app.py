@@ -51,6 +51,7 @@ import scheduler
 import trust
 import webhook_handler
 import merchant_config
+import merchants
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
 
@@ -170,6 +171,12 @@ class ParseCartRequest(BaseModel):
     # quietly assuming it. Omitted by the scripted buyer agents, which
     # fall back to the live menu.
     available_items: list[CatalogItemIn] | None = None
+    # Which kitchen this request is for, so the fallback paths read the
+    # right menu. The agent normally sends available_items and this is
+    # belt and braces -- but the model-unavailable fallback matches
+    # against the live menu, and matching against the WRONG kitchen's
+    # would put a dish nobody sells into a cart.
+    merchant_id: str | None = None
 
 
 class BuyerCheckItem(BaseModel):
@@ -181,6 +188,7 @@ class BuyerCheckRequest(BaseModel):
     items: list[BuyerCheckItem]
     spend_cap_inr: int
     confirm_above_inr: int
+    merchant_id: str | None = None
 
 
 def _console(path: Path) -> HTMLResponse:
@@ -381,16 +389,49 @@ def save_merchant_config(req: MerchantConfigRequest) -> dict:
         raise HTTPException(400, str(exc))
 
 
+@app.get("/api/restaurants")
+def restaurants() -> dict:
+    """Every kitchen on the platform, for the customer to choose from.
+
+    Public and unauthenticated on purpose: this is a directory, and a
+    directory nobody can read is a marketplace nobody can shop at. It
+    carries no limits -- see /api/menu, and the note in adapter_mcp
+    about why a merchant's numbers are not published to the person on
+    the other side of the negotiation.
+    """
+    out = []
+    for entry in merchants.all():
+        profile = merchant_config.profile(entry["id"])
+        menu = merchant_config.current_menu(entry["id"])
+        out.append({
+            **entry,
+            "shop_name": profile.get("shop_name") or entry["name"],
+            "dishes": len(menu),
+            "from_inr": min((i.price_inr for i in menu.values()), default=0),
+        })
+    return {
+        "platform": {"name": merchants.Platform.name,
+                     "tagline": merchants.Platform.tagline,
+                     "blurb": merchants.Platform.blurb},
+        "restaurants": out,
+    }
+
+
 @app.get("/api/menu")
-def menu() -> dict:
-    """What the buyer console renders. Includes items the merchant sells
-    but agents may not order, flagged rather than hidden -- the buyer
-    should be able to see the rule being applied, not just its result."""
-    config = merchant_config.as_dict()
+def menu(merchant_id: str | None = None) -> dict:
+    """What the buyer console renders, for the kitchen it is showing.
+
+    Includes items the merchant sells but agents may not order, flagged
+    rather than hidden -- the buyer should be able to see the rule being
+    applied, not just its result.
+    """
+    config = merchant_config.as_dict(merchant_id)
     return {
         "items": config["menu"],
         "mandate": config["mandate"],
         "merchant": config["profile"],
+        "merchant_id": merchant_id or merchants.default_id(),
+        "merchant_name": merchants.name_of(merchant_id),
     }
 
 
@@ -404,7 +445,7 @@ def parse_cart(req: ParseCartRequest) -> dict:
     decision that follows is plain Python in negotiation.py.
     """
     if not os.environ.get("OPENROUTER_API_KEY"):
-        return _parse_without_a_model(req.text, "no model key is configured")
+        return _parse_without_a_model(req.text, "no model key is configured", merchant_id=req.merchant_id)
 
     if req.available_items:
         catalog_lines = [
@@ -415,7 +456,7 @@ def parse_cart(req: ParseCartRequest) -> dict:
         ]
         item_ids = [i.id for i in req.available_items]
     else:
-        menu = merchant_config.current_menu()
+        menu = merchant_config.current_menu(req.merchant_id)
         catalog_lines = [f"- {name}: {item.name} (Rs.{item.price_inr})" for name, item in menu.items()]
         item_ids = list(menu.keys())
 
@@ -472,7 +513,7 @@ def parse_cart(req: ParseCartRequest) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
-        return _parse_without_a_model(req.text, _why_the_model_failed(exc))
+        return _parse_without_a_model(req.text, _why_the_model_failed(exc, merchant_id=req.merchant_id))
 
 
 def _why_the_model_failed(exc: Exception) -> str:
@@ -488,7 +529,8 @@ def _why_the_model_failed(exc: Exception) -> str:
     return "the model could not be reached"
 
 
-def _parse_without_a_model(text: str, why: str) -> dict:
+def _parse_without_a_model(text: str, why: str,
+                           merchant_id: str | None = None) -> dict:
     """Fall back to matching the request against the menu directly.
 
     The model's only job in this project is turning words into a cart
@@ -502,7 +544,7 @@ def _parse_without_a_model(text: str, why: str) -> dict:
     A demo that quietly degrades is worse than one that stops, because
     the viewer cannot tell which parser answered.
     """
-    parsed = merchant_config.parse_request(text)
+    parsed = merchant_config.parse_request(text, merchant_id)
     return {
         "items": parsed["items"],
         "unmatched": parsed["unmatched"],
@@ -524,10 +566,15 @@ def buyer_check(req: BuyerCheckRequest) -> dict:
         spend_cap_inr=req.spend_cap_inr, confirm_above_inr=req.confirm_above_inr
     )
     cart = [(item.item_id, item.qty) for item in req.items]
-    # Price against the merchant's LIVE menu, not the defaults -- a buyer
-    # checking its own budget must use the prices actually being charged.
+    # Price against the LIVE menu of the kitchen being ordered from, not
+    # the defaults and not some other shop's -- a buyer checking its own
+    # budget must use the prices actually about to be charged. Getting
+    # this wrong priced a grill-house cart against a South Indian menu
+    # and refused it as "unknown item" before the grill house was ever
+    # asked, which is a refusal by the wrong party for the wrong reason.
     result = buyer_mandate.check_cart(
-        cart, mandate=mandate, menu=merchant_config.current_menu()
+        cart, mandate=mandate,
+        menu=merchant_config.current_menu(req.merchant_id),
     )
     return {
         "decision": result.decision.value,
@@ -602,11 +649,16 @@ def ask_buyer_to_approve(req: ApproveBuyerRequest) -> dict:
 
 @app.get("/api/buyer-sms/status/{agent_id}")
 def buyer_sms_status(agent_id: str) -> dict:
-    """Polled by the waiting browser until the customer replies."""
+    """Polled by the waiting browser until the customer replies.
+
+    "Nothing to answer" is a 200, not a 404. The buyer console now polls
+    this from page load rather than only inside a live order, so the
+    normal state is having no open question -- and answering that with an
+    error meant a browser console full of red on an idle page, which is
+    exactly where somebody looks for a real problem during a demo.
+    """
     state = buyer_sms.status(agent_id)
-    if state is None:
-        raise HTTPException(404, "no open conversation for this agent")
-    return state
+    return state if state is not None else {"agent_id": agent_id, "open": False}
 
 
 @app.post("/api/buyer-sms/consume/{agent_id}")

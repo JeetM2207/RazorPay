@@ -62,7 +62,7 @@ def _tell_her_once(agent_id: str, verdict, now: datetime) -> bool:
         import notification_service
 
         notification_service.send_sms(
-            "[Amma's Kitchen AI Alert]\n"
+            f"[{merchants.Platform.name} alert]\n"
             f"Agent {agent_id} is ordering unusually fast and has been stopped.\n"
             f"{verdict.reason}.\n"
             "Nothing was charged. No action needed unless you expected this."
