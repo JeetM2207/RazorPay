@@ -29,6 +29,65 @@
 
   .mode-wrap { display: flex; justify-content: center; margin-bottom: 22px; }
 
+  /* An explicit `display` beats the `hidden` attribute, whose whole
+     effect is `display: none` from the UA sheet. Every rule below that
+     sets one therefore has to say so, or the element stays on screen
+     while its own hidden property reads true -- which is exactly as
+     confusing to debug as it sounds. */
+  [hidden] { display: none !important; }
+
+  /* Where you are, and the way back. */
+  .trail-bar {
+    display: flex; align-items: center; gap: 10px;
+    max-width: 860px; margin: 0 auto 20px;
+    font-family: var(--font-mono); font-size: 11.5px;
+  }
+  .trail-step {
+    display: inline-flex; align-items: center; gap: 7px;
+    appearance: none; cursor: pointer;
+    background: rgba(255, 255, 255, .04); border: 1px solid var(--line);
+    border-radius: 999px; padding: 5px 13px;
+    color: var(--lilac); font-family: inherit; font-size: inherit;
+    transition: border-color .15s ease, color .15s ease;
+  }
+  .trail-step:hover { border-color: var(--violet); color: var(--ink); }
+  .trail-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--violet); flex: 0 0 6px;
+  }
+  .trail-sep { color: var(--muted-2); }
+
+  /* The fork: now, or every week. */
+  .choose-grid {
+    display: grid; gap: 14px; max-width: 860px; margin: 0 auto;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .choose {
+    appearance: none; cursor: pointer; text-align: left;
+    padding: 26px 26px 22px; border-radius: 16px;
+    background: rgba(26, 19, 48, .72);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border: 1px solid var(--line); color: inherit;
+    font-family: var(--font-body);
+    transition: border-color .18s ease, transform .18s ease;
+  }
+  .choose:hover { border-color: var(--violet); transform: translateY(-2px); }
+  .choose-mark {
+    width: 38px; height: 38px; border-radius: 11px;
+    display: grid; place-items: center; margin-bottom: 14px;
+    background: var(--gold-soft); color: var(--violet);
+    font-size: 19px; font-weight: 700;
+  }
+  .choose-name { font-size: 19px; font-weight: 800; letter-spacing: -.02em; }
+  .choose-blurb {
+    font-size: 13.5px; color: var(--muted); line-height: 1.55; margin-top: 8px;
+  }
+  .choose-more {
+    font-family: var(--font-mono); font-size: 10.5px; letter-spacing: .07em;
+    text-transform: uppercase; color: var(--muted-2); margin-top: 16px;
+    display: flex; align-items: center; gap: 8px;
+  }
+
   .kitchens { max-width: 860px; margin: 0 auto 26px; }
   .kitchens-head { margin-bottom: 14px; }
   .kitchen-grid {
@@ -467,18 +526,44 @@
          menu, limit and audit row belongs to it. Choosing one grants
          nothing -- it selects whose rules apply, and they then apply in
          full. -->
-    <section class="kitchens" id="kitchens">
-      <div class="kitchens-head">
-        <div>
-          <div class="pane-label">
-            <span class="pane-num">1</span>
-            <span class="pane-title">Choose a kitchen</span>
-          </div>
-          <p class="pane-sub" id="kitchensSub">Every one sets its own menu, its own
-            prices and its own limits. Your agent obeys whichever you pick.</p>
-        </div>
-      </div>
+    <!-- Where you are, once you are past the first step. Clicking the
+         kitchen goes back to the picker; nothing here is a dead end. -->
+    <div class="trail-bar" id="trailBar" hidden>
+      <button class="trail-step" id="trailKitchen" type="button">
+        <span class="trail-dot"></span><span id="trailKitchenName">—</span>
+      </button>
+      <span class="trail-sep">›</span>
+      <button class="trail-step" id="trailMode" type="button" hidden>
+        <span id="trailModeName">Order now</span>
+      </button>
+    </div>
+
+    <!-- ══════════════ STEP 1: which kitchen ══════════════ -->
+    <section class="stage compose" id="stageKitchens">
       <div class="kitchen-grid" id="kitchenGrid"></div>
+    </section>
+
+    <!-- ══════════════ STEP 2: now, or every week ══════════════ -->
+    <section class="stage compose" id="stageChoose" hidden>
+      <div class="choose-grid">
+        <button class="choose" data-go="compose">
+          <div class="choose-mark">→</div>
+          <div class="choose-name">Order now</div>
+          <div class="choose-blurb">Say what you want in your own words, or pick from
+            the menu. Your agent negotiates it and pays, inside the limits you set.</div>
+          <div class="choose-more">One order, placed straight away</div>
+        </button>
+        <button class="choose" data-go="schedule">
+          <div class="choose-mark">↻</div>
+          <div class="choose-name">Standing order</div>
+          <div class="choose-blurb">The same order, on the days and time you choose,
+            without you pressing anything — unless something about it has changed,
+            in which case it asks you first.</div>
+          <div class="choose-more">
+            Repeats on its own <span class="mode-count" id="modeRoutineCount"></span>
+          </div>
+        </button>
+      </div>
     </section>
 
     <!-- A question waiting on you, whoever asked it and whenever.
@@ -498,19 +583,6 @@
       <div class="ask-acts">
         <button class="btn btn-sm" id="askYes">Yes, go ahead</button>
         <button class="btn btn-sm btn-ghost" id="askNo">No, skip it</button>
-      </div>
-    </div>
-
-    <!-- Two different jobs, so two different places. Ordering something
-         now and arranging something to repeat are not the same task, and
-         stacking them in one column made the second read as a footnote
-         of the first. -->
-    <div class="mode-wrap">
-      <div class="mode" id="modeSwitch">
-        <button class="on" data-mode="now">Order now</button>
-        <button data-mode="schedule">
-          Standing orders <span class="mode-count" id="modeRoutineCount"></span>
-        </button>
       </div>
     </div>
 
@@ -758,6 +830,11 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const KITCHEN_KEY = "dabba-chosen-kitchen";
 let KITCHENS = [];
 let KITCHEN = localStorage.getItem(KITCHEN_KEY) || "";
+/* Whether the customer has actually PICKED one, as opposed to being
+   defaulted to the first while the page had to render something. Without
+   the distinction a first-time visitor skipped straight past the
+   picker -- the fallback made "have we got a kitchen?" always true. */
+let KITCHEN_CHOSEN = Boolean(localStorage.getItem(KITCHEN_KEY));
 let MENU = [];       // for the quick-pick chips, before the agent runs
 let CATALOG = [];    // what the agent itself fetched from /catalog
 let PROFILE = null;
@@ -1056,6 +1133,13 @@ async function boot() {
   renderRoutines();
   renderBento();
 
+  /* Where the walk starts. A returning customer already has a kitchen
+     on file, so sending them back to the picker every time would be
+     asking a question they have answered -- they land on the fork, one
+     click from either thing they came to do, with the way back to the
+     picker on the trail. */
+  showStage(KITCHEN_CHOSEN ? "choose" : "kitchens");
+
   /* The merchant edits her menu whenever she likes -- prices, stock,
      which dishes agents may order. This page used to read it once at
      load and never again, so after she changed a price the picker went
@@ -1096,18 +1180,25 @@ $("kitchenGrid").addEventListener("click", async (e) => {
   const card = e.target.closest("[data-kitchen]");
   if (!card || running) return;
   const chosen = card.dataset.kitchen;
-  if (chosen === KITCHEN) return;
+  const switching = chosen !== KITCHEN;
   KITCHEN = chosen;
+  KITCHEN_CHOSEN = true;
   localStorage.setItem(KITCHEN_KEY, KITCHEN);
-  // Everything below belongs to the old kitchen: its dishes are not on
-  // this menu, and its prices are not these prices.
-  PICKED = {};
-  ROUTINE_PICKED = {};
-  renderKitchens();
-  MENU = [];
-  await refreshMenu();
-  renderRoutines();
-  toast(`Now ordering from ${kitchenName()}.`);
+
+  if (switching) {
+    // Both baskets belong to the kitchen that was open a moment ago:
+    // its dishes are not on this menu and its prices are not these
+    // prices, so carrying them across would be carrying a phantom.
+    PICKED = {};
+    ROUTINE_PICKED = {};
+    renderKitchens();
+    MENU = [];
+    await refreshMenu();
+    renderRoutines();
+  }
+  // Picking a kitchen IS the first step, so it moves to the second
+  // rather than sitting there waiting to be understood.
+  showStage("choose");
 });
 
 function kitchenName() {
@@ -1285,6 +1376,16 @@ $("command").addEventListener("input", () => {
    "What would you like?" up while the agent is mid-negotiation asks a
    question that has already been answered. */
 const STAGES = {
+  kitchens: {
+    title: "Where are we ordering from?",
+    lede: "Every kitchen on Dabba sets its own menu, its own prices and its own "
+        + "limits. Your agent obeys whichever you pick.",
+  },
+  choose: {
+    title: "Once, or every week?",
+    lede: "Both go through the same checks and the same audit trail. The difference "
+        + "is only whether you are here when it happens.",
+  },
   schedule: {
     title: "Set it and forget it",
     lede: "A standing order is placed without anyone asking — so it only goes ahead "
@@ -1303,6 +1404,16 @@ const STAGES = {
   },
 };
 
+/* Which step is on screen. One list, so adding a step is adding a
+   member rather than editing four places that each know all of them. */
+const STAGE_IDS = {
+  kitchens: "stageKitchens",
+  choose: "stageChoose",
+  compose: "stageCompose",
+  schedule: "stageSchedule",
+  run: "stageRun",
+};
+
 function showStage(name) {
   const compose = $("stageCompose");
   const schedule = $("stageSchedule");
@@ -1316,15 +1427,23 @@ function showStage(name) {
     $("pageTitle").textContent = copy.title;
     $("pageLede").textContent = copy.lede;
   }
-  compose.hidden = name !== "compose";
-  schedule.hidden = name !== "schedule";
-  run.hidden = name !== "run";
-  // The switch belongs to composing; while the agent works there is
-  // nothing to switch between.
-  $("modeSwitch").parentElement.hidden = name === "run";
+  for (const [key, id] of Object.entries(STAGE_IDS)) {
+    const el = $(id);
+    if (el) el.hidden = key !== name;
+  }
+
+  /* The trail is the way back, so it appears the moment there IS one --
+     after a kitchen has been chosen -- and disappears while the agent is
+     working, because nothing there is safe to walk away from. */
+  const onTrail = name !== "kitchens" && name !== "run";
+  $("trailBar").hidden = !onTrail;
+  $("trailKitchenName").textContent = kitchenName();
+  const named = { compose: "Order now", schedule: "Standing order" }[name];
+  $("trailMode").hidden = !named;
+  if (named) $("trailModeName").textContent = named;
   // Re-run the entrance on the stage arriving, so the change reads as a
   // move rather than as content snapping into place.
-  const arriving = { compose, schedule, run }[name] || compose;
+  const arriving = $(STAGE_IDS[name]) || compose;
   arriving.style.animation = "none";
   void arriving.offsetWidth;
   arriving.style.animation = "";
@@ -2521,13 +2640,18 @@ $("deployBtn").addEventListener("click", deploy);
 /* No cross-stage jump any more: the standing order has its own picker,
    so there is nowhere to send anybody. */
 
-$("modeSwitch").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-mode]");
-  if (!btn || running) return;
-  for (const b of $("modeSwitch").querySelectorAll("button")) {
-    b.classList.toggle("on", b === btn);
-  }
-  showStage(btn.dataset.mode === "schedule" ? "schedule" : "compose");
+document.querySelector(".choose-grid").addEventListener("click", (e) => {
+  const btn = e.target.closest("button[data-go]");
+  if (btn && !running) showStage(btn.dataset.go);
+});
+
+// Nothing here is a dead end: the kitchen goes back to the picker, the
+// mode goes back to the fork.
+$("trailKitchen").addEventListener("click", () => {
+  if (!running) showStage("kitchens");
+});
+$("trailMode").addEventListener("click", () => {
+  if (!running) showStage("choose");
 });
 
 $("againBtn").addEventListener("click", () => {
