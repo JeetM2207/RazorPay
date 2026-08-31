@@ -10,6 +10,8 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import merchants
+
 DEFAULT_DB_PATH = str(Path(__file__).resolve().parent / "audit.db")
 
 _SCHEMA = """
@@ -72,6 +74,17 @@ _ADDED_COLUMNS = {
     # moment of charge. That distinction belongs in the record.
     "source": "TEXT",
     "routine_id": "TEXT",
+    # Which kitchen on the platform this order belongs to. Every read a
+    # merchant makes is filtered by it, so it is the difference between
+    # a marketplace and a shared inbox.
+    #
+    # Rows written before the platform existed have NULL here, and they
+    # are treated as the default kitchen rather than backfilled: they
+    # genuinely were that kitchen's orders, and inventing a value in an
+    # append-only trail to tidy up a query is how a record stops being
+    # one. The filter reads "this merchant, or unattributed when this
+    # merchant is the default".
+    "merchant_id": "TEXT",
 }
 
 
@@ -109,6 +122,7 @@ def record_event(
     source: str | None = None,
     routine_id: str | None = None,
     ts: str | None = None,
+    merchant_id: str | None = None,
 ) -> int:
     """`ts` exists so the orchestrator's injectable clock reaches the
     ROW as well as the check. Without it a test can move the clock for
@@ -120,8 +134,8 @@ def record_event(
         cursor = conn.execute(
             "INSERT INTO audit_events "
             "(ts, agent_id, protocol, cart_json, decision, reason, total_inr, payment_id, "
-            " order_ref, limits_snapshot, source, routine_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            " order_ref, limits_snapshot, source, routine_id, merchant_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 ts or datetime.now(timezone.utc).isoformat(),
                 agent_id,
@@ -135,6 +149,7 @@ def record_event(
                 json.dumps(limits_snapshot) if limits_snapshot else None,
                 source,
                 routine_id,
+                merchant_id,
             ),
         )
         return cursor.lastrowid
@@ -298,20 +313,22 @@ def record_unmatched_demand(
     )
 
 
-def get_unmatched_demand(db_path: str = DEFAULT_DB_PATH, limit: int = 50) -> list[dict]:
+def get_unmatched_demand(db_path: str = DEFAULT_DB_PATH, limit: int = 50,
+                        merchant_id: str | None = None) -> list[dict]:
     """What people asked for and could not be sold, most requested first.
 
     The merchant-facing point of the whole thing: "eleven people asked
     for pizza this week" is a menu decision she can act on.
     """
     init_db(db_path)
+    _demand_scope, _demand_params = scope(merchant_id)
     with sqlite3.connect(db_path) as conn:
         rows = conn.execute(
             "SELECT LOWER(TRIM(reason)) AS requested, COUNT(*) AS times, "
             "       MAX(ts) AS last_asked "
-            "FROM audit_events WHERE decision = ? "
+            f"FROM audit_events WHERE decision = ?{_demand_scope} "
             "GROUP BY requested ORDER BY times DESC, requested ASC LIMIT ?",
-            (UNMATCHED_DEMAND, limit),
+            (UNMATCHED_DEMAND, *_demand_params, limit),
         ).fetchall()
     return [{"requested": r[0], "times": r[1], "last_asked": r[2]} for r in rows]
 
@@ -370,12 +387,19 @@ def get_orders_with_status(
     return matching
 
 
-def get_events_for_agent(agent_id: str, db_path: str = DEFAULT_DB_PATH) -> list[dict]:
+def get_events_for_agent(agent_id: str, db_path: str = DEFAULT_DB_PATH,
+                         merchant_id: str | None = None) -> list[dict]:
     init_db(db_path)
+    # Trust is per KITCHEN when a kitchen asks. An agent that has proved
+    # itself at Amma's has proved nothing at the grill house, and a
+    # merchant judging an agent on somebody else's history is not
+    # judging it at all.
+    where, params = scope(merchant_id)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM audit_events WHERE agent_id = ? ORDER BY id", (agent_id,)
+            f"SELECT * FROM audit_events WHERE agent_id = ?{where} ORDER BY id",
+            (agent_id, *params),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -426,12 +450,39 @@ def get_frequent_addons(
     return [row[0] for row in rows]
 
 
-def get_all_events(db_path: str = DEFAULT_DB_PATH, limit: int = 200) -> list[dict]:
+def scope(merchant_id: str | None) -> tuple[str, list]:
+    """SQL fragment and params confining a read to one kitchen.
+
+    ONE definition, used by every merchant-facing reader, because the
+    rule has an edge case and having it written out five times is how
+    four of them end up agreeing and one does not.
+
+    The edge case: rows written before the platform existed carry NULL.
+    They genuinely were the default kitchen's orders, so the default
+    kitchen sees them and nobody else does. They are matched rather than
+    backfilled -- inventing a value in an append-only trail to make a
+    query tidier is how a record stops being one.
+
+    `merchant_id=None` means "the whole platform" and is what the
+    unfiltered views (the public audit trail) pass. It is never what a
+    merchant-facing endpoint passes, and there is a test for that.
+    """
+    if merchant_id is None:
+        return "", []
+    if merchant_id == merchants.default_id():
+        return " AND (merchant_id = ? OR merchant_id IS NULL)", [merchant_id]
+    return " AND merchant_id = ?", [merchant_id]
+
+
+def get_all_events(db_path: str = DEFAULT_DB_PATH, limit: int = 200,
+                   merchant_id: str | None = None) -> list[dict]:
     init_db(db_path)
+    where, params = scope(merchant_id)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM audit_events ORDER BY id DESC LIMIT ?", (limit,)
+            f"SELECT * FROM audit_events WHERE 1=1{where} ORDER BY id DESC LIMIT ?",
+            (*params, limit),
         ).fetchall()
         return [dict(row) for row in rows]
 
@@ -490,7 +541,8 @@ def _accepted_addons(rows: list[dict], paid: list[dict]) -> list[str]:
     return accepted
 
 
-def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH) -> dict:
+def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH,
+                 merchant_id: str | None = None) -> dict:
     """A small factual summary of the last `hours`. Read-only.
 
     Simulated settlements are excluded from revenue for the same reason
@@ -502,8 +554,10 @@ def growth_stats(hours: int = 24, db_path: str = DEFAULT_DB_PATH) -> dict:
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        where, params = scope(merchant_id)
         rows = [dict(r) for r in conn.execute(
-            "SELECT * FROM audit_events WHERE ts >= ? ORDER BY id ASC", (since,)
+            f"SELECT * FROM audit_events WHERE ts >= ?{where} ORDER BY id ASC",
+            (since, *params),
         )]
 
     # An order that was refunded or declined is not revenue. Keyed on
@@ -658,15 +712,17 @@ def mark_disputed(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> bool:
         return bool(row and row[0])
 
 
-def get_disputed(db_path: str = DEFAULT_DB_PATH, limit: int = 50) -> list[dict]:
+def get_disputed(db_path: str = DEFAULT_DB_PATH, limit: int = 50,
+                 merchant_id: str | None = None) -> list[dict]:
     """Orders someone has asked for the record on, newest first."""
     init_db(db_path)
+    where, params = scope(merchant_id)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         rows = conn.execute(
-            "SELECT * FROM audit_events WHERE disputed_at IS NOT NULL "
+            f"SELECT * FROM audit_events WHERE disputed_at IS NOT NULL{where} "
             "ORDER BY disputed_at DESC LIMIT ?",
-            (limit,),
+            (*params, limit),
         ).fetchall()
         return [dict(r) for r in rows]
 

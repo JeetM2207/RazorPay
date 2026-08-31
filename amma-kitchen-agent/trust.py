@@ -71,8 +71,10 @@ def velocity_multiplier(tier: TrustTier) -> float:
     return TIER_VELOCITY_MULTIPLIER[tier]
 
 
-def compute_trust_tier(agent_id: str, db_path: str = audit_log.DEFAULT_DB_PATH) -> TrustTier:
-    events = audit_log.get_events_for_agent(agent_id, db_path=db_path)
+def compute_trust_tier(agent_id: str, db_path: str = audit_log.DEFAULT_DB_PATH,
+                       merchant_id: str | None = None) -> TrustTier:
+    events = audit_log.get_events_for_agent(agent_id, db_path=db_path,
+                                            merchant_id=merchant_id)
 
     violations = sum(1 for e in events if "category not allowed" in (e["reason"] or ""))
     if violations > 0:
@@ -87,8 +89,15 @@ def compute_trust_tier(agent_id: str, db_path: str = audit_log.DEFAULT_DB_PATH) 
 
 
 def trust_adjusted_mandate(
-    agent_id: str, base_mandate: Mandate, db_path: str = audit_log.DEFAULT_DB_PATH
+    agent_id: str, base_mandate: Mandate, db_path: str = audit_log.DEFAULT_DB_PATH,
+    merchant_id: str | None = None,
 ) -> tuple[Mandate, TrustTier]:
-    tier = compute_trust_tier(agent_id, db_path=db_path)
+    """`merchant_id` scopes the history this reads.
+
+    An agent that has proved itself at one kitchen has proved nothing at
+    another, and a merchant widening her margin on somebody else's
+    evidence is not judging the agent at all.
+    """
+    tier = compute_trust_tier(agent_id, db_path=db_path, merchant_id=merchant_id)
     adjusted = replace(base_mandate, flexible_margin_pct=TIER_FLEXIBLE_MARGIN_PCT[tier])
     return adjusted, tier

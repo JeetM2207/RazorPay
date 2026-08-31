@@ -154,8 +154,18 @@ def usage(
     agent_id: str,
     now: datetime | None = None,
     db_path: str | None = None,
+    merchant_id: str | None = None,
 ) -> tuple[int, int]:
     """(orders in the last hour, rupees in the last day) for this agent.
+
+    Counted PER KITCHEN. Each merchant sets her own rate and spend
+    limits, so they have to be measured against her own traffic -- an
+    agent that bought lunch at one kitchen has not used up anything at
+    another, and counting across the platform meant one merchant's
+    customers exhausting a different merchant's gate.
+
+    None counts platform-wide, which is what a caller with no kitchen in
+    hand gets and what the pre-marketplace behaviour was.
 
     Read from the audit trail, which is the same single source of truth
     trust.py reads. There is deliberately no counter table: a second
@@ -164,7 +174,8 @@ def usage(
     """
     now = now or datetime.now(timezone.utc)
     db_path = db_path or audit_log.DEFAULT_DB_PATH
-    rows = audit_log.get_events_for_agent(agent_id, db_path=db_path)
+    rows = audit_log.get_events_for_agent(agent_id, db_path=db_path,
+                                          merchant_id=merchant_id)
 
     # Orders whose money came back are not spend. Matched the way the
     # merchant console already matches them: by a refund row pointing at
@@ -197,6 +208,7 @@ def check(
     tier_multiplier: float = 1.0,
     now: datetime | None = None,
     db_path: str | None = None,
+    merchant_id: str | None = None,
 ) -> VelocityVerdict:
     """Would letting this order through breach either limit?
 
@@ -204,7 +216,8 @@ def check(
     question is whether it may proceed -- not whether the damage is
     already done.
     """
-    orders, spend = usage(agent_id, now=now, db_path=db_path)
+    orders, spend = usage(agent_id, now=now, db_path=db_path,
+                          merchant_id=merchant_id)
     max_orders = _scaled(limits.max_orders_per_hour, tier_multiplier)
     max_spend = _scaled(limits.max_spend_per_day_inr, tier_multiplier)
 

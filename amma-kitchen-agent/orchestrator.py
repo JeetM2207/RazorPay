@@ -14,6 +14,7 @@ from fastapi import HTTPException
 
 import audit_log
 import merchant_config
+import merchants
 import negotiation
 import razorpay_client
 import trust
@@ -125,6 +126,7 @@ def _refuse_for_velocity(
     routine_id: str | None,
     now: datetime,
     db_path: str,
+    merchant_id: str | None = None,
 ) -> dict:
     """A HARD refusal, and deliberately not an escalation.
 
@@ -153,6 +155,7 @@ def _refuse_for_velocity(
         source=source,
         routine_id=routine_id,
         ts=now.isoformat(),
+        merchant_id=merchant_id,
     )
     notified = _tell_her_once(agent_id, verdict, now)
 
@@ -182,13 +185,26 @@ def negotiate_and_record(
     source: str | None = None,
     routine_id: str | None = None,
     now: datetime | None = None,
+    merchant_id: str | None = None,
 ) -> dict:
+    """Decide a cart against ONE kitchen's rules and record it against it.
+
+    `merchant_id` selects whose menu, whose caps and whose velocity gate
+    apply. It is the only thing a buyer gets to choose about a merchant,
+    and it grants nothing -- it picks a tenant, and that tenant's rules
+    then apply in full.
+
+    None means the platform's default kitchen, which is what every
+    caller written before the marketplace passes.
+    """
     db_path = audit_log.DEFAULT_DB_PATH
+    merchant_id = merchant_id or merchants.default_id()
     # Read the merchant's LIVE configuration, so edits she makes on the
     # setup page are the limits actually enforced here.
-    menu = merchant_config.current_menu()
+    menu = merchant_config.current_menu(merchant_id)
     adjusted_mandate, tier = trust.trust_adjusted_mandate(
-        agent_id, merchant_config.current_mandate(), db_path=db_path
+        agent_id, merchant_config.current_mandate(merchant_id),
+        db_path=db_path, merchant_id=merchant_id,
     )
     result = negotiation.evaluate(cart, mandate=adjusted_mandate, menu=menu)
 
@@ -201,11 +217,11 @@ def negotiate_and_record(
     # decided, and before any Razorpay call, which is the only ordering
     # that matters for money.
     now = now or datetime.now(timezone.utc)
-    limits = merchant_config.current_velocity_limits()
+    limits = merchant_config.current_velocity_limits(merchant_id)
     verdict = velocity.check(
         agent_id, result.total_inr, limits,
         tier_multiplier=trust.velocity_multiplier(tier),
-        now=now, db_path=db_path,
+        now=now, db_path=db_path, merchant_id=merchant_id,
     )
 
     cart_payload = [{"item": name, "qty": qty} for name, qty in cart]
@@ -214,7 +230,7 @@ def negotiate_and_record(
         return _refuse_for_velocity(
             agent_id, protocol, cart_payload, result, verdict,
             adjusted_mandate, tier, buyer_mandate, limits, source, routine_id,
-            now=now, db_path=db_path,
+            now=now, db_path=db_path, merchant_id=merchant_id,
         )
     event_id = audit_log.record_event(
         agent_id=agent_id,
@@ -236,6 +252,7 @@ def negotiate_and_record(
         source=source,
         routine_id=routine_id,
         ts=now.isoformat(),
+        merchant_id=merchant_id,
     )
 
     response = {
@@ -251,8 +268,12 @@ def negotiate_and_record(
         ],
     }
 
+    response["merchant_id"] = merchant_id
+    response["merchant_name"] = merchants.name_of(merchant_id)
+
     if result.decision == negotiation.Decision.APPROVE:
-        suggestion = suggest_addon(cart, adjusted_mandate, menu, db_path=db_path)
+        suggestion = suggest_addon(cart, adjusted_mandate, menu, db_path=db_path,
+                                   merchant_id=merchant_id)
         if suggestion:
             response["upsell_suggestion"] = suggestion
 
@@ -264,6 +285,7 @@ def suggest_addon(
     mandate,
     menu: dict,
     db_path: str | None = None,
+    merchant_id: str | None = None,
 ) -> dict | None:
     """One optional add-on to offer, or None. Never affects a decision.
 
