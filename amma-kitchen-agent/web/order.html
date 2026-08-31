@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Order — Amma's Kitchen</title>
+<title>Order — Dabba</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   /* ---- two stages, one at a time ----
@@ -443,7 +443,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-mark">Dabba</span>
       <span class="brand-role">Buyer</span>
     </div>
     <div class="topbar-links">
@@ -1475,12 +1475,12 @@ async function deploy() {
       log(`&gt; ${rupee(gate.total_inr)} is at or above your soft cap. Coming back to you.`, "warn");
       const ok = await askApprovalOverWhatsApp(cartLabel(items), gate.total_inr, softCap);
       if (ok === null) {
-        log("&gt; No answer. Stopping — nothing was sent to Amma's Kitchen.", "err");
+        log(`&gt; No answer. Stopping — nothing was sent to ${escHtml(kitchenName())}.`, "err");
         setState("NO ANSWER", "#FF7A5C"); stepFailed();
         return;
       }
       if (!ok) {
-        log("&gt; You said no. Nothing was sent to Amma's Kitchen.", "err");
+        log(`&gt; You said no. Nothing was sent to ${escHtml(kitchenName())}.`, "err");
         setState("CANCELLED", "#FF7A5C"); stepFailed();
         return;
       }
@@ -2000,9 +2000,9 @@ async function watchOutcomes() {
    ourselves, and money coming back. */
 
 const TX_SHAPE = {
-  payment:   { cls: "",    mark: "\u2191", verb: "Paid to Amma's Kitchen" },
+  payment:   { cls: "",    mark: "\u2191", verb: "Paid" },
   simulated: { cls: "sim", mark: "\u2191", verb: "Settled autonomously" },
-  refund:    { cls: "in",  mark: "\u2193", verb: "Refunded by Amma's Kitchen" },
+  refund:    { cls: "in",  mark: "\u2193", verb: "Refunded" },
   reversal:  { cls: "in",  mark: "\u2193", verb: "Reversed by Amma's Kitchen" },
 };
 

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Merchant console — Amma's Kitchen</title>
+<title>Merchant console — Dabba</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   /* THE BOARD. This page is where the machine works, so it sits on the
@@ -359,7 +359,7 @@
     <div class="rail-brand">
       <div class="rail-mark"></div>
       <div>
-        <div class="rail-name">Amma's Kitchen</div>
+        <div class="rail-name" id="railShop">Dabba</div>
         <div class="rail-role">Merchant</div>
       </div>
     </div>
@@ -752,6 +752,16 @@ function showTab(name) {
 
 async function boot() {
   const config = await api("/api/merchant-config");
+  // The rail says which kitchen this session is signed in as. On a
+  // marketplace "Merchant" is not enough -- three people share this
+  // screen and only the name tells them whose board they are on.
+  const shop = (config.profile || {}).shop_name;
+  if (shop) {
+    $("railShop").textContent = shop;
+    $("railShop").title = "Signed in to Dabba as " + shop;
+    const role = document.querySelector(".rail-role");
+    if (role) role.textContent = "on Dabba";
+  }
   if (!config.profile.configured) {
     // Shop not set up yet -- send them there rather than showing an
     // orders screen governed by limits they never chose.
@@ -767,7 +777,11 @@ async function boot() {
   // Seed the heading and lede for the section we open on.
   showTab("ops");
 
-  MANDATE = (await api("/api/menu")).mandate;
+  // From HER config, not /api/menu. /api/menu is the buyer-facing feed
+  // and answers for the platform's default kitchen unless told otherwise
+  // -- so this board showed the wrong shop's cap, threshold and
+  // categories to every merchant except the first one.
+  MANDATE = config.mandate;
   $("mandateStrip").innerHTML =
     "<span>Your mandate &mdash;</span>" +
     "<span>budget cap <b>" + rupee(MANDATE.budget_cap_inr) + "</b></span>" +
@@ -927,7 +941,7 @@ async function renderSms() {
         const asks = /\breply\b/i.test(m.body);
         return `
           <div class="bubble">
-            <span class="bubble-tag">Amma's Kitchen bot</span>
+            <span class="bubble-tag">Dabba</span>
             ${esc(m.body)}
             <div class="bubble-meta">
               <span class="bubble-to">to ${esc(m.to)}</span>
