@@ -1,0 +1,89 @@
+{
+  "profile": {
+    "shop_name": "Bombay Tiffin Room",
+    "address": "Ghatkopar East, Mumbai",
+    "phone": "",
+    "configured": true
+  },
+  "mandate": {
+    "budget_cap_inr": 400,
+    "human_confirm_threshold_inr": 300,
+    "allowed_categories": [
+      "tiffin",
+      "snacks",
+      "beverages",
+      "sweets"
+    ],
+    "flexible_margin_pct": 0.05
+  },
+  "velocity": {
+    "max_orders_per_hour": 8,
+    "max_spend_per_day_inr": 2500
+  },
+  "menu": {
+    "vada_pav": {
+      "name": "vada_pav",
+      "category": "snacks",
+      "price_inr": 25,
+      "stock": 60,
+      "list_price_inr": 25,
+      "sale": false
+    },
+    "misal_pav": {
+      "name": "misal_pav",
+      "category": "tiffin",
+      "price_inr": 90,
+      "stock": 30,
+      "list_price_inr": 90,
+      "sale": false
+    },
+    "poha": {
+      "name": "poha",
+      "category": "tiffin",
+      "price_inr": 60,
+      "stock": 40,
+      "list_price_inr": 60,
+      "sale": false
+    },
+    "sabudana_khich": {
+      "name": "sabudana_khich",
+      "category": "tiffin",
+      "price_inr": 80,
+      "stock": 25,
+      "list_price_inr": 80,
+      "sale": false
+    },
+    "pav_bhaji": {
+      "name": "pav_bhaji",
+      "category": "tiffin",
+      "price_inr": 110,
+      "stock": 22,
+      "list_price_inr": 110,
+      "sale": false
+    },
+    "cutting_chai": {
+      "name": "cutting_chai",
+      "category": "beverages",
+      "price_inr": 15,
+      "stock": 90,
+      "list_price_inr": 15,
+      "sale": false
+    },
+    "solkadhi": {
+      "name": "solkadhi",
+      "category": "beverages",
+      "price_inr": 40,
+      "stock": 35,
+      "list_price_inr": 40,
+      "sale": false
+    },
+    "shrikhand": {
+      "name": "shrikhand",
+      "category": "sweets",
+      "price_inr": 70,
+      "stock": 28,
+      "list_price_inr": 70,
+      "sale": false
+    }
+  }
+}

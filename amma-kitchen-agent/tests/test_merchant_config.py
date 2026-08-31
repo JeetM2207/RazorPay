@@ -170,7 +170,7 @@ def test_config_survives_a_restart(client, monkeypatch):
     # A restart means no in-memory state, forcing a read from disk --
     # which is different from reset_to_defaults(), that deliberately
     # throws the saved shop away.
-    monkeypatch.setattr(merchant_config, "_state", None)
+    merchant_config._states.clear()   # the cache is per kitchen now, so a restart clears the lot
 
     assert merchant_config.current_mandate().budget_cap_inr == 888
     assert merchant_config.profile()["shop_name"] == "Amma's Kitchen"
@@ -181,7 +181,7 @@ def test_a_corrupt_config_falls_back_to_defaults_rather_than_crashing(monkeypatc
     path.write_text("{ this is not json")
     monkeypatch.setattr(merchant_config, "CONFIG_PATH", path)
     merchant_config.reset_to_defaults()
-    monkeypatch.setattr(merchant_config, "_state", None)
+    merchant_config._states.clear()   # the cache is per kitchen now, so a restart clears the lot
 
     assert merchant_config.current_mandate().budget_cap_inr == 500
 

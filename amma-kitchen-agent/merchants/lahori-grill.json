@@ -1,0 +1,89 @@
+{
+  "profile": {
+    "shop_name": "Lahori Grill House",
+    "address": "Navrangpura, Ahmedabad",
+    "phone": "",
+    "configured": true
+  },
+  "mandate": {
+    "budget_cap_inr": 900,
+    "human_confirm_threshold_inr": 500,
+    "allowed_categories": [
+      "grill",
+      "mains",
+      "breads",
+      "beverages"
+    ],
+    "flexible_margin_pct": 0.05
+  },
+  "velocity": {
+    "max_orders_per_hour": 5,
+    "max_spend_per_day_inr": 4000
+  },
+  "menu": {
+    "seekh_kebab": {
+      "name": "seekh_kebab",
+      "category": "grill",
+      "price_inr": 280,
+      "stock": 18,
+      "list_price_inr": 280,
+      "sale": false
+    },
+    "malai_tikka": {
+      "name": "malai_tikka",
+      "category": "grill",
+      "price_inr": 320,
+      "stock": 14,
+      "list_price_inr": 320,
+      "sale": false
+    },
+    "mutton_biryani": {
+      "name": "mutton_biryani",
+      "category": "mains",
+      "price_inr": 340,
+      "stock": 12,
+      "list_price_inr": 340,
+      "sale": false
+    },
+    "dal_makhani": {
+      "name": "dal_makhani",
+      "category": "mains",
+      "price_inr": 190,
+      "stock": 20,
+      "list_price_inr": 190,
+      "sale": false
+    },
+    "butter_naan": {
+      "name": "butter_naan",
+      "category": "breads",
+      "price_inr": 45,
+      "stock": 70,
+      "list_price_inr": 45,
+      "sale": false
+    },
+    "roomali_roti": {
+      "name": "roomali_roti",
+      "category": "breads",
+      "price_inr": 35,
+      "stock": 55,
+      "list_price_inr": 35,
+      "sale": false
+    },
+    "lassi": {
+      "name": "lassi",
+      "category": "beverages",
+      "price_inr": 60,
+      "stock": 40,
+      "list_price_inr": 60,
+      "sale": false
+    },
+    "catering_platter": {
+      "name": "catering_platter",
+      "category": "catering",
+      "price_inr": 850,
+      "stock": 4,
+      "list_price_inr": 850,
+      "sale": false
+    }
+  }
+}

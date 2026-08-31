@@ -25,6 +25,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 import velocity
+import merchants
 from mandate import MANDATE, MENU, Mandate, MenuItem
 
 CONFIG_PATH = Path(
@@ -38,7 +39,29 @@ _DEFAULT_PROFILE = {
     "configured": False,
 }
 
-_state: dict | None = None
+# One cached shop per kitchen, not one for the platform. Keyed rather
+# than swapped, because FastAPI serves sync endpoints from a threadpool:
+# a single "current merchant" global would let two concurrent requests
+# read each other's menu, and the failure would be a wrong price on a
+# real order rather than an exception anyone would notice.
+_states: dict[str, dict] = {}
+
+
+def _key(merchant_id: str | None) -> str:
+    """Which kitchen a call is about.
+
+    None means the platform default, which is what every caller written
+    before the marketplace existed passes. CONFIG_PATH is still honoured
+    for that one, so MERCHANT_CONFIG_PATH and the test fixture that
+    points it at a tmp_path keep working exactly as they did.
+    """
+    return merchant_id or merchants.default_id()
+
+
+def _path(merchant_id: str | None) -> Path:
+    if _key(merchant_id) == merchants.default_id():
+        return CONFIG_PATH          # honours MERCHANT_CONFIG_PATH and the tests
+    return merchants.config_path(merchant_id)
 
 
 # ------------------------------------------------------------- internals
@@ -57,53 +80,66 @@ def _fresh_state() -> dict:
     }
 
 
-def _load() -> dict:
-    global _state
-    if _state is not None:
-        return _state
+def _load(merchant_id: str | None = None) -> dict:
+    key = _key(merchant_id)
+    cached = _states.get(key)
+    if cached is not None:
+        return cached
 
-    _state = _fresh_state()
-    if CONFIG_PATH.exists():
+    state = _fresh_state()
+    state["profile"]["shop_name"] = merchants.name_of(key)
+    path = _path(merchant_id)
+    if path.exists():
         try:
-            stored = json.loads(CONFIG_PATH.read_text())
-            _state["profile"].update(stored.get("profile", {}))
-            _state["mandate"].update(stored.get("mandate", {}))
-            _state["velocity"].update(stored.get("velocity", {}))
+            stored = json.loads(path.read_text())
+            state["profile"].update(stored.get("profile", {}))
+            state["mandate"].update(stored.get("mandate", {}))
+            state["velocity"].update(stored.get("velocity", {}))
             if stored.get("menu"):
-                _state["menu"] = stored["menu"]
+                state["menu"] = stored["menu"]
         except (json.JSONDecodeError, OSError):
             # A corrupt config must not take the shop offline; fall back
             # to defaults rather than refusing to start.
-            _state = _fresh_state()
-    return _state
+            state = _fresh_state()
+            state["profile"]["shop_name"] = merchants.name_of(key)
+    _states[key] = state
+    return state
 
 
-def _persist() -> None:
+def _persist(merchant_id: str | None = None) -> None:
     try:
-        CONFIG_PATH.write_text(json.dumps(_load(), indent=2))
+        _path(merchant_id).write_text(json.dumps(_load(merchant_id), indent=2))
     except OSError:
         pass  # an unwritable disk must not break an in-flight order
 
 
-def reset_to_defaults() -> None:
-    """Used by tests, and by a merchant who wants a clean slate."""
-    global _state
-    _state = _fresh_state()
+def reset_to_defaults(merchant_id: str | None = None) -> None:
+    """Used by tests, and by a merchant who wants a clean slate.
+
+    With no id it clears EVERY kitchen, which is what the test fixture
+    wants: one shop left behind in the cache would leak into the next
+    test exactly as one saved in a browser used to leak into the suite.
+    """
+    if merchant_id is None:
+        _states.clear()
+        _states[merchants.default_id()] = _fresh_state()
+        return
+    _states[_key(merchant_id)] = _fresh_state()
 
 
 # ----------------------------------------------------------------- reads
 
-def profile() -> dict:
-    return dict(_load()["profile"])
+def profile(merchant_id: str | None = None) -> dict:
+    return dict(_load(merchant_id)["profile"])
 
 
-def is_configured() -> bool:
-    return bool(_load()["profile"]["configured"])
+def is_configured(merchant_id: str | None = None) -> bool:
+    return bool(_load(merchant_id)["profile"]["configured"])
 
 
-def current_mandate() -> Mandate:
+def current_mandate(merchant_id: str | None = None) -> Mandate:
     """The limits the negotiation core should decide against right now."""
-    data = _load()["mandate"]
+    data = _load(merchant_id)["mandate"]
     return Mandate(
         budget_cap_inr=int(data["budget_cap_inr"]),
         allowed_categories=tuple(data["allowed_categories"]),
@@ -112,14 +148,14 @@ def current_mandate() -> Mandate:
     )
 
 
-def current_velocity_limits() -> velocity.VelocityLimits:
+def current_velocity_limits(merchant_id: str | None = None) -> velocity.VelocityLimits:
     """How fast one agent may go, as configured right now.
 
     A separate accessor from `current_mandate()` on purpose: nothing that
     calls the negotiation core should be able to pick these up by
     accident.
     """
-    data = _load().get("velocity") or {}
+    data = _load(merchant_id).get("velocity") or {}
     default = velocity.default_limits()
     return velocity.VelocityLimits(
         max_orders_per_hour=int(data.get("max_orders_per_hour", default.max_orders_per_hour)),
@@ -129,7 +165,7 @@ def current_velocity_limits() -> velocity.VelocityLimits:
     )
 
 
-def current_menu() -> dict[str, MenuItem]:
+def current_menu(merchant_id: str | None = None) -> dict[str, MenuItem]:
     return {
         name: MenuItem(
             name=item["name"],
@@ -137,14 +173,14 @@ def current_menu() -> dict[str, MenuItem]:
             price_inr=int(item["price_inr"]),
             stock=int(item["stock"]),
         )
-        for name, item in _load()["menu"].items()
+        for name, item in _load(merchant_id)["menu"].items()
     }
 
 
-def as_dict() -> dict:
+def as_dict(merchant_id: str | None = None) -> dict:
     """Everything the setup page needs to render itself."""
     mandate = current_mandate()
-    raw = _load()["menu"]
+    raw = _load(merchant_id)["menu"]
     return {
         "profile": profile(),
         "mandate": {
@@ -153,7 +189,7 @@ def as_dict() -> dict:
             "allowed_categories": list(mandate.allowed_categories),
             "flexible_margin_pct": mandate.flexible_margin_pct,
         },
-        "velocity": asdict(current_velocity_limits()),
+        "velocity": asdict(current_velocity_limits(merchant_id)),
         "menu": [
             {
                 "id": item.name,
