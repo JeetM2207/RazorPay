@@ -21,6 +21,7 @@ is a merchant decision; anything else, from a number we have an open
 question with, is a customer answering. See escalations.sms_reply.
 """
 
+import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +38,8 @@ CONVERSATION_TTL_SECONDS = reply_codes.TTL_SECONDS
 
 _CONVERSATIONS: dict[str, "Conversation"] = {}
 
+
+log = logging.getLogger(__name__)
 
 SUBSTITUTE = "substitute"   # "we don't sell that -- what instead?"
 APPROVAL = "approval"       # "this is over your soft cap -- proceed?"
@@ -59,6 +62,18 @@ class Conversation:
     code: str = ""
     # Only meaningful for an APPROVAL question: True/False once answered.
     decision: bool | None = None
+    # Which standing order asked, when one did. A soft-cap approval is
+    # picked up by the deploy() that is already running and polling for
+    # it; a routine's is not, because the entire point of a routine is
+    # that nobody is running anything. Without this the reply was
+    # recorded, answered "going ahead with your order now", and went
+    # nowhere -- the message was simply untrue.
+    routine_id: str | None = None
+    # The message as sent. Kept because the buyer console has to be able
+    # to show the question to somebody who was not watching when it was
+    # asked -- and the REASON lives in this text and nowhere else. A
+    # standing order held back by a price change says so here.
+    question: str = ""
 
     def as_dict(self) -> dict:
         return {
@@ -77,6 +92,8 @@ class Conversation:
             # mock path stays usable: the customer reads the code off the
             # screen exactly as they would off their phone.
             "code": self.code,
+            "question": self.question,
+            "routine_id": self.routine_id,
         }
 
 
@@ -167,6 +184,7 @@ def ask(
         asked_at=datetime.now(timezone.utc).isoformat(),
         transport=sent.transport,
         code=code,
+        question=body,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation
@@ -180,6 +198,7 @@ def ask_approval(
     soft_cap_inr: int,
     shop_name: str = "Amma's Kitchen",
     why: str | None = None,
+    routine_id: str | None = None,
 ) -> Conversation:
     """Ask the customer to approve an order they have not authorised.
 
@@ -220,6 +239,8 @@ def ask_approval(
         kind=APPROVAL,
         transport=sent.transport,
         code=code,
+        question=body,
+        routine_id=routine_id,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation
@@ -359,6 +380,26 @@ def record_reply(from_phone: str, text: str) -> dict | None:
         conversation.reply = cleaned
         conversation.decision = decision
         conversation.replied_at = datetime.now(timezone.utc).isoformat()
+
+        # A standing order has nobody waiting to act on the answer. A
+        # soft-cap approval does -- the deploy() that asked is polling
+        # for it -- so only the routine case is placed from here, and
+        # placing it is what makes "going ahead" true.
+        if conversation.routine_id:
+            import routines                      # local: routines imports this module
+
+            try:
+                routines.confirm_pending(conversation.routine_id, approved=decision)
+            except Exception as exc:
+                log.error("routine %s could not be actioned after a reply: %s",
+                          conversation.routine_id, exc)
+                return {
+                    "handled": True,
+                    "agent_id": conversation.agent_id,
+                    "message": "Got your answer, but the order could not be placed. "
+                               "Nothing has been charged.",
+                }
+
         return {
             "handled": True,
             "agent_id": conversation.agent_id,

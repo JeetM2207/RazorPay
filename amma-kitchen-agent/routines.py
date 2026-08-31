@@ -518,6 +518,10 @@ def _ask_first(routine: dict, gate: dict) -> dict:
                 total_inr=gate["total_inr"],
                 soft_cap_inr=routine.get("routine_cap_inr") or gate["total_inr"],
                 why=why,
+                # So a YES can actually place it. Without this the reply
+                # was recorded, answered "going ahead with your order
+                # now", and nothing went ahead.
+                routine_id=routine["id"],
             )
         except Exception:
             conversation = None

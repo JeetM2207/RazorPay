@@ -28,6 +28,32 @@
   .compose { max-width: 760px; margin: 0 auto; }
 
   .mode-wrap { display: flex; justify-content: center; margin-bottom: 22px; }
+
+  /* Amber, because this is waiting on a human -- the same meaning the
+     status colours carry everywhere else on the site. */
+  .ask-bar {
+    display: flex; gap: 16px; align-items: center;
+    max-width: 860px; margin: 0 auto 22px; padding: 16px 20px;
+    background: var(--rust-soft); border: 1px solid var(--amber);
+    border-radius: 14px;
+  }
+  .ask-mark {
+    flex: 0 0 30px; height: 30px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--amber); color: #1A1330;
+    font-weight: 800; font-size: 16px;
+  }
+  .ask-body { flex: 1; min-width: 0; }
+  .ask-title { font-weight: 700; font-size: 14.5px; color: var(--ink); }
+  .ask-text {
+    font-family: var(--font-mono); font-size: 12.5px; color: var(--lilac);
+    margin-top: 4px; white-space: pre-wrap; line-height: 1.5;
+  }
+  .ask-acts { display: flex; gap: 8px; flex-shrink: 0; }
+  @media (max-width: 720px) {
+    .ask-bar { flex-wrap: wrap; }
+    .ask-acts { width: 100%; }
+  }
   .mode {
     display: inline-flex; gap: 3px; padding: 3px;
     background: rgba(255, 255, 255, .04);
@@ -401,6 +427,26 @@
       Say it in your own words. Your agent takes it from there, and shows you
       everything it does.
     </p>
+
+    <!-- A question waiting on you, whoever asked it and whenever.
+
+         This is the surface a standing order needs and did not have. The
+         whole point of one is that nobody is watching, so the ONE moment
+         the system must reach you unprompted was the one moment nothing
+         showed it: the open-question poll only ran inside a live order
+         run. The agent asked correctly, recorded correctly, and reached
+         nobody. -->
+    <div class="ask-bar" id="askBar" hidden>
+      <div class="ask-mark">!</div>
+      <div class="ask-body">
+        <div class="ask-title" id="askTitle">Your agent needs an answer</div>
+        <div class="ask-text" id="askText"></div>
+      </div>
+      <div class="ask-acts">
+        <button class="btn btn-sm" id="askYes">Yes, go ahead</button>
+        <button class="btn btn-sm btn-ghost" id="askNo">No, skip it</button>
+      </div>
+    </div>
 
     <!-- Two different jobs, so two different places. Ordering something
          now and arranging something to repeat are not the same task, and
@@ -1837,6 +1883,8 @@ async function watchOutcomes() {
     outcomes.forEach((o) => rememberOutcome(o.order_ref));
   } catch { /* ignore */ }
   setInterval(watchOutcomes, 3000);
+  watchQuestion();
+  setInterval(watchQuestion, 4000);
 })();
 
 /* ------------------------------------------------------- transactions
@@ -1972,6 +2020,64 @@ document.addEventListener("keydown", (e) => {
 
    A control that says nothing when it fails is worse than no control, so
    this returns the server's own words and the caller shows them. */
+/* Show a question the agent is waiting on, whenever one is open.
+
+   Deliberately independent of whether an order is running. A standing
+   order asks you precisely when you are not looking at this page, and
+   the answer has to be reachable from a cold load -- so this polls from
+   boot rather than from inside a run.
+
+   The buttons post to the SAME /webhook/sms-reply a real text does,
+   carrying the single-use code, so the offline path exercises the real
+   handler rather than a shortcut beside it. */
+let ASK_SHOWN = null;
+
+async function watchQuestion() {
+  if (!PROFILE || !PROFILE.agent_id) return;
+  let state;
+  try {
+    state = await api("/api/buyer-sms/status/" + encodeURIComponent(PROFILE.agent_id));
+  } catch { return; }
+
+  const open = state && !state.answered && state.code;
+  const bar = $("askBar");
+  if (!open) { bar.hidden = true; ASK_SHOWN = null; return; }
+  if (ASK_SHOWN === state.asked_at) return;      // already on screen
+  ASK_SHOWN = state.asked_at;
+
+  const substitution = state.kind !== "approval";
+  $("askTitle").textContent = substitution
+    ? "Your agent could not match part of your order"
+    : "Your agent is waiting on you before it spends anything";
+  // The message text carries the REASON -- a price that moved, a dish
+  // withdrawn, the wrong hour -- and it lives nowhere else.
+  $("askText").textContent = state.question
+    || `${state.original_request} — reply with the code ${state.code}.`;
+  $("askYes").hidden = substitution;
+  $("askNo").hidden = substitution;
+  bar.hidden = false;
+}
+
+async function answerQuestion(yes) {
+  const state = await api("/api/buyer-sms/status/"
+                          + encodeURIComponent(PROFILE.agent_id)).catch(() => null);
+  if (!state || !state.code) return;
+  for (const b of [$("askYes"), $("askNo")]) b.disabled = true;
+  const res = await postReply({
+    Body: `${yes ? "YES" : "NO"} ${state.code}`,
+    From: state.phone || PROFILE.phone || "",
+  });
+  for (const b of [$("askYes"), $("askNo")]) b.disabled = false;
+  if (!res.ok) return toast(res.message, true);
+  $("askBar").hidden = true;
+  ASK_SHOWN = null;
+  toast(yes ? "Told your agent to go ahead." : "Told your agent to skip it.");
+  renderRoutines();
+}
+
+$("askYes").addEventListener("click", () => answerQuestion(true));
+$("askNo").addEventListener("click", () => answerQuestion(false));
+
 async function postReply(body) {
   let res;
   try {
