@@ -141,10 +141,47 @@ def record_event(
 
 
 def mark_paid(event_id: int, payment_id: str, db_path: str = DEFAULT_DB_PATH) -> None:
+    """Record the capture, and take the food out of the kitchen.
+
+    The stock move lives here because this is the ONE function every
+    capture path already reaches -- the webhook, the reconciler, x402,
+    the autonomous settlement and the console's payment-status poll. The
+    alternative was teaching all five, which is exactly how the
+    reconciler ended up missing the pay-first lifecycle: a shared step
+    that is not actually shared.
+
+    Stock moves at CAPTURE, not at APPROVE. An approved cart is an
+    invitation to pay that may never be taken up, and holding stock for
+    every abandoned checkout would starve the menu of dishes nobody
+    bought. Money arriving is the first moment the food is really spoken
+    for. A rejected or timed-out order puts it back -- see mcp_orders.
+
+    Only on the transition. Calling this twice for the same payment must
+    not take the food twice, and these paths genuinely do overlap: a
+    webhook and the reconciler can both learn about the same capture.
+    The idempotency ledger stops most of that; this stops the rest.
+    """
+    import merchant_config          # local: audit_log stays stdlib-only at import
+
     with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        before = conn.execute(
+            "SELECT payment_id, cart_json FROM audit_events WHERE id = ?", (event_id,)
+        ).fetchone()
         conn.execute(
             "UPDATE audit_events SET payment_id = ? WHERE id = ?", (payment_id, event_id)
         )
+
+    if before is None or before["payment_id"]:
+        return                       # unknown row, or already paid for
+
+    try:
+        merchant_config.adjust_stock(json.loads(before["cart_json"] or "[]"), -1)
+    except Exception:
+        # The capture is the fact that matters and it is already written.
+        # A shop file that will not save must not unwind somebody's
+        # payment, so this is logged by its caller and stepped over.
+        pass
 
 
 def attach_payment_link(

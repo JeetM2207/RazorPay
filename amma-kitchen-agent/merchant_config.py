@@ -445,6 +445,57 @@ def _sale_price(list_price: int) -> int:
     return max(1, int(list_price * (100 - DISCOUNT_PCT) // 100))
 
 
+def adjust_stock(cart: list, direction: int = -1) -> list[dict]:
+    """Move stock by a paid order. -1 consumes it, +1 puts it back.
+
+    THE ONE WRITER. Everything else in this project reads stock -- the
+    core to refuse a dish that has run out, the repricer to decide what
+    needs moving -- and until now nothing ever changed it, so a kitchen
+    that sold twenty thalis still showed twenty in stock and the
+    "discounted, plenty in stock" logic was reasoning about a number that
+    never moved.
+
+    Saved through the same save() the setup page uses, so every
+    validation she is already protected by still runs, and a refused save
+    leaves the shop untouched.
+
+    Clamped at zero. Overselling is possible in a way this cannot fix --
+    two agents can both pass the stock check a millisecond apart, and the
+    real answer to that is a lock this project does not have -- but stock
+    going negative would be a number nobody can act on, and it would drag
+    a dish below LOW_STOCK and silently end its sale.
+    """
+    state = _load()
+    rows, moved = [], []
+
+    wanted = {}
+    for line in cart or []:
+        # Carts arrive as (id, qty) pairs from the core and as
+        # {"item": id, "qty": n} dicts from the trail. Accept both rather
+        # than making every caller normalise.
+        if isinstance(line, dict):
+            item_id, qty = line.get("item") or line.get("item_id"), line.get("qty", 0)
+        else:
+            item_id, qty = line[0], line[1]
+        if item_id:
+            wanted[item_id] = wanted.get(item_id, 0) + int(qty or 0)
+
+    for item in as_dict()["menu"]:
+        row = dict(item)
+        qty = wanted.get(row["id"], 0)
+        if qty:
+            was = int(row["stock"])
+            row["stock"] = max(0, was + direction * qty)
+            if row["stock"] != was:
+                moved.append({"id": row["id"], "title": row["title"],
+                              "was": was, "now": row["stock"]})
+        rows.append(row)
+
+    if moved:
+        save(profile_in=state["profile"], mandate_in=state["mandate"], menu_in=rows)
+    return moved
+
+
 def optimize_prices() -> dict:
     """Discount what is piling up, restore what is running out.
 

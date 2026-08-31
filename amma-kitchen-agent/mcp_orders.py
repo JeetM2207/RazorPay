@@ -34,6 +34,7 @@ import os
 from datetime import datetime, timedelta, timezone
 
 import audit_log
+import merchant_config
 import notification_service
 import razorpay_client
 
@@ -285,6 +286,17 @@ def _refund(order: dict, status: str, reason: str) -> dict:
     phone = order.get("delivery_phone")
     total = order["total_inr"]
     payment_id = order.get("payment_id")
+
+    # The food goes back on the shelf. Capture took it out (see
+    # audit_log.mark_paid); an order the kitchen declines, or never
+    # answered, was never cooked, so holding its stock would slowly
+    # starve the menu of dishes nobody ate. Done before the refund is
+    # attempted because it is local and cannot fail the way Razorpay can,
+    # and a shop file that will not save must not stop a refund.
+    try:
+        merchant_config.adjust_stock(_cart_of(order), +1)
+    except Exception:
+        pass
 
     _transition(order, status, reason)
 
