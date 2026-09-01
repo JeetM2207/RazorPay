@@ -37,6 +37,15 @@
   [hidden] { display: none !important; }
 
   /* Where you are, and the way back. */
+  /* A button among links, so it has to read as one rather than as a
+     control that wandered in. */
+  .topbar-btn {
+    appearance: none; background: none; border: 0; cursor: pointer;
+    padding: 0; font: inherit; color: inherit;
+    font-family: var(--font-body);
+  }
+  .topbar-btn:hover { text-decoration: underline; }
+
   .trail-bar {
     display: flex; align-items: center; gap: 10px;
     max-width: 860px; margin: 0 auto 20px;
@@ -328,7 +337,6 @@
   .routine-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; margin-top: 11px; }
 
   /* ---- transactions drawer ---- */
-  .tx-btn { width: 100%; margin-top: 12px; }
   .tx-back { position: fixed; inset: 0; background: rgba(28,15,6,.45); z-index: 70; }
   .tx-panel {
     position: fixed; top: 0; right: 0; bottom: 0; width: min(460px, 94vw); z-index: 71;
@@ -506,9 +514,16 @@
       <span class="brand-role">Buyer</span>
     </div>
     <div class="topbar-links">
+      <!-- A customer's bar offers what a customer does. The merchant
+           console is the other party's, behind a login this person does
+           not have; the audit trail is a shop's whole decision history.
+           Neither belonged here.
+
+           Transactions is the customer's own record of money out and
+           money back, and it is reachable from every step rather than
+           from one card on one of them. -->
+      <button class="topbar-btn" onclick="openTransactions()">Transactions</button>
       <a href="/buyer">Account</a>
-      <a href="/merchant">Merchant console</a>
-      <a href="/audit">Audit trail</a>
       <a href="/">Home</a>
     </div>
   </div>
@@ -641,9 +656,6 @@
             authorised, under which limits, and who confirmed what &mdash; in case an order
             is ever questioned.
           </p>
-          <button class="btn btn-ghost btn-sm tx-btn" id="txBtn" onclick="openTransactions()">
-            Transactions
-          </button>
         </div>
 
         <div class="card" style="margin-top:16px">
@@ -785,8 +797,9 @@
 
         <div class="run-foot" id="runFoot" hidden>
           <button class="btn" id="againBtn">Place another order</button>
-          <p class="note">Everything above is on your record at
-            <a href="/audit">the audit trail</a>.</p>
+          <p class="note">Everything above is on your record &mdash; open
+            <button class="topbar-btn" style="color:var(--lilac); text-decoration:underline"
+                    onclick="openTransactions()">Transactions</button> to see it.</p>
         </div>
       </div>
     </section>
@@ -2155,7 +2168,7 @@ async function openTransactions() {
               <div class="tx-main">
                 <div class="tx-title">${failed ? "Refund did not go through" : escHtml(shape.verb)}</div>
                 <div class="tx-sub">
-                  Order #${escHtml(tx.order_ref)} &middot; ${escHtml((tx.cart || []).join(", ") || "\u2014")}<br>
+                  ${tx.merchant ? `<b>${escHtml(tx.merchant)}</b> &middot; ` : ""}Order #${escHtml(tx.order_ref)} &middot; ${escHtml((tx.cart || []).join(", ") || "\u2014")}<br>
                   ${when} UTC &middot; ${escHtml((tx.protocol || "").toUpperCase())}
                   ${TX_NOTE[tx.kind] ? "&middot; " + TX_NOTE[tx.kind] : ""}
                 </div>
@@ -2529,7 +2542,8 @@ function syncRoutineForm() {
 async function renderRoutines() {
   let data;
   try {
-    data = await api(`/api/routines?agent_id=${encodeURIComponent(PROFILE.agent_id)}`);
+    data = await api(`/api/routines?agent_id=${encodeURIComponent(PROFILE.agent_id)}`
+                   + `&merchant_id=${encodeURIComponent(KITCHEN)}`);
   } catch { return; }
 
   const list = data.routines || [];
@@ -2616,6 +2630,7 @@ $("routineCreate").addEventListener("click", async () => {
       body: JSON.stringify({
         items, days, time: $("routineTime").value.trim(),
         agent_id: PROFILE.agent_id, phone: PROFILE.phone,
+        merchant_id: KITCHEN,
         routine_cap_inr: parseInt($("routineCap").value, 10) || null,
         // The time above is what you typed on YOUR clock. Sent so the
         // server measures it against the same one -- without it a

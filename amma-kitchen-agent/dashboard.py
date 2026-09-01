@@ -285,7 +285,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {refresh_tag}
-<title>Amma's Kitchen &mdash; Audit Trail</title>
+<title>Dabba &mdash; Audit Trail</title>
 <style>
   /* Same tokens as web/shared.css, inlined because this page is rendered
      server-side and loads no stylesheet. Every family is a system stack:
@@ -415,7 +415,11 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 </head>
 <body>
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
-  <h1>Amma's Kitchen &mdash; Agent Audit Trail</h1>
+  <h1>Dabba &mdash; Agent Audit Trail</h1>
+  <!-- Every kitchen on the platform, deliberately. This page is not a
+       merchant view: it is the thing that makes the whole claim
+       checkable, and a trail that shows you only one shop's half of a
+       marketplace does not check anything. -->
   <p class="sub">Every decision this system has made, and whether money moved.</p>
 
   <div class="mandate">
@@ -469,7 +473,7 @@ def dashboard(limit: int = 200, refresh: int = 5) -> HTMLResponse:
     return HTMLResponse(_render(events, db_path, refresh))
 
 
-app = FastAPI(title="Amma's Kitchen -- Audit Trail")
+app = FastAPI(title="Dabba -- Audit Trail")
 app.include_router(router)
 
 

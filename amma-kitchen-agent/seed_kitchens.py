@@ -344,9 +344,15 @@ class Seeder:
                     items=[{"item_id": i, "qty": q} for i, q in cart],
                     days=days.split(","), at_time=time_str,
                     routine_cap_inr=total + 60,
+                    merchant_id=shop.id,
                 )
-            except Exception:
-                pass                            # its store is not the trail's
+            except Exception as exc:
+                # Loud rather than swallowed. This was silent, and the
+                # silence hid create() validating a Bombay cart against
+                # Amma's menu and refusing every dish as "not on the
+                # menu" -- so two kitchens had standing-order revenue in
+                # the trail and no standing orders on their page.
+                print(f"    ! routine for {agent} not created: {exc}")
 
 
 def wipe(merchant_id: str) -> int:

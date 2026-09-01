@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Set up your account — Amma's Kitchen</title>
+<title>Your account — Dabba</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <!-- Google Identity Services. The one off-origin asset in the project,
      and a deliberate exception: signing in with Google inherently
@@ -77,11 +77,13 @@
 
   <div class="topbar">
     <div class="brand">
-      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-mark">Dabba</span>
       <span class="brand-role">Buyer</span>
     </div>
     <div class="topbar-links">
-      <a href="/merchant">Merchant console</a>
+      <!-- Same rule as the order page: a customer's bar offers what a
+           customer does, and the merchant console is the other party's. -->
+      <a href="/buyer/order">Order</a>
       <a href="/">Home</a>
     </div>
   </div>

@@ -9,12 +9,12 @@
     "budget_cap_inr": 400,
     "human_confirm_threshold_inr": 300,
     "allowed_categories": [
-      "tiffin",
       "snacks",
+      "tiffin",
       "beverages",
       "sweets"
     ],
-    "flexible_margin_pct": 0.05
+    "flexible_margin_pct": 0.1
   },
   "velocity": {
     "max_orders_per_hour": 8,

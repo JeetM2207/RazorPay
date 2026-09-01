@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Set up your shop — Amma's Kitchen</title>
+<title>Your shop — Dabba</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   .wrap { max-width: 720px; margin: 0 auto; }
@@ -75,11 +75,13 @@
 
   <div class="topbar">
     <div class="brand">
-      <span class="brand-mark">Amma's Kitchen</span>
+      <span class="brand-mark">Dabba</span>
       <span class="brand-role">Merchant</span>
     </div>
     <div class="topbar-links">
-      <a href="/buyer/order">Buyer console</a>
+      <!-- Her bar, so it offers what she does. The buyer console is the
+           customer's side and has no business on it. -->
+      <a href="/merchant/orders">Your orders</a>
       <a href="/audit">Audit trail</a>
       <a href="/">Home</a>
       <form method="post" action="/merchant/logout" style="display:inline; margin:0">

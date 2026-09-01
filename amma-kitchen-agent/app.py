@@ -743,6 +743,10 @@ class RoutineIn(BaseModel):
     phone: str | None = None
     routine_cap_inr: int | None = None
     window_minutes: int = 45
+    # Which kitchen it repeats at. Its dishes, the prices drift is
+    # measured against and the rules it is checked by all belong to that
+    # shop -- so a routine without one is a routine for nobody.
+    merchant_id: str | None = None
     # The customer's own offset from UTC. Their "08:00" means eight where
     # THEY are; without this the gate measured it against UTC and a
     # routine outside that zone could never fire.
@@ -750,12 +754,17 @@ class RoutineIn(BaseModel):
 
 
 @app.get("/api/routines")
-def list_routines(agent_id: str | None = None) -> dict:
+def list_routines(agent_id: str | None = None,
+                  merchant_id: str | None = None) -> dict:
+    """One kitchen's standing orders.
+
+    Filtered, because the grill house was listing a repeat order in
+    dishes it does not sell, from a routine that belongs to another shop
+    entirely.
+    """
     import routines as routines_mod
 
-    rows = routines_mod.all_routines()
-    if agent_id:
-        rows = [r for r in rows if r["agent_id"] == agent_id]
+    rows = routines_mod.for_merchant(merchant_id, agent_id)
     return {"routines": rows, "price_drift_tolerance": routines_mod.PRICE_DRIFT_TOLERANCE}
 
 
@@ -771,6 +780,7 @@ def create_routine(req: RoutineIn) -> dict:
             days=req.days, at_time=req.time, agent_id=req.agent_id, phone=req.phone,
             routine_cap_inr=req.routine_cap_inr, window_minutes=req.window_minutes,
             utc_offset_minutes=req.utc_offset_minutes,
+            merchant_id=req.merchant_id,
         )
     except ValueError as exc:
         raise HTTPException(400, str(exc))

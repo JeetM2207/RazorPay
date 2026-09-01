@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 import merchant_auth
@@ -29,7 +31,11 @@ def test_all_human_facing_pages_render(client):
     for path in ("/", "/buyer", "/buyer/order", "/merchant", "/audit"):
         resp = client.get(path)
         assert resp.status_code == 200, path
-        assert "Amma" in resp.text
+        # The PLATFORM's name, not one kitchen's. The buyer pages are
+        # branded Dabba now -- a customer choosing between three kitchens
+        # is not on any one of their sites, and asserting a single shop's
+        # name on every page is what a single-tenant demo asserts.
+        assert "Dabba" in resp.text, path
 
 
 def test_buyer_is_split_into_setup_then_ordering(client):
@@ -49,8 +55,12 @@ def test_the_card_number_is_never_posted_to_the_server(client):
     should offer to receive a PAN."""
     schema = unified.app.openapi()
     blob = str(schema).lower()
-    for forbidden in ("card_number", "cardnumber", "\"cvv\"", "pan"):
+    # "pan" is checked as a whole word. As a bare substring it fires on
+    # "paneer", "expand" and "company" -- and a guard that cries wolf on
+    # a dish name is a guard somebody switches off.
+    for forbidden in ("card_number", "cardnumber", "\"cvv\""):
         assert forbidden not in blob, f"an API surface accepts {forbidden}"
+    assert not re.search(r"\bpan\b", blob), "an API surface accepts a PAN"
 
 
 def test_both_protocols_are_served_from_one_app(client):

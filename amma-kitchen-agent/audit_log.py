@@ -672,6 +672,10 @@ def transactions(db_path: str = DEFAULT_DB_PATH, limit: int = 60) -> list[dict]:
                 "amount_inr": origin["total_inr"],
                 "at": row["ts"],
                 "protocol": row["protocol"],
+                # Which kitchen. A customer on a marketplace orders
+                # from several, and a statement that does not say
+                # which is a list of amounts rather than a record.
+                "merchant": merchants.name_of(row["merchant_id"]),
                 "cart": cart,
                 "status": row["decision"],
                 "detail": row["reason"],
@@ -685,6 +689,10 @@ def transactions(db_path: str = DEFAULT_DB_PATH, limit: int = 60) -> list[dict]:
                 "amount_inr": row["total_inr"],
                 "at": row["ts"],
                 "protocol": row["protocol"],
+                # Which kitchen. A customer on a marketplace orders
+                # from several, and a statement that does not say
+                # which is a list of amounts rather than a record.
+                "merchant": merchants.name_of(row["merchant_id"]),
                 "cart": cart,
                 "status": "SIMULATED" if simulated else "PAID",
                 "reference": row["payment_id"],

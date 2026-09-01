@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 
 import audit_log
 import merchant_config
+import merchants
 
 _STORE = pathlib.Path(__file__).resolve().parent / "routines.json"
 
@@ -81,6 +82,26 @@ def reset() -> None:
     _save({"routines": []})
 
 
+def _kitchen_of(routine: dict) -> str:
+    """Which kitchen a routine belongs to.
+
+    Routines created before the platform existed have no id. They were
+    the default kitchen's, so they are read as its -- the same rule the
+    audit trail uses for its own pre-platform rows, and for the same
+    reason: inventing a value to tidy a filter is how a record stops
+    being one.
+    """
+    return routine.get("merchant_id") or merchants.default_id()
+
+
+def for_merchant(merchant_id: str | None, agent_id: str | None = None) -> list[dict]:
+    """One kitchen's standing orders, optionally for one customer."""
+    target = merchant_id or merchants.default_id()
+    return [r for r in all_routines()
+            if _kitchen_of(r) == target
+            and (agent_id is None or r["agent_id"] == agent_id)]
+
+
 def all_routines() -> list[dict]:
     return _load()["routines"]
 
@@ -103,6 +124,7 @@ def create(
     window_minutes: int = DEFAULT_WINDOW_MINUTES,
     source: str = "manual",
     utc_offset_minutes: int | None = None,
+    merchant_id: str | None = None,
 ) -> dict:
     """Record a standing order the customer has explicitly turned on.
 
@@ -121,7 +143,8 @@ def create(
     except (ValueError, AssertionError):
         raise ValueError("Time should look like 08:00.")
 
-    menu = merchant_config.current_menu()
+    merchant_id = merchant_id or merchants.default_id()
+    menu = merchant_config.current_menu(merchant_id)
     unknown = [i["item_id"] for i in items if i["item_id"] not in menu]
     if unknown:
         raise ValueError(f"Not on the menu: {', '.join(unknown)}")
@@ -129,6 +152,11 @@ def create(
     setup_total = _cart_total(items, menu)
     routine = {
         "id": uuid.uuid4().hex[:10],
+        # Which kitchen this repeats at. Everything about the routine --
+        # its dishes, the prices drift is measured against, the rules it
+        # is checked by when it fires -- belongs to this shop and to no
+        # other.
+        "merchant_id": merchant_id,
         "agent_id": agent_id,
         "phone": phone,
         "items": items,
@@ -243,8 +271,9 @@ def confidence_gate(routine: dict, now: datetime | None = None) -> dict:
     because a gate that stops at the first problem hides the others.
     """
     now = now or datetime.now(timezone.utc)
-    menu = merchant_config.current_menu()
-    mandate = merchant_config.current_mandate()
+    kitchen = _kitchen_of(routine)
+    menu = merchant_config.current_menu(kitchen)
+    mandate = merchant_config.current_mandate(kitchen)
     failures = []
 
     if routine.get("status") != "active":
@@ -310,7 +339,7 @@ def _cart_tuples(routine: dict) -> list[tuple[str, int]]:
 
 
 def _label(routine: dict) -> str:
-    menu = merchant_config.current_menu()
+    menu = merchant_config.current_menu(_kitchen_of(routine))
     return ", ".join(
         f"{i['qty']}x {(menu[i['item_id']].name if i['item_id'] in menu else i['item_id']).replace('_', ' ').title()}"
         for i in routine["items"]
@@ -448,6 +477,10 @@ def _fire(routine: dict, gate: dict) -> dict:
             routine["agent_id"], "routine", _cart_tuples(routine),
             buyer_mandate={"routine_cap_inr": routine.get("routine_cap_inr")},
             source="routine", routine_id=routine["id"],
+            # Charged at the kitchen it repeats at, under that kitchen's
+            # rules. Without this a Bombay routine was priced and refused
+            # by whichever shop happened to be the platform default.
+            merchant_id=_kitchen_of(routine),
         )
     except orchestrator().VelocityRefused as refused:
         # A standing order is NOT exempt from her rate limits. Passing its
