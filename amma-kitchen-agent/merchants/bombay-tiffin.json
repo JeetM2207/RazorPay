@@ -65,7 +65,7 @@
       "name": "cutting_chai",
       "category": "beverages",
       "price_inr": 15,
-      "stock": 90,
+      "stock": 88,
       "list_price_inr": 15,
       "sale": false
     },
@@ -81,7 +81,7 @@
       "name": "shrikhand",
       "category": "sweets",
       "price_inr": 70,
-      "stock": 28,
+      "stock": 27,
       "list_price_inr": 70,
       "sale": false
     }

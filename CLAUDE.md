@@ -1,22 +1,32 @@
-# Amma's Kitchen — agentic commerce build (Razorpay AI Buildathon, Track 1)
+# Dabba — agentic commerce build (Razorpay AI Buildathon, Track 1)
 
 ## What this project is
 
-We are building an AI agent system for a small home-run food business ("Amma's Kitchen")
-that lets AI shopping assistants (buyer agents) discover the business, negotiate an order
-when the exact request can't be fulfilled, and complete a bounded, auditable payment via
-Razorpay's test-mode APIs.
+**Dabba** is a marketplace that makes small food businesses transactable by AI shopping
+agents. A customer's agent discovers a kitchen, negotiates an order when the exact
+request can't be fulfilled, and completes a bounded, auditable payment through Razorpay's
+test-mode APIs.
+
+It began as one kitchen — Amma's, a home-run South Indian shop — and that kitchen is
+still the default tenant and still holds the project's only real Razorpay captures. Two
+more (Bombay Tiffin Room, Lahori Grill House) were added when the question changed from
+"can an agent transact with a merchant at all" to "can it transact with a **marketplace**
+of them, each with its own rules".
 
 The core idea: **one negotiation brain, reachable through multiple protocol adapters.**
 The buyer-facing protocol shape never changes the underlying decision logic — only the
-translation layer at the edges differs. Four adapters (ACP, AP2, x402, MCP) now speak to
-one unchanged core, and the last of them hands those same tools to a real external
-assistant.
+translation layer at the edges differs. Four adapters (ACP, AP2, x402, MCP) speak to one
+unchanged core, and the last of them hands those same tools to a real external assistant.
 
 The second idea, which emerged while building: **both sides are bounded, and either can
 pull in its own human.** The customer's agent refuses what its owner didn't authorise; the
 merchant's rules refuse what she won't sell; and when a person is genuinely needed, they
-are reached on WhatsApp rather than assumed to be watching a screen.
+are reached on WhatsApp or SMS rather than assumed to be watching a screen.
+
+The third, which the marketplace forced: **a tenant is a wall, not a label.** Each
+kitchen's menu, limits, orders, agents, trust tiers, standing orders and rate limits are
+its own, and the merchant id that scopes every one of those reads comes from a signed
+session rather than from anything a caller can choose. See "One platform, many kitchens".
 
 ## Track and bar we're being judged against
 
@@ -120,8 +130,12 @@ decide an escalation. All three run through one inbound webhook.
   merchant's shop config
 - Razorpay test-mode API keys (Orders, Payment Links, Payments, Webhooks). S2S / UPI
   collect is **not** enabled on a default test account — see "Autonomous settlement".
-- Twilio optional, for real WhatsApp. Without it a mock outbox drives the identical loop,
-  so nothing in the demo depends on a carrier or a trial balance.
+  **Test mode also caps an account at 30 payment links EVER CREATED**, and cancelling
+  does not give the quota back — see "Known gaps".
+- Three message transports, tried in that order and all optional:
+  **TextBee** (your own Android phone as an SMS gateway), **Meta's WhatsApp Cloud API**,
+  then **Twilio**. Without any of them a mock outbox drives the identical loop, so nothing
+  in the demo depends on a carrier or a trial balance. See "Reaching a human".
 
 ## Repo structure
 
@@ -142,10 +156,13 @@ amma-kitchen-agent/
     motion_terminal_brief.md     # and its brief
     reference_mockup_chit_retired.html   # the paper design it replaced
 
+  merchants.py            # THE REGISTER: the platform's identity + every kitchen on it
+  merchants/              #   one shop file per kitchen (Amma's stays merchant_config.json)
   buyer_mandate.py        # BUYER's limits — pure, runs before any merchant is contacted
   mandate.py              # MERCHANT's DEFAULT rules + starting menu (plain data)
-  merchant_config.py      # what Amma actually configured; what the core decides against
-                          #   + resolve_item / parse_request: free text -> cart, no model
+  merchant_config.py      # what each kitchen configured; what the core decides against.
+                          #   One cached shop PER KITCHEN, every reader takes an optional
+                          #   merchant_id + resolve_item / parse_request: text -> cart
   negotiation.py          # pure decision core + suggest_upsell(); no LLM, no I/O
   upsell_ranking.py       # which add-on suits this cart; pure, derived from her menu
   routines.py             # standing orders + the confidence gate deciding whether one
@@ -175,9 +192,11 @@ amma-kitchen-agent/
   evidence.py             # Proof of Authorization: one order's whole record, read-only
   dashboard.py            # audit trail as HTML
 
-  notification_service.py # outbound SMS/WhatsApp; Twilio or a mock outbox
-  escalations.py          # merchant escalations + THE one inbound webhook + router
-  reply_auth.py           # who may POST a reply: Twilio signature or console token
+  notification_service.py # outbound SMS/WhatsApp: TextBee -> Meta -> Twilio -> mock
+  escalations.py          # merchant escalations + THE one inbound webhook + router,
+                          #   reading Twilio's form shape and two JSON ones
+  reply_auth.py           # who may POST a reply: a TextBee, Meta or Twilio signature,
+                          #   or the consoles' own token. No fourth door.
   reply_codes.py          # the single-use code in every reply that moves money
   merchant_auth.py        # the merchant login: signed session cookie + require_merchant
   merchant_session.py     # how demo.py and the CLIs log in, with the password from env
@@ -189,11 +208,14 @@ amma-kitchen-agent/
   human_confirm.py / human_reject.py          # merchant CLI, ACP
   human_confirm_ap2.py / human_reject_ap2.py  # merchant CLI, AP2
   simulate_webhook_delivery.py                # send the same webhook twice, locally
-  scripts/predemo_check.py        # 16 checks, each one something that has broken
+  seed_demo.py            # Amma's month of trading; owns her kitchen and no other
+  seed_merchants.py       # writes the two other kitchens' shop files
+  seed_kitchens.py        # a month for any kitchen, derived from ITS menu and limits
+  scripts/predemo_check.py        # 15 checks, each one something that has broken
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
-  scripts/free_payment_links.py   # cancel stale UNPAID links; test mode caps at 30
+  scripts/free_payment_links.py   # cancel stale UNPAID links (does NOT free the quota)
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 635 tests; test_negotiation.py still matters most
+  tests/                  # 753 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -210,7 +232,8 @@ uvicorn app:app --port 8000 --reload    # everything, one process
 | `/merchant` | merchant: one-time shop setup (identity, limits, menu) |
 | `/merchant/orders` | merchant: escalation queue, trust tiers, SMS loop, decision log |
 | `/audit` | the full audit trail |
-| `/catalog` | agent-readable product feed (JSON) — what the buyer agent fetches |
+| `/catalog?merchant_id=…` | one kitchen's agent-readable product feed (JSON) |
+| `/api/restaurants` | the public directory: every kitchen, its cuisine, its price floor |
 | `/mcp` | Streamable HTTP endpoint an external AI assistant connects to |
 | `/docs` | the REST protocols' API reference |
 
@@ -224,7 +247,7 @@ recorded correctly and reached nobody:
 | `POST /api/merchant/optimize-prices` | the **only** console button that writes: inventory-led repricing |
 | `GET /api/transactions` | the customer's statement — money out, money back, simulated |
 | `GET /api/order-outcomes` | orders that finished, so the buyer's screen can toast a refund |
-| `GET /api/demand` | what people asked for that she does not sell |
+| `GET /api/demand` | what people asked for that **this** kitchen does not sell |
 | `POST /ap2/intent-mandates/{id}/settle-pending-confirmation` | pay-first from the buyer console |
 
 `python demo.py` runs the whole story scripted instead, starting and stopping its own
@@ -236,9 +259,24 @@ is rejected as an international card on a default test account. The autonomous p
 needs no card at all.
 
 **Env** (`.env`, see `.env.example`): Razorpay test keys and webhook secret;
-`OPENROUTER_API_KEY` for NL parsing; optionally `TWILIO_*` + `MERCHANT_PHONE` for real
-WhatsApp, with `SMS_ENABLED=false` to force the mock even when configured. Everything
-except the Razorpay keys degrades to a working offline path.
+`OPENROUTER_API_KEY` for NL parsing; one of `TEXTBEE_*`, `META_*` or `TWILIO_*` plus
+`MERCHANT_PHONE` for real messaging, with `SMS_ENABLED=false` to force the mock even when
+configured. Everything except the Razorpay keys degrades to a working offline path.
+
+**One password per kitchen.** `MERCHANT_PASSWORD_<KITCHEN_ID>` (uppercased, dashes to
+underscores) is that kitchen's key. `MERCHANT_CONSOLE_PASSWORD` remains the DEFAULT
+kitchen's, so `demo.py`, `predemo_check.py` and the buyer agents log in unchanged without
+a bypass flag. A kitchen with its own key does not accept the shared one, and the login
+checks the kitchen and the password **as a pair** — otherwise the login's kitchen
+dropdown would be an invitation to sign in as somebody else.
+
+**Seeding a demo:**
+
+```
+python seed_merchants.py     # write the other kitchens' shop files (once)
+python seed_demo.py          # Amma's month; owns her kitchen only
+python seed_kitchens.py      # a month for every other kitchen
+```
 
 ## What the screens actually look like
 
@@ -497,6 +535,151 @@ buyer's side **before any merchant is contacted**. Consequences worth keeping:
 
 This also makes AP2's Intent Mandate concept real rather than decorative: the
 customer's spending authorization is data that travels with the request.
+
+## One platform, many kitchens
+
+The project was built for one merchant, and everything read "the shop" because there was
+only ever one. That was the right shape while the question was "can an AI agent transact
+with a merchant at all". The question is now "can it transact with a MARKETPLACE of
+them", which is a different thing: a customer picks a kitchen, and from that moment every
+rule, menu, limit and audit row belongs to that kitchen and to no other.
+
+**Why it was affordable.** `negotiation.py` already took `mandate` and `menu` as
+arguments and only used the module-level ones as defaults — it has never known which shop
+it was deciding for. So **the decision core needed no change and still has none**, and a
+test asserts it never learns the words `merchant_id`, `tenant` or `platform`. What
+changed is only WHICH mandate and WHICH menu get handed to it.
+
+`merchants.py` is the register and the platform identity. `merchant_config` caches one
+shop **per kitchen** instead of one for the platform, and every public reader takes an
+optional merchant id defaulting to the platform's default kitchen — which is what kept
+all 27 existing call sites working untouched, and kept the suite green through the
+change.
+
+**Keyed rather than swapped, deliberately.** A single "current merchant" global would let
+two concurrent requests read each other's menu, because FastAPI serves sync endpoints
+from a threadpool — and the failure would be a wrong price on a real order rather than an
+exception anyone would notice.
+
+**Amma's Kitchen still points at the original `merchant_config.json`.** That file holds a
+real configured shop with real history behind it, so this is additive rather than a
+migration: nothing that already worked reads a different file than it did before.
+
+### The one rule
+
+A merchant id is never taken on trust for anything except choosing whose menu to read. It
+selects a tenant; it grants nothing. The merchant console proves who it is with its own
+signed session, and **the kitchen is inside that signature** — `merchant_auth` bakes it
+into the cookie, so a session that could be re-pointed at another kitchen would be a
+session that could read somebody else's orders. Tampering with it invalidates the cookie,
+and there is a test that does exactly that.
+
+Taken from the cookie and **never from a query string**. A merchant id a caller can
+choose is a merchant id a caller can change.
+
+A cookie issued before kitchens existed has three parts and no id. It is honoured as the
+default kitchen rather than rejected: the signature still proves it, and logging every
+open session out to add a field is the worse answer.
+
+### `scope()` — one definition, because the rule has an edge case
+
+`audit_log.scope(merchant_id)` returns the SQL fragment and params confining a read to
+one kitchen, and every merchant-facing reader uses it. Written once, because a rule with
+an edge case stated in five places is a rule four of them agree on.
+
+The edge case: rows written before the platform existed carry `NULL`. They genuinely were
+the default kitchen's orders, so that kitchen matches them and nobody else does. **Matched
+rather than backfilled** — inventing a value in an append-only trail to make a query
+tidier is how a record stops being one.
+
+`merchant_id=None` means "the whole platform" and is what the unfiltered views pass. The
+public `/audit` deliberately stays whole: it is not a merchant view, it is the thing that
+makes the whole claim checkable.
+
+### Seven things that leaked, every one found by using it
+
+None of these were visible by reading. They were found by ordering from a kitchen that
+was not the default:
+
+- **The flood gate counted platform-wide.** Buying lunch at one kitchen used up a
+  *different* merchant's rate limit — the fourth order in a six-order run across three
+  kitchens was refused by a gate belonging to a shop it had never ordered from. Each
+  merchant sets her own limits, so they have to be measured against her own traffic.
+- **Trust was platform-wide too.** An agent that had proved itself at Amma's arrived
+  TRUSTED at the grill house. A merchant widening her flexible margin on somebody else's
+  evidence is not judging the agent at all.
+- **THE BUYER'S OWN GATE** priced a grill-house cart against Amma's menu and refused it as
+  "unknown item" *before the grill house was ever asked* — a refusal by the wrong party,
+  for the wrong reason, naming the wrong shop.
+- **`adjust_stock` decremented the default kitchen** whoever sold the food. `mark_paid`
+  reads the kitchen off the order it is settling now, because the capture paths know a
+  payment id and nothing else.
+- **The catalog feed, the LLM prompt and the model-free fallback parser** all matched
+  against the default menu. The fallback one mattered most: matching a grill-house order
+  against a South Indian menu would put a dish nobody sells into a cart.
+- **`as_dict()`** read the right menu and the wrong raw config, so the second kitchen
+  500'd on a `KeyError` for a dish it does not sell.
+- **The merchant board's mandate strip** took its numbers from `/api/menu`, which is the
+  BUYER-facing feed and answers for the default kitchen unless told otherwise. So every
+  merchant except the first was shown somebody else's budget cap, threshold and category
+  list on her own board, above her own orders, which were correctly hers.
+
+That last one is the third time a wrong-tenant read came from a buyer-facing endpoint
+being reused on a merchant screen, and **all three looked right until a second kitchen
+existed to be wrong about**.
+
+### Standing orders belong to a kitchen too
+
+`routines.json` had no merchant id, so every kitchen's page listed every routine on the
+platform — the grill house showed a repeat order for paneer bhurji and filter coffee,
+dishes it does not sell. Worse than a display bug, because the routine's checks read "the
+menu": the price-drift check compared a Bombay routine against Amma's prices, and firing
+it would have priced a cart against a shop it was not for. A routine names its kitchen
+now, and is listed, validated and fired against it.
+
+That also exposed a silent failure in the seeder: `routines.create()` was validating a
+Bombay cart against Amma's menu and refusing every dish as "not on the menu", inside a
+bare `except`. Two kitchens had standing-order revenue in the trail and no standing
+orders on their page. It says so now instead of swallowing it.
+
+### The three kitchens
+
+Built to differ in ways a demo can point at, not to be three copies:
+
+| Kitchen | Cap | Asks from | Character |
+| --- | --- | --- | --- |
+| **Amma's Kitchen** | ₹500 | ₹400 | South Indian home cooking; the default tenant, and the only one with real `pay_` captures |
+| **Bombay Tiffin Room** | ₹400 | ₹300 | a cheap high-volume counter — almost everything clears |
+| **Lahori Grill House** | ₹900 | ₹500 | expensive charcoal cooking; a single main course needs a human, and its `catering_platter` sits in a category it does not sell to agents |
+
+One core, three answers, and only the rules differ:
+
+```
+Amma's      1x veg_thali            Rs.150 -> APPROVE
+Amma's      2x chicken_biryani      Rs.440 -> ESCALATE  (her Rs.400)
+Bombay      2x vada_pav, 1x chai    Rs.65  -> APPROVE
+Bombay      3x pav_bhaji            Rs.330 -> ESCALATE  (its Rs.300)
+Lahori      1x kebab, 2x naan       Rs.370 -> APPROVE
+Lahori      1x catering_platter     Rs.850 -> ESCALATE  (category)
+```
+
+The category refusal being demonstrable on a kitchen that is **not** Amma's is the point:
+it proves the core is tenant-agnostic in a way refusing at the first kitchen cannot.
+
+### Branding: platform first, kitchen second
+
+`merchants.Platform` holds the name, and `message_prefix()` signs every outbound message
+`Dabba · Amma's Kitchen`. A customer who gets "Amma's Kitchen: your agent wants to
+order…" from a number they have never seen has no idea who is writing to them; on a
+marketplace the platform is the relationship and the kitchen is the order.
+
+The merchant rail reads the signed-in shop — "Lahori Grill House / on Dabba" — because
+"Merchant" is not enough when three people share that screen.
+
+**Each side's bar offers what that side does.** The buyer's carried "Merchant console" and
+"Audit trail" — the other party's login and a shop's whole decision history, neither a
+thing a customer clicks. It offers Transactions, Account and Home. Her rail no longer
+offers the buyer console for the same reason.
 
 ## The differentiator: Agent Trust Layer + agent-readable growth surface
 
@@ -1220,10 +1403,49 @@ Other properties worth keeping:
   `/webhook/sms-reply` endpoint — so the offline path exercises the real one and the demo
   cannot be broken by a carrier or a trial balance.
 
-**India note:** SMS to Indian numbers needs TRAI/DLT sender registration, which takes days
-and business paperwork. Twilio's WhatsApp Sandbox needs neither — join by texting a code —
-so WhatsApp is the realistic channel here. `notification_service` matches the recipient to
-the sender's channel (`whatsapp:` on both ends) automatically.
+**India note, and why there are now three transports.** SMS to Indian numbers needs
+TRAI/DLT sender registration — days of business paperwork — which is why this project
+used WhatsApp at all. But WhatsApp only delivers free-form messages within **24 hours of
+the recipient's last message to you**, and that rule belongs to the WhatsApp platform
+rather than to any provider: switching from Twilio to Meta changed nothing, because both
+were being dropped by the same rule.
+
+`notification_service` tries **TextBee → Meta → Twilio → mock**, in that order.
+
+- **TextBee** puts an app on your own Android phone and sends over its own SIM. No DLT
+  registration, because a text your own handset sends is person-to-person rather than a
+  commercial route through an aggregator; and **no 24-hour window**, because it is not
+  WhatsApp. Free tier is 50/day, 300/month, no card. The costs, stated rather than buried:
+  it is SMS so there is no formatting, it comes from your own number rather than a
+  business identity, and the phone has to be on and in signal with the app running.
+- **Meta's WhatsApp Cloud API** gives a free test sender messaging up to five verified
+  recipients, with no daily cap and no sandbox to re-join. Still subject to the 24-hour
+  rule.
+- **Twilio** as before. `notification_service` matches the recipient to the sender's
+  channel (`whatsapp:` on both ends) automatically.
+
+**Inbound is one endpoint reading three shapes.** Twilio posts a form; Meta and TextBee
+post JSON, each signed differently — Meta signs the raw body as `X-Hub-Signature-256`,
+TextBee as `X-Signature`, both HMAC-SHA256. Verified against the RAW BODY, never a
+re-encoded parse, which would be a different string the moment key order or spacing
+differed and would fail for reasons nothing in the logs would explain.
+
+Three things that had to be got right there:
+
+- **Declaring `Body` and `From` as `Form(...)` parameters consumed the request stream**
+  during FastAPI's dependency resolution, so reading the raw body raised "Stream
+  consumed". The handler takes only the `Request` now and parses both shapes itself.
+- **TextBee's documented payload is not the one it sends.** The docs describe
+  `{"event", "data": {"sender", "message"}}`; a real delivery is flat and names the event
+  differently — `webhookEvent`, with `message` and `sender` at the top level. Written to
+  the documented shape, the reader returned None for every real reply, so a customer's
+  "YES 2169" was accepted with a 200 and **did nothing at all**, which is the worst way
+  for an approval to fail. Found by reading the request body off ngrok's inspector rather
+  than trusting the page. Both shapes are accepted now.
+- **Only a received-message event is an answer.** The same webhook carries send
+  notifications, delivery receipts and read receipts, and reading one of those as an
+  inbound "1" would approve an order nobody replied to. They are acknowledged rather than
+  refused, because both services retry anything that is not a 200.
 
 ## Autonomous settlement, honestly labelled
 
@@ -1329,12 +1551,18 @@ the same tools to somebody else's model, the pay-first order lifecycle with auto
 refunds, off-menu demand capture, the AI Strategist and inventory-led repricing, the
 customer's own transaction statement, **Proof of Authorization** for disputed agent
 orders, **standing orders with a confidence gate**, a model-free fallback parser so no
-order dies of a billing balance, and two full design-system passes.
+order dies of a billing balance, two full design-system passes, an authenticated reply
+endpoint with single-use codes, a merchant login, per-agent rate and spend limits, the
+scheduler that makes standing orders and refund timeouts actually happen, stock that
+moves when food is sold, three message transports, and finally **the marketplace** —
+three kitchens, one core, walls between them.
 
-**635 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**753 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
-payment- or database-related, checked on real imports rather than string mentions) and
-the identity assertion that all four adapters share one orchestrator object.
+payment- or database-related, checked on real imports rather than string mentions), the
+identity assertion that all four adapters share one orchestrator object, and the newest
+of that family: that `negotiation.py` never learns the words `merchant_id`, `tenant` or
+`platform`.
 
 ## What "done" looks like for the pitch
 
@@ -1711,6 +1939,18 @@ survive a restart.
 not a stage in a workflow. It is not a lifecycle transition either — a status row would
 become the order's latest status and shove it out of whatever state it is really in.
 
+**The customer raises it, not the merchant.** For a while she was the only one who could,
+which describes the wrong world — she does not contest her own sale. In reality the
+customer raises it with their bank, the merchant receives the notice, and the merchant is
+the one who has to produce evidence. So there is an "I didn't authorise this" control on
+every charge in the customer's own statement, and her console's entry point is worded as
+what it is: logging a dispute that reached her another way.
+
+The customer's route is deliberately **not** behind the merchant login and is honestly
+documented as unauthenticated: this project has no per-customer accounts, so there is
+nobody to check a claimant against. It is safe to leave open because it moves no money and
+changes no status.
+
 ## When the model is unreachable, the order still goes through
 
 Mid-run, the buyer console stopped dead:
@@ -1875,6 +2115,41 @@ real browser -- the same lesson as every other section here.
   `last_fired_at`, so the list is rebuilt -- destroying the element the answer had just
   been written into. The answer is now written *after* the redraw. No unit test could see
   this; the DOM had to be driven.
+
+### A standing order asked, and reached nobody
+
+Reported as "the price went up and nothing happened, no order and no message".
+Everything below the surface had worked: the clock found the routine due at 13:31, the
+gate refused it at 13:31:25 on price drift, and the question was recorded with its
+single-use code. Correct, recorded, and invisible. Two failures, and the second is worse.
+
+**THE QUESTION REACHED NO SCREEN.** The buyer console only polled for an open question
+*inside a live order run* — so the one moment the system must reach somebody unprompted
+was the one moment nothing surfaced it. That is the definition of a standing order: nobody
+is watching. There is now an amber bar at the top of the buyer console, polled from boot,
+which shows the question and answers it through the SAME `/webhook/sms-reply` a real text
+uses. The message text is kept on the conversation because the REASON lives in it and
+nowhere else.
+
+**AND THE ANSWER DID NOTHING.** `record_reply` stored the decision and replied "Thanks —
+going ahead with your order now", which was untrue: nothing placed it.
+`routines.confirm_pending()` existed, was correct, and **had no caller**. A soft-cap
+approval is picked up by the `deploy()` that asked and is polling for it; a routine's is
+not, and nothing had been built to replace that. The conversation carries the routine that
+raised it now, and a YES places it.
+
+A control test asserts a soft-cap approval is still left alone — placing it from here as
+well would order twice — and another asserts that if placing it raises, the customer is
+**not** told it went ahead.
+
+**Firing opens AT the scheduled minute**, not when the confidence gate's window opens. The
+gate tolerates ±45 minutes, which is right for a CHECK and wrong for FIRING: a 20:00
+dinner became due at 19:15, so the food arrived three quarters of an hour before anyone
+wanted it, every week. Late is recoverable — a tick was missed, the machine was asleep,
+the order still wants placing. Early is just wrong.
+
+**There is no "run it now" button.** It was the only place in this project where a person
+triggered a charge by hand, and a standing order you have to press is not standing.
 
 ### What calls it
 
@@ -2078,6 +2353,99 @@ prevent, and `COUNTER_OFFER` would claim alternatives that do not exist. `Veloci
 is an `HTTPException`, so FastAPI answers **429** on its own and not one adapter knows this
 rule exists. The in-process caller that needs the detail — `routines` — catches it.
 
+## Selling a dish takes it out of the kitchen
+
+Stock was read everywhere and written nowhere. The core refused dishes that had run out,
+the repricer decided what needed discounting, and a shop that had sold twenty thalis
+still showed twenty — so every one of those readers was reasoning about a number that
+never changed, and "discounted, plenty in stock" was an opinion about nothing.
+
+`merchant_config.adjust_stock()` is the one writer, saved through the same `save()` the
+setup page uses so every validation she is already protected by still runs.
+
+**It moves at CAPTURE, not at approval.** An approved cart is an invitation to pay that
+may never be taken up, and holding stock for every abandoned checkout would starve the
+menu of dishes nobody bought. Money arriving is the first moment the food is really
+spoken for.
+
+Hooked inside `audit_log.mark_paid` because that is the ONE function every capture path
+already reaches — the webhook, the reconciler, x402, the autonomous settlement and the
+console's payment-status poll. Teaching all five instead is exactly how the reconciler
+came to miss the pay-first lifecycle: a shared step that was not actually shared.
+
+**Only on the transition unpaid → paid.** A webhook and the reconciler can both learn
+about the same capture, and taking the food twice for one payment would be worse than not
+taking it at all. Verified: 20 → 18 → 18.
+
+A declined or timed-out order puts it back, **before** the refund is attempted — that
+part is local and cannot fail the way Razorpay can, and a shop file that will not save
+must not stop a refund.
+
+Clamped at zero. Two agents can still pass the stock check a millisecond apart; that
+needs a lock this project does not have. What must not happen is a negative number nobody
+can act on, or a dish dragged below `LOW_STOCK` so its sale silently ends.
+
+## The buyer console is a walk
+
+Everything used to be on screen at once — kitchen picker, mode switch, order box,
+standing orders, dish grid. All of it true, and all of it asking to be understood before
+any of it could be used. Four steps now, each showing only the decision it wants:
+
+```
+which kitchen  ->  once or every week  ->  compose  ->  watch it work
+```
+
+Mostly a matter of adding two more `.stage` sections, because a stage already had an
+entrance animation and a title/lede pair. The step list is one object, so adding a step
+is adding a member rather than editing four places that each know all of them.
+
+A trail bar carries the way back — the kitchen returns to the picker, the mode to the
+fork — and it disappears while the agent is working, because nothing on that screen is
+safe to walk away from. A returning customer lands on the fork rather than the picker:
+they have a kitchen on file, and asking again would be asking a question they have
+answered.
+
+Two things a browser caught that reading would not have:
+
+- **A first-time visitor skipped the picker entirely.** `loadKitchens()` defaults to the
+  first kitchen so the page has something to render, so "do we have a kitchen?" was always
+  true. Being DEFAULTED to one and having CHOSEN one are different facts and are now
+  stored as two.
+- **The trail bar rendered while its own `hidden` property read true.** An explicit
+  `display` in a class rule beats the `hidden` attribute, whose entire effect is
+  `display: none` from the UA sheet — so every new flex/grid rule silently un-hid its
+  element. `[hidden]` is now enforced once, for the whole page.
+
+## The test suite was writing to production
+
+For the whole life of this project the suite wrote to the real audit database, and the
+damage was invisible because the trail is append-only and nothing ever looked wrong:
+`agent-code`, `agent-0` through `agent-11`, `agent-A`, `auth-test` and fourteen hundred
+escalations were all pytest, sitting in the same database the consoles read. Every panel
+dutifully reported it. **That is where "Rs.0 revenue, 171 interventions" came from** — not
+a bug in the panels, a suite writing into production.
+
+The nasty part is HOW the path is bound. `db_path: str = DEFAULT_DB_PATH` is evaluated
+once, when the function is defined, so monkeypatching the module attribute does nothing
+for the sixty functions that already captured it. The fixture rewrites the defaults too,
+by value rather than by name so a function taking the path under any argument name is
+still covered.
+
+It also **sent real SMS**. Once a provider was configured in `.env`, every test that sends
+a message made a real HTTP call and put a real text on somebody's phone —
+`test_escalations.py` alone has eighteen. That is how a fifty-a-day allowance disappears
+without anyone sending anything by hand. The timing said it before the assertions did:
+those files took 43 seconds and now take 6.
+
+`conftest.py` now isolates the audit database, the messaging transports, the merchant
+config, reply codes and the scheduler. A test that wants a specific provider turns its
+flag on itself, which also puts that intent in the test instead of in a file the test
+never mentions.
+
+**The general lesson, and it has now cost two separate bugs:** a test that silently reads
+the developer's own environment is a test that passes for reasons it does not state, and
+fails later for reasons nobody can see.
+
 ## The demo dataset
 
 The trail this project accumulated while being built was a record of it *being built*:
@@ -2114,9 +2482,30 @@ What it seeds, and why each piece has to be there:
 | two orders at `PENDING_MERCHANT_APPROVAL` | **the only kind of pending item that can be seeded.** A pre-payment escalation lives in its adapter's memory and does not survive a restart, so seeding one writes a row no screen will ever show. The paid lifecycle is rebuilt from the trail -- and it is the better beat anyway |
 | `routines.json` written through `routines.create()` | a separate store from the trail: seeding one without the other gives a buyer console showing no standing orders beside a merchant board reporting 21% of revenue from them |
 
-Resulting board: **Rs.43,720 settled over 190 orders, AOV Rs.229**, today's revenue live, 2
-interventions rather than 171, 21% from standing orders, pizza the clear top off-menu ask
-at 5 requests, and the buyer console's gated split at **88/12** rather than 53/47.
+`seed_kitchens.py` does the same job for every OTHER kitchen, and is written around no
+menu at all: it reads each shop's own dishes, categories and limits and derives everything
+from them -- what counts as a main course, what clears the threshold, what a human gets
+asked about, which dish sits in a category no agent may order. That constraint is
+deliberate and it is also a test of the marketplace: **a seeder that has to be told a
+shop's dishes knows something it should be reading**, and the moment it knows, so does
+everything else.
+
+One thing that had to be fixed first: `seed_demo` deleted every row that was not a real
+payment, which on a platform meant deleting every other kitchen. It is scoped to the
+default kitchen now and stamps what it writes -- it owns Amma's history and nobody else's.
+
+Resulting boards, as of 31 Aug 2026:
+
+| Kitchen | 30-day settled | Orders | AOV | From standing |
+| --- | --- | --- | --- | --- |
+| Amma's Kitchen | Rs.41,668 | 187 | Rs.222 | 18% |
+| Bombay Tiffin Room | Rs.13,660 | 139 | Rs.98 | 13% |
+| Lahori Grill House | Rs.44,075 | 133 | Rs.331 | 16% |
+
+Three genuinely different businesses -- a cheap high-volume counter beside an expensive
+grill house, and the AOV says so. Platform-wide: 647 rows, 18 agents, **23 real `pay_`
+captures preserved**, 68 decisions gated with no Razorpay call made, 9 refunds issued,
+37 off-menu demand rows.
 
 ## Before a demo, run the check
 
@@ -2199,12 +2588,18 @@ Worth being able to answer rather than being caught by:
   restart; the audit trail and merchant config do.
 - **The buyer profile lives in `localStorage`**, so it is per-browser. That is deliberate
   for the card, incidental for the rest.
-- **Razorpay test mode caps an account at 30 payment links**, and this project creates
-  one per demo run. Past that, `checkout` fails with *"test mode limit of 30 reached for
-  payment_link"* -- which looks like a bug in the adapter and is not one.
-  `scripts/free_payment_links.py` cancels stale UNPAID links to make room; paid ones are
-  never touched, because the audit trail and the reconciler still refer to them. Run it
-  before a demo, not during one.
+- **Razorpay test mode caps an account at 30 payment links EVER CREATED**, and this
+  project creates one per demo run. Past that, `checkout` fails with *"test mode limit of
+  30 reached for payment_link"* -- which looks like a bug in the adapter and is not one.
+  It now answers **503** with a message saying exactly that, including the part that is
+  easy to assume and wrong: **cancelling links does not give the quota back.**
+  `scripts/free_payment_links.py` cancels stale UNPAID links and is worth running, but it
+  frees nothing -- the counter includes cancelled ones. **The only fix is a fresh Razorpay
+  test account.** This account is currently at 30/30.
+- **The other three adapters still default to Amma's kitchen.** AP2, which the buyer
+  console uses, carries the chosen kitchen properly. ACP, x402 and MCP accept no
+  `merchant_id` yet and resolve to the platform default. It is the same one-line change
+  per adapter that AP2 already has; it is simply not done.
 - **`success@razorpay` never actually gets pinged** on this account — the code sends the
   collect request and Razorpay declines the endpoint.
 
@@ -2246,6 +2641,14 @@ because this project had no user authentication anywhere. It has one now — see
 BUYER side: `/api/buyer-sms/status/{agent_id}` hands out the customer's reply code to
 anyone who knows an agent id, and closing that needs per-customer accounts, which do not
 exist.
+
+**No per-customer identity is the one structural gap left**, and it shows in three places,
+each documented where it occurs: that status endpoint; `/api/order-outcomes`, which
+reports outcomes for the shop rather than for one customer; and the transaction statement,
+which shows the platform's movements rather than one person's. On a marketplace the
+statement at least names the kitchen on every line now, so it reads as a record rather
+than a list of amounts — but real multi-tenancy on the BUYER side would need
+authentication nothing here has.
 
 **CLOSED — the merchant console had no login.** `/api/merchant/optimize-prices` repriced
 the shop, the setup page set the budget cap the decision core runs on, and the accept/reject
