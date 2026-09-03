@@ -286,20 +286,27 @@ def _cart_from(event: dict) -> list[tuple[str, int]]:
         return []
 
 
-def list_pending() -> dict:
-    """Paid MCP orders waiting on Amma, in the shape her console expects.
+def list_pending(merchant_id: str | None = None) -> dict:
+    """Paid orders waiting on ONE kitchen, in the shape her console expects.
 
     Under pay-first these are orders the customer has ALREADY paid for
     and which exceeded her confirmation threshold -- so declining one
     refunds rather than merely cancelling. Rebuilt from the audit trail
     on each call, so it survives a restart and a reconnecting client.
+
+    `merchant_id` is the signed-in kitchen and comes from her session
+    cookie, never from a query string. It scopes two separate things that
+    both leaked here, and both looked right until a second kitchen
+    existed to be wrong about: WHICH orders she is offered a Decline
+    button for, and WHOSE history each agent's trust tier is computed
+    from.
     """
     import mcp_orders
     import trust
 
     db_path = audit_log.DEFAULT_DB_PATH
     sessions = []
-    for order in mcp_orders.pending_orders():
+    for order in mcp_orders.pending_orders(merchant_id=merchant_id):
         sessions.append(
             {
                 "session_id": str(order["id"]),
@@ -317,8 +324,16 @@ def list_pending() -> dict:
                     "decision": "ESCALATE",
                     "reason": order["reason"] + " -- already paid; declining refunds the customer",
                     "total_inr": order["total_inr"],
+                    # Per KITCHEN. An agent that has proved itself at
+                    # Amma's has proved nothing at the grill house, and a
+                    # merchant reading somebody else's evidence off a
+                    # badge on her own board is not judging the agent at
+                    # all. Falls back to the order's own kitchen so an
+                    # unscoped caller still gets the right answer rather
+                    # than the platform's.
                     "trust_tier": trust.compute_trust_tier(
-                        order["agent_id"], db_path=db_path
+                        order["agent_id"], db_path=db_path,
+                        merchant_id=merchant_id or order.get("merchant_id"),
                     ).value,
                     "alternatives": [],
                     "buyer_reasoning": order.get("buyer_reasoning"),

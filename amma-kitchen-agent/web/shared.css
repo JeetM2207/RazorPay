@@ -299,14 +299,22 @@ h3 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
   border-bottom: 1px solid var(--line);
   position: sticky; top: 0; z-index: 40;
 }
+/* No logo mark. The wordmark IS the logo -- a gradient square beside a
+   name that already carries a gradient is two logos arguing, and it cost
+   26px of the one flex row that has no room to spare. */
 .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-.brand::before {
-  content: ''; flex: none;
-  width: 26px; height: 26px; border-radius: 8px;
-  background: radial-gradient(circle at 30% 30%, var(--lilac), var(--violet));
-  box-shadow: 0 6px 18px rgba(138,92,255,.4);
-}
 .brand-mark { font-weight: 800; font-size: 16px; letter-spacing: -.02em; white-space: nowrap; }
+
+/* Bhojnal + AI. "Bhojanalaya" is the eatery; the AI is what we added, so
+   it is the half that is lit. Gradient text needs a plain-colour fallback
+   first -- a browser without background-clip renders the fill, not nothing. */
+.wm-ai {
+  color: var(--lilac);
+  background: linear-gradient(96deg, var(--lilac) 0%, var(--violet) 62%, #6B8CFF 100%);
+  -webkit-background-clip: text; background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 900; letter-spacing: .01em;
+}
 .brand-role {
   font-family: var(--font-mono);
   font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;

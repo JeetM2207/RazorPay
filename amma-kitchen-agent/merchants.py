@@ -51,9 +51,12 @@ class Platform:
     the platform is the relationship and the kitchen is the order.
     """
 
-    name = "Dabba"
+    # "Bhojanalaya" is the eatery; the AI is the half we added, which is
+    # why it is the half that is capitalised and, in the consoles, lit.
+    # This is the plain-text form -- an SMS has no stylesheet.
+    name = "BhojnalAI"
     tagline = "the agent-ready kitchen network"
-    # Said on every outbound message: "Dabba - Amma's Kitchen: ..."
+    # Said on every outbound message: "BhojnalAI - Amma's Kitchen: ..."
     blurb = ("One place for AI shopping agents to find real kitchens, "
              "agree an order inside limits both sides set, and pay for it.")
 

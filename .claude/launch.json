@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "bhojnalai",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "app:app",
+        "--port",
+        "8000",
+        "--app-dir",
+        "C:\\Users\\jeetm\\Desktop\\RazorPay\\amma-kitchen-agent"
+      ],
+      "port": 8000
+    }
+  ]
+}

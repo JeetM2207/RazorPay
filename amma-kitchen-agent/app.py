@@ -689,7 +689,7 @@ def consume_buyer_reply(agent_id: str) -> dict:
 
 
 @app.get("/api/pending")
-def pending() -> dict:
+def pending(request: Request) -> dict:
     """Everything awaiting a human decision, across ALL protocols, in one
     merged queue. The merchant shouldn't have to care which protocol an
     order arrived on -- that's the whole architectural claim, made
@@ -704,16 +704,30 @@ def pending() -> dict:
     An order in the paid lifecycle is deliberately not also listed by its
     own adapter: it is no longer waiting for permission to proceed, it is
     waiting for her verdict on something already bought.
+
+    Scoped to the signed-in kitchen, read off her session cookie and
+    never off a query string. This is the queue every entry of which
+    carries a Decline, and Decline refunds a real customer -- an
+    unscoped one put Amma's paid orders on the grill house's board with
+    live buttons under them. ACP and x402 do not carry a kitchen yet and
+    still resolve to the default, which is the documented adapter gap;
+    they are therefore only offered to the default kitchen rather than to
+    everybody.
     """
-    paid = adapter_mcp.list_pending()["sessions"]
+    shop = merchant_auth.signed_in_merchant(request)
+    default = merchants.default_id()
+
+    paid = adapter_mcp.list_pending(merchant_id=shop)["sessions"]
     settled_refs = {str(s["session_id"]) for s in paid}
 
     def unsettled(sessions):
         return [s for s in sessions if str(s.get("session_id")) not in settled_refs]
 
-    acp = unsettled(adapter_acp.list_sessions(status="requires_human")["sessions"])
-    ap2 = unsettled(adapter_ap2.list_intent_mandates(status="requires_human")["sessions"])
-    x402 = unsettled(adapter_x402.list_orders(status="requires_human")["sessions"])
+    single_tenant = shop is None or shop == default
+    acp = unsettled(adapter_acp.list_sessions(status="requires_human")["sessions"])         if single_tenant else []
+    x402 = unsettled(adapter_x402.list_orders(status="requires_human")["sessions"])         if single_tenant else []
+    ap2 = unsettled(adapter_ap2.list_intent_mandates(
+        status="requires_human", merchant_id=shop)["sessions"])
     return {"pending": acp + ap2 + x402 + paid}
 
 
@@ -965,18 +979,28 @@ def transactions(limit: int = 60) -> dict:
 
 
 @app.get("/api/order-outcomes")
-def order_outcomes(minutes: int = 30) -> dict:
+def order_outcomes(minutes: int = 30, merchant_id: str | None = None) -> dict:
     """Orders that finished recently, so a screen can say so.
 
     Read-only, and the buyer console is the caller: under pay-first an
-    MCP order is decided by Amma AFTER the money has moved, so the
+    order is decided by the kitchen AFTER the money has moved, so the
     customer's own screen has no other way to learn that she declined and
     the refund has already gone back.
+
+    `merchant_id` here is the kitchen the customer is ORDERING FROM, sent
+    by the buyer console. Unlike everywhere on the merchant side, taking
+    it from the caller is safe: this grants nothing and moves nothing, it
+    narrows a read of already-public outcomes. It is also as far as the
+    narrowing can go -- there is still no per-customer identity in this
+    project, so this reports the kitchen's recent outcomes rather than
+    one person's, and a customer watching two kitchens sees both.
     """
     import mcp_orders
 
     minutes = max(1, min(int(minutes), 60 * 24))
-    return {"outcomes": mcp_orders.recent_outcomes(minutes)}
+    if merchant_id and not merchants.exists(merchant_id):
+        raise HTTPException(404, "unknown kitchen")
+    return {"outcomes": mcp_orders.recent_outcomes(minutes, merchant_id=merchant_id)}
 
 
 @app.post("/api/merchant/optimize-prices", dependencies=[Depends(merchant_auth.require_merchant)])

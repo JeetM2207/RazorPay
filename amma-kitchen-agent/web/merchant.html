@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Merchant console — Dabba</title>
+<title>Merchant console — BhojnalAI</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   /* THE BOARD. This page is where the machine works, so it sits on the
@@ -59,16 +59,16 @@
     padding: 0 8px 18px; margin-bottom: 6px;
     border-bottom: 1px solid var(--line);
   }
-  .rail-mark {
-    width: 30px; height: 30px; border-radius: 9px; flex: none;
-    background: radial-gradient(circle at 30% 30%, var(--lilac), var(--violet));
-    box-shadow: 0 6px 18px rgba(138, 92, 255, .38);
-  }
   .rail-name { font-weight: 800; font-size: 14.5px; letter-spacing: -.02em; line-height: 1.15; }
   .rail-role {
-    font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .1em;
-    text-transform: uppercase; color: var(--muted-2);
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: .06em;
+    color: var(--muted-2);
   }
+  /* Not uppercased. This line carries the platform's name, and the whole
+     point of that name is the case break between the eatery and the AI --
+     `text-transform` flattens it to BHOJNALAI and throws the idea away.
+     The tiny-caps look was worth less than the wordmark reading right. */
+  .rail-role .wm-ai { font-size: 10.5px; }
 
   .rail-label {
     font-family: var(--font-mono); font-size: 9.5px; letter-spacing: .12em;
@@ -357,9 +357,8 @@
   <!-- The rail: the four places you can be, and the way out. -->
   <nav class="rail" aria-label="Sections">
     <div class="rail-brand">
-      <div class="rail-mark"></div>
       <div>
-        <div class="rail-name" id="railShop">Dabba</div>
+        <div class="rail-name" id="railShop">Bhojnal<span class="wm-ai">AI</span></div>
         <div class="rail-role">Merchant</div>
       </div>
     </div>
@@ -759,9 +758,9 @@ async function boot() {
   const shop = (config.profile || {}).shop_name;
   if (shop) {
     $("railShop").textContent = shop;
-    $("railShop").title = "Signed in to Dabba as " + shop;
+    $("railShop").title = "Signed in to BhojnalAI as " + shop;
     const role = document.querySelector(".rail-role");
-    if (role) role.textContent = "on Dabba";
+    if (role) role.innerHTML = "on Bhojnal<span class=\"wm-ai\">AI</span>";
   }
   if (!config.profile.configured) {
     // Shop not set up yet -- send them there rather than showing an
@@ -942,7 +941,7 @@ async function renderSms() {
         const asks = /\breply\b/i.test(m.body);
         return `
           <div class="bubble">
-            <span class="bubble-tag">Dabba</span>
+            <span class="bubble-tag">BhojnalAI</span>
             ${esc(m.body)}
             <div class="bubble-meta">
               <span class="bubble-to">to ${esc(m.to)}</span>

@@ -192,6 +192,31 @@ class Seeder:
             total_inr=total, ts=ts, buyer_reasoning=RNG.choice(REASONS),
         )
 
+    def awaiting_her_answer(self, agent, cart, day, hour):
+        """A PAID order sitting in her queue, waiting on a yes or no.
+
+        The only kind of pending item worth seeding. A PRE-payment
+        escalation lives in its adapter's memory and does not survive a
+        restart, so seeding one writes a row no screen will ever show;
+        this lifecycle is rebuilt from the trail, so it does.
+
+        It is also the better beat: declining one of these refunds a real
+        customer, which is what makes the pay-first defence something a
+        judge can watch rather than take on trust.
+        """
+        ref = self.escalated(agent, cart, self.at(day, hour))
+        total = self.shop.total(cart)
+        line = [{"item": i, "qty": q} for i, q in cart]
+        for minutes, status, why in (
+            (1, "AWAITING_PAYMENT", "payment link issued; the customer pays it themselves"),
+            (4, "PAID", "captured"),
+            (4, "PENDING_MERCHANT_APPROVAL", "paid; awaiting the kitchen's yes or no"),
+        ):
+            self.write(agent_id=agent, protocol="ap2", cart=line,
+                       decision=status, reason=why, total_inr=total,
+                       order_ref=ref, ts=self.at(day, hour))
+        return ref
+
     # -- the whole month ------------------------------------------------
     def run(self):
         shop, cast = self.shop, CAST[self.shop.id]
@@ -294,6 +319,13 @@ class Seeder:
         # window, because the KPI is a share of the whole ledger and a
         # weekly routine would read 0% on six days out of seven.
         self.seed_routines(everyday, trusted)
+
+        # Two orders sitting on her board right now, so the console she
+        # opens on camera has something to decide. Written last so they
+        # are the most recent rows and sort to the top of her queue.
+        for offset, (agent, cart) in enumerate(
+                zip(trusted[:2] or regulars[:2], big[:2])):
+            self.awaiting_her_answer(agent, cart, 0, 11 + offset * 2)
 
         # What people asked for that this kitchen does not sell.
         for want, times in OFF_MENU[self.shop.id]:

@@ -3,6 +3,7 @@ import re
 import pytest
 
 import merchant_auth
+import merchants
 from fastapi.testclient import TestClient
 
 import adapter_acp
@@ -31,11 +32,28 @@ def test_all_human_facing_pages_render(client):
     for path in ("/", "/buyer", "/buyer/order", "/merchant", "/audit"):
         resp = client.get(path)
         assert resp.status_code == 200, path
-        # The PLATFORM's name, not one kitchen's. The buyer pages are
-        # branded Dabba now -- a customer choosing between three kitchens
-        # is not on any one of their sites, and asserting a single shop's
-        # name on every page is what a single-tenant demo asserts.
-        assert "Dabba" in resp.text, path
+        # The PLATFORM's name, not one kitchen's. A customer choosing
+        # between three kitchens is not on any one of their sites, and
+        # asserting a single shop's name on every page is what a
+        # single-tenant demo asserts.
+        #
+        # Read off Platform rather than hardcoded, so a rename is one
+        # edit. The <title> carries it unsplit; the visible wordmark
+        # splits it so "AI" can be lit, which is why this cannot just
+        # grep the body for the whole string.
+        assert merchants.Platform.name in resp.text, path
+
+
+def test_the_wordmark_lights_the_ai_half(client):
+    """Bhojnal + AI, with the AI carrying its own class.
+
+    The lit half is the product claim: it is the part that is not a
+    normal eatery. If a restyle ever flattens the wordmark back into one
+    run of text this fails rather than quietly shipping."""
+    for path in ("/buyer", "/buyer/order", "/merchant"):
+        body = client.get(path).text
+        assert 'class="wm-ai">AI</span>' in body, path
+        assert "Bhojnal" in body, path
 
 
 def test_buyer_is_split_into_setup_then_ordering(client):

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Dabba — the agent-ready kitchen network</title>
+<title>BhojnalAI — the agent-ready kitchen network</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   .hero { text-align: center; padding: 46px 0 30px; }
@@ -41,6 +41,16 @@
   }
   .howto ol { margin: 10px 0 0; padding-left: 20px; color: var(--ink-2); font-size: 14px; }
   .howto li { margin: 7px 0; }
+  .proof {
+    display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+    margin: 20px auto 0; max-width: 660px;
+  }
+  .proof span {
+    font-family: var(--font-mono); font-size: 12px; color: var(--muted);
+    background: var(--card-2); border: 1px solid var(--line);
+    border-radius: 999px; padding: 5px 13px;
+  }
+  .proof b { color: var(--ink); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -49,11 +59,20 @@
 
   <div class="page page-narrow">
     <div class="hero">
-      <h1><span class="blur-in" style="animation-delay:0.05s">Amma's</span> <span class="blur-in" style="animation-delay:0.12s">Kitchen</span></h1>
+      <h1><span class="blur-in" style="animation-delay:0.05s">Bhojnal</span><span
+          class="blur-in wm-ai" style="animation-delay:0.14s">AI</span></h1>
       <p>
-        A small home kitchen, made transactable by AI buyer agents — with every
-        money action explainable, bounded, and gated by a human when it matters.
+        Three real kitchens, made transactable by AI shopping agents over four
+        agent-payment protocols — with every money action explainable, bounded,
+        and gated by a human on <em>both</em> sides when it matters.
       </p>
+      <div class="proof">
+        <span><b>3</b> kitchens</span>
+        <span><b>4</b> protocols</span>
+        <span><b>1</b> decision core</span>
+        <span><b>23</b> real Razorpay captures</span>
+        <span><b>753</b> tests</span>
+      </div>
     </div>
 
     <div class="doors">
@@ -62,9 +81,9 @@
         <h3>Buyer console</h3>
         <p>Order as a customer's AI shopping assistant would, over a real agent protocol.</p>
         <ul>
-          <li>Set what your customer authorised you to spend</li>
-          <li>Order in plain English, or pick from the menu</li>
-          <li>Choose ACP or AP2 — the same brain answers both</li>
+          <li>Pick a kitchen, then set what your customer authorised you to spend</li>
+          <li>Order in plain English, or pick from that kitchen's menu</li>
+          <li>Watch the AP2 mandate chain build, step by step, in the terminal</li>
           <li>Take a counter-offer, accept an upsell, then pay for real</li>
         </ul>
       </a>
@@ -72,7 +91,7 @@
       <a class="door" href="/merchant">
         <span class="door-role">Open this as the merchant</span>
         <h3>Merchant console</h3>
-        <p>Sit where Amma sits: decide the orders the system refuses to decide alone.</p>
+        <p>Sit where the cook sits: decide the orders the system refuses to decide alone.</p>
         <ul>
           <li>Set your limits and menu once &mdash; they're what gets enforced</li>
           <li>See escalations arrive live, from any protocol</li>

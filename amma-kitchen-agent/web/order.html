@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Order — Dabba</title>
+<title>Order — BhojnalAI</title>
 <link rel="stylesheet" href="/static/shared.css?v=2">
 <style>
   /* ---- two stages, one at a time ----
@@ -510,7 +510,7 @@
 
   <div class="topbar">
     <div class="brand">
-      <span class="brand-mark">Dabba</span>
+      <span class="brand-mark">Bhojnal<span class="wm-ai">AI</span></span>
       <span class="brand-role">Buyer</span>
     </div>
     <div class="topbar-links">
@@ -642,7 +642,8 @@
 
           <div style="margin-top:20px">
             <label for="command">What do you want your AI to buy?</label>
-            <textarea id="command" rows="3">Order 1 paneer bhurji and 4 tandoori roti</textarea>
+            <textarea id="command" rows="3"
+              placeholder="Say what you want, in your own words"></textarea>
             <div class="cart-bar" id="cartBar"></div>
           </div>
 
@@ -840,14 +841,28 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /* Which kitchen this customer is ordering from. Remembered per browser
    so a reload does not silently move them to a different shop -- the
    menu, the prices and the limits would all change under them. */
-const KITCHEN_KEY = "dabba-chosen-kitchen";
+const KITCHEN_KEY = "bhojnalai-chosen-kitchen";
+/* The key this used to have. Read once and carried across rather than
+   just renamed: a returning customer's chosen kitchen is a decision they
+   already made, and a rebrand is a poor reason to ask them again. */
+const KITCHEN_KEY_LEGACY = "dabba-chosen-kitchen";
+function storedKitchen() {
+  const current = localStorage.getItem(KITCHEN_KEY);
+  if (current) return current;
+  const legacy = localStorage.getItem(KITCHEN_KEY_LEGACY);
+  if (legacy) {
+    localStorage.setItem(KITCHEN_KEY, legacy);
+    localStorage.removeItem(KITCHEN_KEY_LEGACY);
+  }
+  return legacy || "";
+}
 let KITCHENS = [];
-let KITCHEN = localStorage.getItem(KITCHEN_KEY) || "";
+let KITCHEN = storedKitchen();
 /* Whether the customer has actually PICKED one, as opposed to being
    defaulted to the first while the page had to render something. Without
    the distinction a first-time visitor skipped straight past the
    picker -- the fallback made "have we got a kitchen?" always true. */
-let KITCHEN_CHOSEN = Boolean(localStorage.getItem(KITCHEN_KEY));
+let KITCHEN_CHOSEN = Boolean(KITCHEN);
 let MENU = [];       // for the quick-pick chips, before the agent runs
 let CATALOG = [];    // what the agent itself fetched from /catalog
 let PROFILE = null;
@@ -1219,6 +1234,24 @@ function kitchenName() {
   return k ? (k.shop_name || k.name) : "the kitchen";
 }
 
+/* The order box's example sentence, written from the kitchen actually
+   chosen. It shipped hardcoded to two of Amma's dishes, which read as a
+   suggestion to order paneer bhurji from a charcoal grill house -- and
+   worse, invited the customer to type a dish that would come straight
+   back as off-menu. Only ever the PLACEHOLDER, never the value: putting
+   words in the box would mean an order nobody typed is one click from
+   being placed. */
+function suggestPhrasing() {
+  const box = $("command");
+  if (!box || !MENU.length) return;
+  const orderable = MENU.filter((i) => i.agent_orderable !== false);
+  if (!orderable.length) return;
+  const pick = orderable.slice(0, 2).map((i) => i.title.toLowerCase());
+  box.placeholder = pick.length > 1
+    ? `Order 1 ${pick[0]} and 2 ${pick[1]}`
+    : `Order 1 ${pick[0]}`;
+}
+
 async function refreshMenu() {
   try {
     const fresh = (await api("/api/menu?merchant_id="
@@ -1230,6 +1263,7 @@ async function refreshMenu() {
     renderDishes();
     renderRoutineDishes();
     syncRoutineForm();
+    suggestPhrasing();
   } catch { /* keep whatever we last had */ }
 }
 
@@ -1391,7 +1425,7 @@ $("command").addEventListener("input", () => {
 const STAGES = {
   kitchens: {
     title: "Where are we ordering from?",
-    lede: "Every kitchen on Dabba sets its own menu, its own prices and its own "
+    lede: "Every kitchen on BhojnalAI sets its own menu, its own prices and its own "
         + "limits. Your agent obeys whichever you pick.",
   },
   choose: {
@@ -2103,7 +2137,8 @@ function refundToast(outcome) {
 
 async function watchOutcomes() {
   try {
-    const { outcomes } = await api("/api/order-outcomes?minutes=30");
+    const { outcomes } = await api(
+      "/api/order-outcomes?minutes=30" + (KITCHEN ? "&merchant_id=" + encodeURIComponent(KITCHEN) : ""));
     const seen = seenOutcomes();
     for (const outcome of outcomes.slice().reverse()) {
       if (seen.has(outcome.order_ref)) continue;
@@ -2117,7 +2152,8 @@ async function watchOutcomes() {
    does not replay every outcome of the day as if it just happened. */
 (async () => {
   try {
-    const { outcomes } = await api("/api/order-outcomes?minutes=30");
+    const { outcomes } = await api(
+      "/api/order-outcomes?minutes=30" + (KITCHEN ? "&merchant_id=" + encodeURIComponent(KITCHEN) : ""));
     outcomes.forEach((o) => rememberOutcome(o.order_ref));
   } catch { /* ignore */ }
   setInterval(watchOutcomes, 3000);

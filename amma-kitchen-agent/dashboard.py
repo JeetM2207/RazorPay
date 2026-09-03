@@ -285,7 +285,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 {refresh_tag}
-<title>Dabba &mdash; Audit Trail</title>
+<title>BhojnalAI &mdash; Audit Trail</title>
 <style>
   /* Same tokens as web/shared.css, inlined because this page is rendered
      server-side and loads no stylesheet. Every family is a system stack:
@@ -308,6 +308,13 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     --card-2:#211A3D;
     --ink:#F5F3FA; --ink-soft:#948FA8; --muted-2:#8A85A2;
     --coffee:#0B0716; --gold:#8A5CFF; --gold-deep:#A98BFF; --lilac:#C7B8FF;
+    /* --violet is the role name shared.css uses for the same colour
+       --gold holds here. Declared because a var this sheet does not
+       define is INVALID AT COMPUTED-VALUE TIME, not ignored: the whole
+       declaration falls back to its initial value. The wordmark's
+       gradient did exactly that and, with text-fill transparent, the
+       "AI" rendered as a blank gap with nothing erroring. */
+    --violet:#8A5CFF;
     --leaf:#3DE8A0; --rust:#FFB020; --brick:#FF7A5C; --steel:#4EA1FF;
     --radius-chit: 18px;
     --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -337,6 +344,15 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
     pointer-events: none;
   }}
   h1 {{ margin: 0 0 4px; font-weight: 800; font-size: 32px; letter-spacing: -.025em; }}
+  /* Declared a SECOND time on purpose: this page is server-rendered and
+     loads no stylesheet, so a token or a rule added to web/shared.css
+     needs the same edit here. Plain colour first as the fallback. */
+  .wm-ai {{
+    color: var(--lilac);
+    background: linear-gradient(96deg, var(--lilac) 0%, var(--violet) 62%, #6B8CFF 100%);
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent; font-weight: 900;
+  }}
   h2 {{ margin: 32px 0 12px; font-family: var(--font-mono); font-size: 11px;
         text-transform: uppercase; letter-spacing: .12em; color: var(--lilac); }}
   .sub {{ margin: 0 0 24px; color: var(--ink-soft); }}
@@ -415,7 +431,7 @@ def _render(events: list[dict], db_path: str, refresh: int) -> str:
 </head>
 <body>
   <canvas id="bgCanvas" aria-hidden="true"></canvas>
-  <h1>Dabba &mdash; Agent Audit Trail</h1>
+  <h1>Bhojnal<span class="wm-ai">AI</span> &mdash; Agent Audit Trail</h1>
   <!-- Every kitchen on the platform, deliberately. This page is not a
        merchant view: it is the thing that makes the whole claim
        checkable, and a trail that shows you only one shop's half of a
@@ -473,7 +489,7 @@ def dashboard(limit: int = 200, refresh: int = 5) -> HTMLResponse:
     return HTMLResponse(_render(events, db_path, refresh))
 
 
-app = FastAPI(title="Dabba -- Audit Trail")
+app = FastAPI(title="BhojnalAI -- Audit Trail")
 app.include_router(router)
 
 

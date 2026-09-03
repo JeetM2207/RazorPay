@@ -367,21 +367,34 @@ def get_order_status(order_ref: int, db_path: str = DEFAULT_DB_PATH) -> str | No
 
 
 def get_orders_with_status(
-    status: str, db_path: str = DEFAULT_DB_PATH, protocol: str | None = None
+    status: str, db_path: str = DEFAULT_DB_PATH, protocol: str | None = None,
+    merchant_id: str | None = None,
 ) -> list[dict]:
     """Orders whose LATEST transition is `status`.
 
     Deliberately not "orders that ever hit this status" -- an order that
     was pending and has since been accepted is no longer pending, and a
     queue built the other way would never empty.
+
+    `merchant_id` confines the answer to one kitchen, through the same
+    scope() every other merchant-facing read uses. It is not optional in
+    spirit: this is what her console's queue is built from, and an order
+    is somebody's to accept or DECLINE -- declining refunds a customer.
+    A queue that answered platform-wide put one kitchen's paid orders on
+    another's board, under live Approve and Decline buttons. None is
+    still "the whole platform" and is what the scheduler passes, because
+    a timeout is owed to every customer regardless of whose kitchen went
+    quiet.
     """
     init_db(db_path)
+    where, params = scope(merchant_id)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         refs = conn.execute(
             "SELECT DISTINCT order_ref FROM audit_events WHERE order_ref IS NOT NULL"
-            + (" AND protocol = ?" if protocol else ""),
-            (protocol,) if protocol else (),
+            + (" AND protocol = ?" if protocol else "")
+            + where,
+            ((protocol,) if protocol else ()) + tuple(params),
         ).fetchall()
 
     matching = []

@@ -22,6 +22,7 @@ import uuid
 from fastapi import APIRouter, FastAPI, HTTPException
 from pydantic import BaseModel
 
+import merchants
 import orchestrator
 
 # See adapter_acp.py: routes live on a router so both adapters and the
@@ -128,9 +129,18 @@ def _intent_view(intent_id: str) -> dict:
 
 
 @router.get("/ap2/intent-mandates")
-def list_intent_mandates(status: str | None = None) -> dict:
+def list_intent_mandates(status: str | None = None,
+                         merchant_id: str | None = None) -> dict:
     """Lets the merchant console show a live queue of mandates needing a
-    human decision. Read-only; no business logic."""
+    human decision. Read-only; no business logic.
+
+    Scoped to one kitchen, because this queue is the pre-payment half of
+    the same board whose paid half leaked across tenants. A mandate that
+    named no kitchen was raised before the platform existed, or by a
+    caller that did not pass one; it belongs to the default kitchen, on
+    the same rule audit_log.scope() applies to a NULL row.
+    """
+    default = merchants.default_id()
     mandates = [
         {
             "session_id": mid,
@@ -141,7 +151,9 @@ def list_intent_mandates(status: str | None = None) -> dict:
             "decision_detail": mandate.get("detail"),
         }
         for mid, mandate in _INTENT_MANDATES.items()
-        if status is None or mandate.get("status") == status
+        if (status is None or mandate.get("status") == status)
+        and (merchant_id is None
+             or (mandate.get("merchant_id") or default) == merchant_id)
     ]
     return {"sessions": list(reversed(mandates))}
 

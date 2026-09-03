@@ -500,8 +500,8 @@ def expire(order_ref: int) -> dict:
 
 # ------------------------------------------------------------- the queue
 
-def pending_orders() -> list[dict]:
-    """Paid orders waiting on Amma, for her console.
+def pending_orders(merchant_id: str | None = None) -> list[dict]:
+    """Paid orders waiting on one kitchen, for her console.
 
     No longer filtered to one protocol. This lifecycle started life as the
     Claude-chat path's, but pay-first is a property of the FLOW, not of the
@@ -509,8 +509,15 @@ def pending_orders() -> list[dict]:
     an order that has been paid for and is awaiting her answer is the same
     thing to her whichever door it came through. Every row carries its own
     protocol, so her queue still says where it came from.
+
+    It IS filtered to one kitchen, and that is not cosmetic. Every entry
+    here carries an Approve and a Decline, and Decline refunds a real
+    customer -- so an unscoped queue handed one merchant the power to
+    reverse another merchant's sale. `merchant_id=None` still means the
+    whole platform and is what the scheduler's expiry sweep passes.
     """
-    return audit_log.get_orders_with_status(PENDING_MERCHANT_APPROVAL, db_path=_db())
+    return audit_log.get_orders_with_status(
+        PENDING_MERCHANT_APPROVAL, db_path=_db(), merchant_id=merchant_id)
 
 
 # ------------------------------------------- outcomes, for the buyer's screen
@@ -529,7 +536,7 @@ TERMINAL = {
 }
 
 
-def recent_outcomes(minutes: int = 30) -> list[dict]:
+def recent_outcomes(minutes: int = 30, merchant_id: str | None = None) -> list[dict]:
     """Orders that reached a terminal state in the last `minutes`.
 
     Read straight off the audit trail rather than held in memory, so it
@@ -538,8 +545,9 @@ def recent_outcomes(minutes: int = 30) -> list[dict]:
 
     Note honestly what this is NOT: there is no per-customer identity
     anywhere in this project (the buyer profile lives in the browser's
-    own localStorage), so this returns recent outcomes for the shop, not
-    for one customer. That is fine for a demo where the same person is
+    own localStorage), so this returns recent outcomes for the KITCHEN,
+    not for one customer -- `merchant_id` narrows it to the kitchen the
+    buyer is ordering from, which is as far as this can go. That is fine for a demo where the same person is
     both parties, and it is the same assumption the merchant console
     already makes. Real multi-tenancy would need authentication, which
     nothing here has.
@@ -547,7 +555,8 @@ def recent_outcomes(minutes: int = 30) -> list[dict]:
     since = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
     out = []
     for status, kind in TERMINAL.items():
-        for order in audit_log.get_orders_with_status(status, db_path=_db()):
+        for order in audit_log.get_orders_with_status(
+                status, db_path=_db(), merchant_id=merchant_id):
             rows = audit_log.get_order_rows(order["id"], db_path=_db())
             last = rows[-1]
             if last["ts"] < since:

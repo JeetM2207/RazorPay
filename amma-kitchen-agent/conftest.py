@@ -65,6 +65,23 @@ def _isolate_audit_db(tmp_path, monkeypatch):
     # Rebind every already-captured default. Done by value rather than by
     # name so a function taking the path under any argument name is still
     # covered, and so this keeps working if one is added later.
+    #
+    # AND PUT THEM BACK AFTERWARDS. The first version did not, which made
+    # the fixture look right and behave like a session-scoped one: the
+    # rewrite only fired while `real` was still in the tuple, so from the
+    # second test onward every captured default still pointed at the
+    # FIRST test's sandbox while DEFAULT_DB_PATH pointed at the current
+    # one. Two databases, one suite, and tests passing anyway because
+    # most of them are internally consistent about which they use. It
+    # surfaced the moment a test mixed the two -- writing through a
+    # default argument and reading through a function that resolves the
+    # path at call time -- and read back an empty trail.
+    #
+    # The property that always held is the one that matters: neither
+    # database was ever the real one. But "tests share a database and
+    # nobody said so" is exactly the class of thing this fixture exists
+    # to end.
+    rebound = []
     for module_name in ("audit_log", "idempotency", "trust", "evidence",
                         "velocity", "mcp_orders", "routines", "orchestrator"):
         try:
@@ -75,11 +92,16 @@ def _isolate_audit_db(tmp_path, monkeypatch):
             defaults = getattr(obj, "__defaults__", None)
             if not defaults or real not in defaults:
                 continue
+            rebound.append((obj, defaults))
             obj.__defaults__ = tuple(
                 sandbox if d == real else d for d in defaults)
 
     audit_log.init_db(sandbox)
-    yield
+    try:
+        yield
+    finally:
+        for obj, defaults in rebound:
+            obj.__defaults__ = defaults
 
 
 @pytest.fixture(autouse=True)
