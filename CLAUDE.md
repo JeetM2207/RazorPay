@@ -1,8 +1,9 @@
-# Dabba — agentic commerce build (Razorpay AI Buildathon, Track 1)
+# BhojnalAI — agentic commerce build (Razorpay AI Buildathon, Track 1)
 
 ## What this project is
 
-**Dabba** is a marketplace that makes small food businesses transactable by AI shopping
+**BhojnalAI** — *bhojanalaya*, the eatery, with the half we added capitalised — is a
+marketplace that makes small food businesses transactable by AI shopping
 agents. A customer's agent discovers a kitchen, negotiates an order when the exact
 request can't be fulfilled, and completes a bounded, auditable payment through Razorpay's
 test-mode APIs.
@@ -215,7 +216,7 @@ amma-kitchen-agent/
   scripts/unstick_checkouts.py    # free locks whose payment link never got made
   scripts/free_payment_links.py   # cancel stale UNPAID links (does NOT free the quota)
   scripts/                # plus early plumbing probes, kept for reference
-  tests/                  # 753 tests; test_negotiation.py still matters most
+  tests/                  # 759 tests; test_negotiation.py still matters most
 ```
 
 ## How to run it
@@ -471,6 +472,22 @@ were gone looking for rather than discovered on camera:
   loads no CSS file, so the tokens are declared a second time inside it — and the fonts a
   third, pointing at the same two files off `/static`. That duplication is deliberate and
   worth knowing: change a token in `shared.css` and this one needs the same edit.
+
+  **It bit on the very next change, and silently.** The wordmark's gradient was ported
+  across referring to `var(--violet)` — a role name `shared.css` defines and this sheet
+  does not, because here the same colour is still called `--gold`. An undefined custom
+  property is not ignored: it makes the declaration **invalid at computed-value time**, so
+  `background` fell back to its initial value while `-webkit-text-fill-color: transparent`
+  from the *same rule* applied perfectly. The result was a heading reading
+  "Bhojnal — Agent Audit Trail" with a blank gap where the AI should be, a clean console,
+  and a green suite. `getComputedStyle` reported `backgroundImage: none` and that was the
+  only evidence anywhere.
+
+  `tests/test_css_vars_resolve.py` is the general guard: collect every **bare** `var(--x)`
+  a stylesheet reads, collect what it defines, assert the first is inside the second. A
+  read WITH a fallback — `var(--mx, 50%)`, which is how the consoles read the two
+  properties JavaScript sets at runtime — stays valid either way and is deliberately not
+  flagged. Confirmed failing with the token removed again.
 - **`.badge` had to *become* the new stamp rather than be replaced**, because it is what a
   dozen template literals across the consoles emit.
 - **The pinned-ticket motif lived in `merchant.html`, not `shared.css`** — the queue cards
@@ -628,6 +645,34 @@ That last one is the third time a wrong-tenant read came from a buyer-facing end
 being reused on a merchant screen, and **all three looked right until a second kitchen
 existed to be wrong about**.
 
+### The eighth, and the worst: her queue
+
+`mcp_orders.pending_orders()` is what her board's "Orders needing your decision" is built
+from, and it answered platform-wide. So signing into the grill house showed **Amma's paid
+orders**, correctly priced, correctly explained — with a live **Approve** and a live
+**Decline** underneath each one.
+
+Decline is not a display action. It issues a real refund against a real Razorpay payment,
+in the same call that records the rejection. So an unscoped queue handed one merchant the
+power to **reverse another merchant's completed sale**, and to tell that merchant's
+customer their order had been refused.
+
+The trust badge beside each row leaked the same way: `list_pending` computed it with no
+kitchen, so an agent that had proved itself at Amma's arrived on the grill house's board
+already wearing TRUSTED — the second time that exact read has had to be scoped, and the
+first was supposed to be the last.
+
+Both take the kitchen from the signed-in session, never a query string.
+`merchant_id=None` still means the whole platform, and that is not an oversight: the
+scheduler's expiry sweep uses it, because a customer who paid and was never answered is
+owed a refund whichever kitchen went quiet. The pre-payment half of the same board
+(`adapter_ap2.list_intent_mandates`) is scoped too; ACP and x402 carry no kitchen yet, so
+they are offered only to the default one rather than to everybody.
+
+`tests/test_queue_is_per_kitchen.py` pins all three properties, including the contrast
+that makes the isolation legible: **Priya's Agent is TRUSTED at Amma's and NEW at the
+grill house.** Same agent, same trail, three kitchens, three answers.
+
 ### Standing orders belong to a kitchen too
 
 `routines.json` had no merchant id, so every kitchen's page listed every routine on the
@@ -669,12 +714,24 @@ it proves the core is tenant-agnostic in a way refusing at the first kitchen can
 ### Branding: platform first, kitchen second
 
 `merchants.Platform` holds the name, and `message_prefix()` signs every outbound message
-`Dabba · Amma's Kitchen`. A customer who gets "Amma's Kitchen: your agent wants to
+`BhojnalAI · Amma's Kitchen`. A customer who gets "Amma's Kitchen: your agent wants to
 order…" from a number they have never seen has no idea who is writing to them; on a
 marketplace the platform is the relationship and the kitchen is the order.
 
-The merchant rail reads the signed-in shop — "Lahori Grill House / on Dabba" — because
+The merchant rail reads the signed-in shop — "Lahori Grill House / on BhojnalAI" — because
 "Merchant" is not enough when three people share that screen.
+
+**The wordmark splits so the AI can be lit.** `Bhojnal` in ink, `AI` on a violet gradient,
+because the case break *is* the idea: an ordinary eatery, plus the part that is not
+ordinary. Two consequences worth knowing. The branding test reads `<title>` for the plain
+string, since the body never contains the whole name in one text node; a second test
+asserts the `.wm-ai` span survives, so a restyle that flattens the wordmark fails rather
+than quietly shipping. And `.rail-role` stopped uppercasing — `text-transform` renders
+BHOJNALAI and throws the whole point away.
+
+**There is no logo mark anywhere.** A gradient square beside a name that already carries a
+gradient is two logos arguing, and it was costing 26px of the one flex row with no room to
+spare. The wordmark is the logo.
 
 **Each side's bar offers what that side does.** The buyer's carried "Merchant console" and
 "Audit trail" — the other party's login and a shop's whole decision history, neither a
@@ -1557,7 +1614,7 @@ scheduler that makes standing orders and refund timeouts actually happen, stock 
 moves when food is sold, three message transports, and finally **the marketplace** —
 three kitchens, one core, walls between them.
 
-**753 tests.** The ones that matter most are still `test_negotiation.py`, plus the
+**759 tests.** The ones that matter most are still `test_negotiation.py`, plus the
 purity assertions (`negotiation.py` and `buyer_mandate.py` import nothing model-,
 payment- or database-related, checked on real imports rather than string mentions), the
 identity assertion that all four adapters share one orchestrator object, and the newest
@@ -2442,9 +2499,24 @@ config, reply codes and the scheduler. A test that wants a specific provider tur
 flag on itself, which also puts that intent in the test instead of in a file the test
 never mentions.
 
-**The general lesson, and it has now cost two separate bugs:** a test that silently reads
-the developer's own environment is a test that passes for reasons it does not state, and
-fails later for reasons nobody can see.
+**And the fixture itself was half-broken for its whole life.** It rewrites the captured
+`__defaults__` and never put them back — so the rewrite only fired while the REAL path was
+still in the tuple, which is only true on the first test. From the second test onward every
+captured default still pointed at the FIRST test's sandbox while `DEFAULT_DB_PATH` pointed
+at the current one. Two databases, one suite.
+
+It passed anyway, for 750-odd tests, because almost every test is internally consistent
+about which of the two it touches. It surfaced the moment one mixed them: writing through a
+default argument and reading through a function that resolves the path at call time, which
+came back an empty trail. The defaults are restored in a `finally` now.
+
+The property that always held is the one that mattered — neither database was ever the real
+one. But "the tests share a database and nobody said so" is exactly the class of thing that
+fixture exists to end.
+
+**The general lesson, and it has now cost three separate bugs:** a test that silently reads
+state it does not name — the developer's environment, or the previous test's — is a test
+that passes for reasons it does not state, and fails later for reasons nobody can see.
 
 ## The demo dataset
 
@@ -2496,16 +2568,21 @@ default kitchen now and stamps what it writes -- it owns Amma's history and nobo
 
 Resulting boards, as of 31 Aug 2026:
 
-| Kitchen | 30-day settled | Orders | AOV | From standing |
-| --- | --- | --- | --- | --- |
-| Amma's Kitchen | Rs.41,668 | 187 | Rs.222 | 18% |
-| Bombay Tiffin Room | Rs.13,660 | 139 | Rs.98 | 13% |
-| Lahori Grill House | Rs.44,075 | 133 | Rs.331 | 16% |
+| Kitchen | 30-day settled | Orders | AOV | From standing | Trail rows |
+| --- | --- | --- | --- | --- | --- |
+| Amma's Kitchen | Rs.39,512 | 179 | Rs.220 | 17% | 304 |
+| Bombay Tiffin Room | Rs.12,090 | 128 | Rs.94 | 10% | 160 |
+| Lahori Grill House | Rs.46,625 | 145 | Rs.321 | 14% | 186 |
 
 Three genuinely different businesses -- a cheap high-volume counter beside an expensive
-grill house, and the AOV says so. Platform-wide: 647 rows, 18 agents, **23 real `pay_`
-captures preserved**, 68 decisions gated with no Razorpay call made, 9 refunds issued,
-37 off-menu demand rows.
+grill house, and the AOV says so. Platform-wide: **650 rows, 18 agents, 23 real `pay_`
+captures preserved, 64 decisions gated with no Razorpay call made** (22 counter-offers,
+9 velocity refusals), 9 refunds issued, 37 off-menu demand rows, and 5 orders sitting in
+a kitchen's queue right now.
+
+Both seeders re-anchor on `datetime.now()`, so **re-run them the day you record**. A month
+that ended three days ago reads Rs.0 for "today's revenue" on every board, which is the
+one KPI a judge looks at first.
 
 ## Before a demo, run the check
 
@@ -2595,7 +2672,9 @@ Worth being able to answer rather than being caught by:
   easy to assume and wrong: **cancelling links does not give the quota back.**
   `scripts/free_payment_links.py` cancels stale UNPAID links and is worth running, but it
   frees nothing -- the counter includes cancelled ones. **The only fix is a fresh Razorpay
-  test account.** This account is currently at 30/30.
+  test account.** This account is at **30/30**: 15 cancelled, 10 paid, 5 still open and
+  payable. Those 5 are the only live-payment beat left on these keys, and none of them can
+  be issued by a fresh checkout -- so swap in new test keys before recording.
 - **The other three adapters still default to Amma's kitchen.** AP2, which the buyer
   console uses, carries the chosen kitchen properly. ACP, x402 and MCP accept no
   `merchant_id` yet and resolve to the platform default. It is the same one-line change
