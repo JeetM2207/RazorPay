@@ -611,6 +611,14 @@ class AskBuyerRequest(BaseModel):
     phone: str
     original_request: str
     unmatched: list[str] = []
+    # Which kitchen the agent was ordering from. Absent means the
+    # platform's default -- what every caller written before the
+    # marketplace still sends. Without this, EVERY substitution message
+    # read "Amma's Kitchen: ...", including for a customer ordering from
+    # the grill house or the tiffin room. The tenth wrong-tenant read in
+    # this project, and the second one that lands as customer-facing text
+    # (the first was the Razorpay payment-link description).
+    merchant_id: str | None = None
 
 
 @app.post("/api/buyer-sms/ask")
@@ -621,7 +629,7 @@ def ask_buyer_what_instead(req: AskBuyerRequest) -> dict:
     travels with the request from their own saved profile rather than
     being chosen here.
     """
-    catalog = merchant_config.as_dict()
+    catalog = merchant_config.as_dict(req.merchant_id)
     try:
         conversation = buyer_sms.ask(
             agent_id=req.agent_id,
@@ -642,6 +650,7 @@ class ApproveBuyerRequest(BaseModel):
     cart_label: str
     total_inr: int
     soft_cap_inr: int
+    merchant_id: str | None = None
 
 
 @app.post("/api/buyer-sms/approve")
@@ -649,7 +658,7 @@ def ask_buyer_to_approve(req: ApproveBuyerRequest) -> dict:
     """Ask the customer, on WhatsApp, to approve an order above their own
     soft cap -- rather than only offering the choice on a screen they may
     have walked away from."""
-    catalog = merchant_config.as_dict()
+    catalog = merchant_config.as_dict(req.merchant_id)
     try:
         conversation = buyer_sms.ask_approval(
             agent_id=req.agent_id,

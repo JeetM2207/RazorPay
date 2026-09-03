@@ -1739,6 +1739,7 @@ async function askOverWhatsApp(originalRequest, unmatched) {
         phone: PROFILE.phone,
         original_request: originalRequest,
         unmatched,
+        merchant_id: KITCHEN,
       }),
     });
   } catch (err) {
@@ -1799,6 +1800,7 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
         cart_label: cartText,
         total_inr: totalInr,
         soft_cap_inr: softCap,
+        merchant_id: KITCHEN,
       }),
     });
   } catch (err) {

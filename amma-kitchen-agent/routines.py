@@ -550,6 +550,11 @@ def _ask_first(routine: dict, gate: dict) -> dict:
                 cart_label=f"{_label(routine)} (your usual order)",
                 total_inr=gate["total_inr"],
                 soft_cap_inr=routine.get("routine_cap_inr") or gate["total_inr"],
+                # ask_approval interpolates this directly into the
+                # message with no fallback -- omitted, a customer's
+                # standing-order question literally opened "None: your
+                # agent wants to order...".
+                shop_name=merchants.name_of(_kitchen_of(routine)),
                 why=why,
                 # So a YES can actually place it. Without this the reply
                 # was recorded, answered "going ahead with your order

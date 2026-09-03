@@ -221,3 +221,67 @@ def test_the_payment_link_names_the_kitchen_actually_being_paid(db, monkeypatch)
     )
     assert "Lahori Grill House" in captured["description"]
     assert "Amma's Kitchen" not in captured["description"]
+
+
+# ------------------------------------------- the tenth leak: buyer SMS
+
+def test_the_soft_cap_approval_text_names_the_kitchen_actually_asking():
+    """/api/buyer-sms/approve took no merchant_id at all, so
+    merchant_config.as_dict() always answered for the platform's default
+    kitchen -- every soft-cap approval text read "Amma's Kitchen: your
+    agent wants to order..." no matter which shop the customer was
+    actually ordering from. Customer-facing text, same shape as the
+    payment-link description above.
+    """
+    from fastapi.testclient import TestClient
+    import app as unified
+
+    client = TestClient(unified.app, raise_server_exceptions=False)
+    r = client.post("/api/buyer-sms/approve", json={
+        "agent_id": "leak10-a", "phone": "9990918840",
+        "cart_label": "2x seekh kebab", "total_inr": 605,
+        "soft_cap_inr": 300, "merchant_id": "lahori-grill",
+    })
+    assert r.status_code == 200
+    question = r.json()["question"]
+    assert question.startswith("Lahori Grill House:")
+    assert "Amma" not in question
+
+
+def test_the_substitution_text_names_the_kitchen_actually_asking():
+    """Same leak, the other buyer-SMS endpoint: what to order instead of
+    an off-menu item."""
+    from fastapi.testclient import TestClient
+    import app as unified
+
+    client = TestClient(unified.app, raise_server_exceptions=False)
+    r = client.post("/api/buyer-sms/ask", json={
+        "agent_id": "leak10-b", "phone": "9990918840",
+        "original_request": "2 pizzas", "unmatched": ["pizza"],
+        "merchant_id": "lahori-grill",
+    })
+    assert r.status_code == 200
+    assert r.json()["question"].startswith("Lahori Grill House:")
+
+
+def test_a_standing_orders_approval_text_names_its_own_kitchen(tmp_path, monkeypatch):
+    """routines.py never passed shop_name to ask_approval at all, so a
+    standing order held back for confirmation opened its message with the
+    literal string "None:" rather than a shop name."""
+    import buyer_sms
+
+    captured = {}
+    monkeypatch.setattr(
+        buyer_sms, "ask_approval",
+        lambda **kw: captured.update(kw) or type("C", (), {"as_dict": lambda self: {}})()
+    )
+
+    import routines
+    routine = {
+        "id": "r1", "agent_id": "leak10-c", "phone": "9990918840",
+        "merchant_id": "lahori-grill", "items": [], "days": [], "at_time": "08:00",
+    }
+    gate = {"failures": [{"why": "the price moved"}], "total_inr": 400}
+    routines._ask_first(routine, gate)  # noqa: SLF001 -- exercising the real path
+
+    assert captured.get("shop_name") == "Lahori Grill House"
