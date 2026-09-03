@@ -361,3 +361,35 @@ def test_the_whole_loop_leaves_an_orderable_request(client):
     ).json()
     assert reply == "one masala dosa"
     assert gate["decision"] == "PROCEED"
+
+
+# --------------------------------------------- a real transport can fail
+
+def test_a_failed_send_is_visible_on_the_conversation(monkeypatch):
+    """A configured transport can still fail -- quota exhausted, a stale
+    key, the device offline -- and that used to look identical to a
+    working send: Conversation only recorded `transport`, never whether
+    the send actually succeeded. The console said "Asking you on SMS"
+    and then simply got no reply, with nothing on screen to explain why.
+    """
+    class _Failed:
+        transport = "textbee"
+        error = "429: daily quota reached"
+
+    monkeypatch.setattr(notification_service, "send_sms", lambda *a, **k: _Failed())
+
+    conversation = buyer_sms.ask_approval(
+        agent_id="fail-1", phone="9876543210", cart_label="1x veg thali",
+        total_inr=400, soft_cap_inr=300,
+    )
+    d = conversation.as_dict()
+    assert d["send_error"] == "429: daily quota reached"
+    assert d["transport"] == "textbee"
+
+
+def test_a_successful_send_carries_no_error():
+    conversation = buyer_sms.ask_approval(
+        agent_id="ok-1", phone="9876543210", cart_label="1x veg thali",
+        total_inr=400, soft_cap_inr=300,
+    )
+    assert conversation.as_dict()["send_error"] is None

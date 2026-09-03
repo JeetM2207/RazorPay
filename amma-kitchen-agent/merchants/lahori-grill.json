@@ -25,7 +25,7 @@
       "name": "seekh_kebab",
       "category": "grill",
       "price_inr": 280,
-      "stock": 19,
+      "stock": 18,
       "list_price_inr": 280,
       "sale": false
     },
@@ -41,7 +41,7 @@
       "name": "mutton_biryani",
       "category": "mains",
       "price_inr": 340,
-      "stock": 12,
+      "stock": 10,
       "list_price_inr": 340,
       "sale": false
     },
@@ -65,7 +65,7 @@
       "name": "roomali_roti",
       "category": "breads",
       "price_inr": 35,
-      "stock": 55,
+      "stock": 52,
       "list_price_inr": 35,
       "sale": false
     },

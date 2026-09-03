@@ -75,6 +75,14 @@ class Conversation:
     # asked -- and the REASON lives in this text and nowhere else. A
     # standing order held back by a price change says so here.
     question: str = ""
+    # notification_service's own verdict on the send, if the transport
+    # wasn't mock. Without this a real transport that fails -- quota
+    # exhausted, device offline, a bad phone number -- looked IDENTICAL
+    # to one that worked: the console still said "Asking you on SMS" with
+    # nothing to tell a demo runner the message never left the building.
+    # Recorded rather than raised, for the same reason every transport
+    # failure here is: it must never be the thing that breaks an order.
+    send_error: str | None = None
 
     def as_dict(self) -> dict:
         return {
@@ -105,6 +113,7 @@ class Conversation:
             "code": self.code,
             "question": self.question,
             "routine_id": self.routine_id,
+            "send_error": self.send_error,
         }
 
 
@@ -207,6 +216,7 @@ def ask(
         transport=sent.transport,
         code=code,
         question=body,
+        send_error=sent.error,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation
@@ -263,6 +273,7 @@ def ask_approval(
         code=code,
         question=body,
         routine_id=routine_id,
+        send_error=sent.error,
     )
     _CONVERSATIONS[agent_id] = conversation
     return conversation

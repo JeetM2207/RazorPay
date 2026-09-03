@@ -1755,18 +1755,32 @@ async function askOverWhatsApp(originalRequest, unmatched) {
   // configured and asked them to answer on screen instead. The channel
   // name comes from the server too -- only it knows whether a Twilio
   // sender is addressing SMS or WhatsApp.
-  const live = conversation.live;
+  //
+  // A configured transport can still FAIL to send -- quota exhausted, a
+  // stale key in a process that was not restarted, the phone offline --
+  // and until send_error existed that looked identical to a working
+  // send: the console said "Asking you on SMS" and then simply never
+  // got a reply, with nothing on screen to say why. A demo that quietly
+  // degrades is worse than one that stops, so a failed send is treated
+  // as not-live: the error is shown and the fallback answer-here box
+  // opens immediately instead of waiting on a message that never left.
+  const live = conversation.live && !conversation.send_error;
   const via = conversation.channel || "SMS";
-  log(
-    `&gt; Messaging you on ${via} at <b>${conversation.phone}</b> with what they do have.`,
-    "warn"
-  );
+  if (conversation.send_error) {
+    log(`&gt; Tried to message you on ${via}: <b>${escHtml(conversation.send_error)}</b>`, "err");
+  } else {
+    log(
+      `&gt; Messaging you on ${via} at <b>${conversation.phone}</b> with what they do have.`,
+      "warn"
+    );
+  }
   setState("ASKING YOU", "#FFB020");
 
   if (!live) {
-    // Nothing configured. Show the message that would have gone out and
-    // take the answer here, so the loop is demonstrable offline.
-    log("&gt; (No message transport configured — answer here instead.)", "quiet");
+    // Nothing configured, or the send failed. Show the message that
+    // would have gone out and take the answer here, so the loop stays
+    // demonstrable either way.
+    log("&gt; (Answer here instead.)", "quiet");
   }
 
   const reply = await waitForWhatsAppReply(live);
@@ -1810,10 +1824,16 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
     );
   }
 
-  const live = conversation.live;
+  // See askApprovalOverWhatsApp's twin above: a configured transport can
+  // still fail to send, and that must not look like a working one.
+  const live = conversation.live && !conversation.send_error;
   const via = conversation.channel || "SMS";
-  log(`&gt; Asking you on ${via} at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
-  if (!live) log("&gt; (No message transport configured — answer here instead.)", "quiet");
+  if (conversation.send_error) {
+    log(`&gt; Tried to ask you on ${via}: <b>${escHtml(conversation.send_error)}</b>`, "err");
+  } else {
+    log(`&gt; Asking you on ${via} at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
+  }
+  if (!live) log("&gt; (Answer here instead.)", "quiet");
   setState("ASKING YOU", "#FFB020");
 
   return await waitForApproval(live, totalInr);

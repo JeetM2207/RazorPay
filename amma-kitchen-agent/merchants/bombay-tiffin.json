@@ -65,7 +65,7 @@
       "name": "cutting_chai",
       "category": "beverages",
       "price_inr": 15,
-      "stock": 88,
+      "stock": 86,
       "list_price_inr": 15,
       "sale": false
     },
@@ -73,7 +73,7 @@
       "name": "solkadhi",
       "category": "beverages",
       "price_inr": 40,
-      "stock": 35,
+      "stock": 33,
       "list_price_inr": 40,
       "sale": false
     },
@@ -81,7 +81,7 @@
       "name": "shrikhand",
       "category": "sweets",
       "price_inr": 70,
-      "stock": 27,
+      "stock": 26,
       "list_price_inr": 70,
       "sale": false
     }
