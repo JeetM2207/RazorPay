@@ -94,6 +94,43 @@ class SentMessage:
     audience: str = "merchant"
 
 
+def channel_of(transport: str) -> str:
+    """What to CALL the thing a message went out on, for a human reading a
+    screen.
+
+    This exists because the consoles were naming the channel themselves,
+    and they named it "WhatsApp" unconditionally. TextBee is plain SMS
+    over your own SIM -- so a customer whose phone had just buzzed with a
+    text was told the agent was "messaging you on WhatsApp", which is the
+    kind of small wrongness that makes a viewer doubt the parts they
+    cannot check.
+
+    Decided here rather than in JavaScript because this module is the only
+    thing that knows: with Twilio the same account sends SMS or WhatsApp
+    depending on whether the configured sender carries the `whatsapp:`
+    scheme, and a page has no way to see that.
+    """
+    if transport == "textbee":
+        return "SMS"
+    if transport == "meta":
+        return "WhatsApp"
+    if transport == "twilio":
+        return "WhatsApp" if _FROM.startswith("whatsapp:") else "SMS"
+    return "SMS"
+
+
+def is_live(transport: str) -> bool:
+    """Did this actually leave the building?
+
+    Every real transport is live; only the mock is not. The consoles used
+    to ask `transport === "twilio"`, which was true when Twilio was the
+    only one and quietly wrong the moment TextBee and Meta were added --
+    a real SMS went out, the console decided nothing had, and it told the
+    customer to answer on screen instead.
+    """
+    return bool(transport) and transport != "mock"
+
+
 _OUTBOX: list[SentMessage] = []
 
 
@@ -105,6 +142,8 @@ def outbox(limit: int = 20) -> list[dict]:
             "to": m.to,
             "body": m.body,
             "transport": m.transport,
+            "channel": channel_of(m.transport),
+            "live": is_live(m.transport),
             "sent_at": m.sent_at,
             "error": m.error,
             "audience": m.audience,

@@ -426,7 +426,7 @@
           <h2>Messages sent to you
             <span class="badge badge-mute" id="smsTransport">mock</span></h2>
           <p class="note" style="margin:-4px 0 12px" id="phoneSub">
-            Delivered over WhatsApp when Twilio is configured.
+            Delivered over SMS or WhatsApp once a transport is configured.
           </p>
           <div class="msgs">
             <div class="msg-feed" id="smsOutbox"></div>
@@ -897,14 +897,20 @@ async function renderSms() {
   const body = await api("/api/sms");
   if (!changed("sms", body)) return;
 
-  const live = body.transport === "twilio";
+  // Any real transport, not one named one, and named by what it actually
+  // is -- see notification_service.channel_of / is_live. This badge used
+  // to say "live via Twilio" unconditionally, which was wrong for
+  // TextBee (plain SMS over your own SIM, not WhatsApp) and for Meta the
+  // moment either was the configured transport.
+  const live = body.live !== undefined ? body.live : body.transport !== "mock";
+  const via = body.channel || "SMS";
   const badge = $("smsTransport");
-  badge.textContent = live ? "live via Twilio" : "mock outbox";
+  badge.textContent = live ? `live via ${esc(body.transport)}` : "mock outbox";
   badge.className = "badge " + (live ? "badge-ok" : "badge-mute");
   $("phoneSub").textContent = live
-    ? "Delivered over WhatsApp via Twilio."
-    : "Twilio is off, so these are shown here instead of being sent. The reply box below "
-      + "posts to the same endpoint a real WhatsApp reply does.";
+    ? `Delivered over ${via} via ${esc(body.transport)}.`
+    : "No transport configured, so these are shown here instead of being sent. The reply box "
+      + "below posts to the same endpoint a real reply does.";
 
   /* HER messages only.
 

@@ -89,6 +89,16 @@ class Conversation:
             "answered": self.reply is not None,
             "consumed": self.consumed,
             "transport": self.transport,
+            # What to CALL it, and whether it actually went out. The buyer
+            # console used to decide both itself with
+            # `transport === "twilio"`, which was true when Twilio was the
+            # only transport and silently wrong the moment TextBee and
+            # Meta were added: a real SMS reached the customer's phone
+            # while the console announced no account was configured. Only
+            # notification_service knows which transports are live and
+            # what a Twilio sender is actually addressing.
+            "channel": notification_service.channel_of(self.transport),
+            "live": notification_service.is_live(self.transport),
             # The buyer console renders this beside the message so the
             # mock path stays usable: the customer reads the code off the
             # screen exactly as they would off their phone.

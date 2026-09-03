@@ -7,14 +7,14 @@
   },
   "mandate": {
     "budget_cap_inr": 900,
-    "human_confirm_threshold_inr": 500,
+    "human_confirm_threshold_inr": 400,
     "allowed_categories": [
       "grill",
       "mains",
       "breads",
       "beverages"
     ],
-    "flexible_margin_pct": 0.05
+    "flexible_margin_pct": 0.1
   },
   "velocity": {
     "max_orders_per_hour": 5,
@@ -25,7 +25,7 @@
       "name": "seekh_kebab",
       "category": "grill",
       "price_inr": 280,
-      "stock": 17,
+      "stock": 19,
       "list_price_inr": 280,
       "sale": false
     },
@@ -49,7 +49,7 @@
       "name": "dal_makhani",
       "category": "mains",
       "price_inr": 190,
-      "stock": 20,
+      "stock": 23,
       "list_price_inr": 190,
       "sale": false
     },

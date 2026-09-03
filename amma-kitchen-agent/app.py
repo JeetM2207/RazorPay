@@ -1063,11 +1063,19 @@ def growth_insights(request: Request, hours: int = 24) -> dict:
 def sms_state() -> dict:
     """What the merchant console shows in place of a real phone: the
     messages that went out, and what is still awaiting a reply."""
+    transport = ("textbee" if notification_service.TEXTBEE_CONFIGURED
+                 else "meta" if notification_service.META_CONFIGURED
+                 else "twilio" if notification_service.TWILIO_CONFIGURED
+                 else "mock")
     return {
-        "transport": ("textbee" if notification_service.TEXTBEE_CONFIGURED
-                      else "meta" if notification_service.META_CONFIGURED
-                      else "twilio" if notification_service.TWILIO_CONFIGURED
-                      else "mock"),
+        "transport": transport,
+        # channel/live so the console can stop deciding this itself. It
+        # used to say "live via Twilio" unconditionally, which was wrong
+        # for TextBee (plain SMS, not WhatsApp) and for Meta the moment
+        # either was configured -- correct for exactly the one transport
+        # it was written for and silently wrong for the other two.
+        "channel": notification_service.channel_of(transport),
+        "live": notification_service.is_live(transport),
         "outbox": notification_service.outbox(),
         "escalations": escalations.pending(),
     }

@@ -1045,7 +1045,8 @@ const escHtml = (v) => String(v ?? "").replace(/[&<>"']/g,
 function customerSafeReason(reason) {
   const text = String(reason || "");
   if (text.includes("human confirmation threshold")) {
-    return "Amma confirms an order this size herself. Paying now; she answers straight after.";
+    return escHtml(kitchenName()) + " confirms an order this size themselves. "
+      + "Paying now; they answer straight after.";
   }
   if (text.includes("exceeds budget cap")) {
     return "That is larger than she takes in a single order.";
@@ -1668,7 +1669,7 @@ async function deploy() {
       }),
     })).intent_mandate;
 
-    log(`&gt; Intent Mandate opened. Amma's AI sees me as trust tier <b>${mandate.decision_detail.trust_tier}</b>.`, "quiet");
+    log(`&gt; Intent Mandate opened. ${escHtml(kitchenName())} sees me as trust tier <b>${mandate.decision_detail.trust_tier}</b>.`, "quiet");
     mandate = await handleMerchantResponse(mandate, hardCap);
     if (!mandate) return;
 
@@ -1741,22 +1742,30 @@ async function askOverWhatsApp(originalRequest, unmatched) {
       }),
     });
   } catch (err) {
-    log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
+    log("&gt; Couldn't reach you: " + err.message, "err");
     setState("NOTHING TO ORDER", "#FF7A5C"); stepFailed();
     return null;
   }
 
-  const live = conversation.transport === "twilio";
+  // Live means "it actually left the building" -- every real transport,
+  // not one named one. This used to read `transport === "twilio"`, which
+  // went wrong the moment TextBee and Meta were added: a real SMS landed
+  // on the customer's phone while the console announced no account was
+  // configured and asked them to answer on screen instead. The channel
+  // name comes from the server too -- only it knows whether a Twilio
+  // sender is addressing SMS or WhatsApp.
+  const live = conversation.live;
+  const via = conversation.channel || "SMS";
   log(
-    `&gt; Messaging you on WhatsApp at <b>${conversation.phone}</b> with what she does have.`,
+    `&gt; Messaging you on ${via} at <b>${conversation.phone}</b> with what they do have.`,
     "warn"
   );
   setState("ASKING YOU", "#FFB020");
 
   if (!live) {
-    // No Twilio configured. Show the message that would have gone out and
+    // Nothing configured. Show the message that would have gone out and
     // take the answer here, so the loop is demonstrable offline.
-    log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
+    log("&gt; (No message transport configured — answer here instead.)", "quiet");
   }
 
   const reply = await waitForWhatsAppReply(live);
@@ -1793,15 +1802,16 @@ async function askApprovalOverWhatsApp(cartText, totalInr, softCap) {
       }),
     });
   } catch (err) {
-    log("&gt; Couldn't reach you on WhatsApp: " + err.message, "err");
+    log("&gt; Couldn't reach you: " + err.message, "err");
     return await askHuman(
       `This costs <b>${rupee(totalInr)}</b>, above your ${rupee(softCap)} soft cap. Approve it?`
     );
   }
 
-  const live = conversation.transport === "twilio";
-  log(`&gt; Asking you on WhatsApp at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
-  if (!live) log("&gt; (No WhatsApp account configured — answer here instead.)", "quiet");
+  const live = conversation.live;
+  const via = conversation.channel || "SMS";
+  log(`&gt; Asking you on ${via} at <b>${conversation.phone}</b> to approve ${rupee(totalInr)}.`, "warn");
+  if (!live) log("&gt; (No message transport configured — answer here instead.)", "quiet");
   setState("ASKING YOU", "#FFB020");
 
   return await waitForApproval(live, totalInr);
@@ -1934,7 +1944,7 @@ async function handleMerchantResponse(mandate, hardCap) {
   const d = mandate.decision_detail;
 
   if (d.decision === "COUNTER_OFFER" && d.alternatives.length) {
-    log(`&gt; Amma countered: ${d.reason}.`, "warn");
+    log(`&gt; ${escHtml(kitchenName())} countered: ${d.reason}.`, "warn");
     const alt = d.alternatives[0];
     await step(`Her best alternative: ${alt.map((l) => `${l.qty}x ${titleize(l.item)}`).join(", ")}. Taking it.`, "step", 500);
     mandate = (await api(`/ap2/intent-mandates/${mandate.id}/accept-alternative`, {
@@ -2022,7 +2032,7 @@ async function settle(mandate, hardCap) {
   }
 
   log("&gt; Razorpay confirms the payment captured.", "ok");
-  log("&gt; Amma has been notified. If she cannot make it, the refund is automatic.", "ok");
+  log(`&gt; ${escHtml(kitchenName())} has been notified. If they cannot make it, the refund is automatic.`, "ok");
   log("&gt; Watch this screen — you will be told either way.", "quiet");
   setState("COMPLETE", "#3DE8A0");
   stepsDone();
@@ -2171,7 +2181,7 @@ const TX_SHAPE = {
   payment:   { cls: "",    mark: "\u2191", verb: "Paid" },
   simulated: { cls: "sim", mark: "\u2191", verb: "Settled autonomously" },
   refund:    { cls: "in",  mark: "\u2193", verb: "Refunded" },
-  reversal:  { cls: "in",  mark: "\u2193", verb: "Reversed by Amma's Kitchen" },
+  reversal:  { cls: "in",  mark: "\u2193", verb: "Reversed by the kitchen" },
 };
 
 const TX_NOTE = {

@@ -338,6 +338,7 @@ def create_payment_for_cart(
     event_id: int,
     cart: list[tuple[str, int]],
     skip_reevaluation: bool = False,
+    merchant_id: str | None = None,
 ) -> dict:
     """Defense in depth: re-validates the cart right now, at payment time,
     rather than trusting a decision made moments earlier. Only ever called
@@ -348,18 +349,32 @@ def create_payment_for_cart(
     record_human_override), re-running evaluate() would just say ESCALATE
     again forever -- the human's explicit, audited decision is what
     authorizes payment in that case, not the algorithmic re-check.
+
+    `merchant_id` is WHICH KITCHEN is being paid, and every read below
+    needs it. This function had none, so the re-validation priced the
+    cart against the platform's DEFAULT menu whoever was selling: a
+    grill-house order for a dish Amma does not stock died on a bare
+    `KeyError: 'seekh_kebab'`, surfacing to the customer as HTTP 500
+    immediately after their screen said the payment mandate was locked.
+
+    It is the ninth wrong-tenant read in this project and the first on
+    the money path -- the eight before it were wrong prices and wrong
+    queues, and this one is a sale that cannot complete at all. The
+    lesson is the same one every time: a config read with no kitchen is
+    a config read that silently means "the first one".
     """
     db_path = audit_log.DEFAULT_DB_PATH
     if skip_reevaluation:
-        total_inr = sum(
-            merchant_config.current_menu()[name].price_inr * qty for name, qty in cart
-        )
+        menu = merchant_config.current_menu(merchant_id)
+        total_inr = sum(menu[name].price_inr * qty for name, qty in cart)
     else:
         adjusted_mandate, _ = trust.trust_adjusted_mandate(
-            agent_id, merchant_config.current_mandate(), db_path=db_path
+            agent_id, merchant_config.current_mandate(merchant_id),
+            db_path=db_path, merchant_id=merchant_id,
         )
         result = negotiation.evaluate(
-            cart, mandate=adjusted_mandate, menu=merchant_config.current_menu()
+            cart, mandate=adjusted_mandate,
+            menu=merchant_config.current_menu(merchant_id),
         )
         if result.decision != negotiation.Decision.APPROVE:
             raise ValueError(f"cart no longer approved at payment time: {result.decision}")
@@ -369,7 +384,12 @@ def create_payment_for_cart(
     try:
         link = razorpay_client.create_payment_link(
             amount_inr=total_inr,
-            description=f"Amma's Kitchen order: {description}",
+            # The kitchen actually being paid. This said "Amma's Kitchen"
+            # for every order on the platform -- and unlike the leaks
+            # above, this string is on the RAZORPAY PAGE the customer
+            # pays on, so a grill-house customer was asked to pay a
+            # different shop.
+            description=f"{merchants.name_of(merchant_id)} order: {description}",
             reference_id=f"order-{event_id}-{uuid.uuid4().hex[:6]}",
         )
     except Exception as exc:

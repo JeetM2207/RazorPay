@@ -436,6 +436,11 @@ def create_payment_mandate(cart_mandate_id: str) -> dict:
         # already made and already actioned by taking the money; re-running
         # the check here would escalate it again forever.
         skip_reevaluation=cart_mandate["human_overridden"] or bool(intent.get("pay_first_pending")),
+        # The kitchen this chain was opened against, carried on the intent
+        # mandate since the moment it opened. Without it the re-validation
+        # priced the cart against the platform's default menu and died on
+        # a KeyError for any dish that kitchen alone sells.
+        merchant_id=intent.get("merchant_id"),
     )
 
     # From here the order is in the shared lifecycle: the webhook marks it

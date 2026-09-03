@@ -165,3 +165,59 @@ def test_the_platform_signs_its_messages_with_both_names():
     assert merchants.message_prefix("Amma's Kitchen").startswith(merchants.Platform.name)
     assert "Amma's Kitchen" in merchants.message_prefix("Amma's Kitchen")
     assert merchants.message_prefix() == merchants.Platform.name
+
+
+# ----------------------------------------------- the ninth leak: payment
+
+def test_paying_for_another_kitchens_dish_does_not_500(db, monkeypatch):
+    """The re-validation `create_payment_for_cart` runs at payment time
+    had no `merchant_id`, so it priced every cart against the platform's
+    DEFAULT menu whoever was selling. A grill-house order for
+    `seekh_kebab` -- a dish Amma does not stock -- died on a bare
+    `KeyError: 'seekh_kebab'` immediately after the customer's screen said
+    the payment mandate was locked. Unlike the eight leaks before it,
+    this one was on the money path: nothing wrong with the order, and it
+    could not be paid for at all.
+    """
+    fake_link = {"id": "plink_fake999", "short_url": "https://rzp.io/rzp/fake999"}
+    monkeypatch.setattr(orchestrator.razorpay_client, "create_payment_link",
+                        lambda **kwargs: fake_link)
+
+    assert "seekh_kebab" not in merchant_config.current_menu()
+    assert "seekh_kebab" in merchant_config.current_menu("lahori-grill")
+
+    # Kept under Lahori's own confirmation threshold, so the cart clears
+    # to APPROVE and the payment step is the thing actually under test --
+    # a re-priced escalation is a separate path (skip_reevaluation).
+    detail = order(db, "lahori-grill", [("seekh_kebab", 1), ("butter_naan", 1)])
+    assert detail["decision"] == "APPROVE"
+
+    link = orchestrator.create_payment_for_cart(
+        "Jeet's Agent", detail["event_id"],
+        [("seekh_kebab", 1), ("butter_naan", 1)],
+        merchant_id="lahori-grill",
+    )
+    assert link == fake_link
+
+
+def test_the_payment_link_names_the_kitchen_actually_being_paid(db, monkeypatch):
+    """The description on the Razorpay page a customer pays on said
+    "Amma's Kitchen" for every order on the platform. Unlike the other
+    leaks, this string is customer-facing on Razorpay's own page -- a
+    grill-house customer was asked to pay a different shop's name."""
+    captured = {}
+
+    def fake_create_payment_link(**kwargs):
+        captured.update(kwargs)
+        return {"id": "plink_fakeXYZ", "short_url": "https://rzp.io/rzp/fakeXYZ"}
+
+    monkeypatch.setattr(orchestrator.razorpay_client, "create_payment_link",
+                        fake_create_payment_link)
+
+    detail = order(db, "lahori-grill", [("seekh_kebab", 1)])
+    orchestrator.create_payment_for_cart(
+        "Jeet's Agent", detail["event_id"], [("seekh_kebab", 1)],
+        merchant_id="lahori-grill",
+    )
+    assert "Lahori Grill House" in captured["description"]
+    assert "Amma's Kitchen" not in captured["description"]
