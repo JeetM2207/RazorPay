@@ -213,18 +213,66 @@ def check_razorpay(public_url: str | None) -> None:
 # ------------------------------------------------------------------ messaging
 
 def check_messaging() -> None:
-    sms_enabled = (ENV.get("SMS_ENABLED") or "true").strip().lower() not in ("false", "0", "no")
-    twilio_ready = all(ENV.get(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"))
+    """Checks whichever transport is ACTUALLY going to be used.
 
+    This used to be Twilio-only, written back when Twilio was the only
+    transport -- so once TextBee and Meta were added it kept probing and
+    warning about Twilio's trial limits even on a run where TextBee was
+    the one actually sending, and Twilio was never going to be touched.
+    Mirrors notification_service's own precedence (TextBee -> Meta ->
+    Twilio -> mock) instead of assuming which one is live.
+    """
+    sms_enabled = (ENV.get("SMS_ENABLED") or "true").strip().lower() not in ("false", "0", "no")
     if not sms_enabled:
         report("WARN", "messaging",
                "SMS_ENABLED=false -- the MOCK transport is on. Right for testing; "
                "set it to true for the demo.")
         return
-    if not twilio_ready:
-        report("WARN", "messaging", "Twilio not configured -- falling back to the mock outbox")
+
+    merchant_phone = bool(ENV.get("MERCHANT_PHONE"))
+    textbee_ready = all(ENV.get(k) for k in ("TEXTBEE_API_KEY", "TEXTBEE_DEVICE_ID")) and merchant_phone
+    meta_ready = all(ENV.get(k) for k in ("META_PHONE_NUMBER_ID", "META_ACCESS_TOKEN")) and merchant_phone
+    twilio_ready = all(ENV.get(k) for k in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM"))
+
+    if textbee_ready:
+        _check_textbee()
+    elif meta_ready:
+        report("PASS", "messaging", "Meta WhatsApp Cloud API configured")
+    elif twilio_ready:
+        _check_twilio()
+    else:
+        report("WARN", "messaging", "no transport configured -- falling back to the mock outbox")
+
+
+def _check_textbee() -> None:
+    try:
+        import requests
+
+        api = ENV.get("TEXTBEE_API_BASE", "https://api.textbee.dev/api/v1")
+        device = ENV["TEXTBEE_DEVICE_ID"]
+        r = requests.get(f"{api}/gateway/devices/{device}",
+                         headers={"x-api-key": ENV["TEXTBEE_API_KEY"]}, timeout=15)
+        r.raise_for_status()
+        data = r.json()["data"]
+    except Exception as exc:
+        report("FAIL", "TextBee", str(exc)[:110])
         return
 
+    if not data.get("enabled", True):
+        report("FAIL", "TextBee", "device is disabled in the TextBee dashboard")
+        return
+    if not data.get("receiveSMSEnabled"):
+        # Only sending would work; a reply -- YES/NO, an escalation
+        # ACCEPT/REJECT -- would arrive on the phone and never reach the
+        # server. Toggled inside the TextBee app itself, not via the API.
+        report("WARN", "TextBee",
+               "receiveSMSEnabled is off on the device -- replies won't reach the webhook. "
+               "Enable 'Receive SMS' in the TextBee app.")
+        return
+    report("PASS", "TextBee", f"{data.get('name', 'device')} online, receiving enabled")
+
+
+def _check_twilio() -> None:
     try:
         from twilio.rest import Client
 
