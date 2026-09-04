@@ -7,7 +7,7 @@
   },
   "mandate": {
     "budget_cap_inr": 900,
-    "human_confirm_threshold_inr": 400,
+    "human_confirm_threshold_inr": 500,
     "allowed_categories": [
       "grill",
       "mains",
@@ -17,8 +17,8 @@
     "flexible_margin_pct": 0.1
   },
   "velocity": {
-    "max_orders_per_hour": 5,
-    "max_spend_per_day_inr": 4000
+    "max_orders_per_hour": 7,
+    "max_spend_per_day_inr": 5000
   },
   "menu": {
     "seekh_kebab": {

@@ -152,3 +152,59 @@ def test_the_fallback_is_pure_of_models_and_money(client):
     source = open(mc.__file__, encoding="utf-8").read()
     for forbidden in ("llm_client", "openai", "anthropic", "razorpay", "requests.post"):
         assert forbidden not in source, f"the offline parser reaches {forbidden}"
+
+
+# ------------------------------------ the fallback itself must not crash
+
+def test_a_real_provider_failure_still_falls_back_rather_than_500ing(monkeypatch):
+    """The exact failure caught live: the model out of credit, on a
+    NON-default kitchen. `_why_the_model_failed(exc, merchant_id=...)`
+    was called with a kwarg that function does not accept -- meant for
+    `_parse_without_a_model` instead -- so every fallback on every
+    kitchen threw a bare TypeError and answered 500. "The model is
+    unreachable, degrade gracefully" turned into a harder failure than
+    the one it exists to catch, mid-demo, on camera.
+    """
+    import llm_client
+
+    def _out_of_credit(*a, **k):
+        raise Exception(
+            "Error code: 402 - {'error': {'message': 'This request requires "
+            "more credits...'}}"
+        )
+
+    monkeypatch.setattr(llm_client, "call_with_forced_tool", _out_of_credit)
+
+    client = TestClient(app.app)
+    r = client.post("/api/parse-cart", json={
+        "text": "Order 2 seekh kebab, 1 butter naan",
+        "merchant_id": "lahori-grill",
+    })
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["parsed_by"] == "menu-matching"
+    assert out["fallback_reason"] == "the model provider is out of credit"
+    # Matched against LAHORI's menu, not the default kitchen's -- the
+    # whole reason merchant_id has to actually reach the fallback.
+    assert out["items"] == [
+        {"item_id": "seekh_kebab", "qty": 2},
+        {"item_id": "butter_naan", "qty": 1},
+    ]
+
+
+def test_a_provider_failure_on_the_default_kitchen_also_survives(monkeypatch):
+    import llm_client
+
+    monkeypatch.setattr(
+        llm_client, "call_with_forced_tool",
+        lambda *a, **k: (_ for _ in ()).throw(Exception("401 invalid api key")))
+
+    merchant_config.save(
+        profile_in={"shop_name": "Amma's Kitchen"},
+        mandate_in={"budget_cap_inr": 500, "human_confirm_threshold_inr": 400},
+        menu_in=[{"title": "Veg Thali", "category": "meals", "price_inr": 150, "stock": 20}],
+    )
+    client = TestClient(app.app)
+    r = client.post("/api/parse-cart", json={"text": "2 veg thali"})
+    assert r.status_code == 200, r.text
+    assert r.json()["fallback_reason"] == "the model key was rejected"

@@ -530,7 +530,15 @@ def parse_cart(req: ParseCartRequest) -> dict:
     except HTTPException:
         raise
     except Exception as exc:
-        return _parse_without_a_model(req.text, _why_the_model_failed(exc, merchant_id=req.merchant_id))
+        # merchant_id belongs on the FALLBACK matcher -- it is what picks
+        # which kitchen's menu to match against. It was attached to
+        # _why_the_model_failed instead, which takes only the exception,
+        # so every fallback (the whole point of this except-block) threw
+        # a TypeError and turned "the model is unreachable, degrading
+        # gracefully" into a bare HTTP 500 -- worse than the failure it
+        # exists to catch.
+        return _parse_without_a_model(
+            req.text, _why_the_model_failed(exc), merchant_id=req.merchant_id)
 
 
 def _why_the_model_failed(exc: Exception) -> str:
