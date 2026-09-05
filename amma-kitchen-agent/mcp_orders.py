@@ -87,6 +87,17 @@ def _transition(order: dict, status: str, reason: str) -> int:
     Append-only on purpose: a judge reading the trail sees payment, then
     the decision being actioned, then the merchant's answer, each
     timestamped, instead of one row whose history has been overwritten.
+
+    `merchant_id` is read off the order's own origin row and carried
+    forward -- without it every row this function has ever written
+    defaulted to `record_event`'s None, so a non-default kitchen's ENTIRE
+    post-escalation lifecycle (AWAITING_PAYMENT, PAID,
+    PENDING_MERCHANT_APPROVAL, accept/reject, refund) vanished from her
+    queue while remaining fully visible platform-wide. It was invisible
+    on the default kitchen for the opposite reason: NULL matches the
+    default via scope()'s own edge case, so the same bug was silently
+    harmless there. The eleventh wrong-tenant read in this project, and
+    the first to hide an entire paid order rather than a wrong number.
     """
     return audit_log.record_event(
         agent_id=order["agent_id"],
@@ -97,6 +108,7 @@ def _transition(order: dict, status: str, reason: str) -> int:
         total_inr=order["total_inr"],
         db_path=_db(),
         order_ref=order["id"],
+        merchant_id=order.get("merchant_id"),
     )
 
 

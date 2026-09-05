@@ -237,3 +237,56 @@ def test_pay_first_is_not_recorded_as_a_human_override(client, monkeypatch):
     reasons = [e["reason"] for e in
                audit_log.get_events_for_agent("pf-noforge", db_path=audit_log.DEFAULT_DB_PATH)]
     assert not any("human override" in r for r in reasons), reasons
+
+
+def test_a_non_default_kitchens_paid_lifecycle_reaches_its_own_queue(client, monkeypatch):
+    """The eleventh leak, caught live: a real order on Lahori Grill House
+    escalated, was paid for, and never appeared in Lahori's queue --
+    only in the platform-wide (unscoped) view.
+
+    mcp_orders._transition() writes every AWAITING_PAYMENT / PAID /
+    PENDING_MERCHANT_APPROVAL row via `audit_log.record_event()` with no
+    merchant_id, so every one of them defaulted to None regardless of
+    which kitchen the ESCALATE row that started the order carried. On
+    the DEFAULT kitchen this was invisible -- NULL matches the default
+    via scope()'s own edge case -- which is exactly why it went
+    undetected until a real order on a NON-default kitchen exposed it.
+
+    This drives the real endpoints end to end (not hand-built rows,
+    which is how the earlier per-kitchen-queue tests missed this) and
+    asserts every row the lifecycle writes carries the kitchen.
+    """
+    import mcp_orders
+
+    _mock_payment_link(monkeypatch)
+    mandate = client.post("/ap2/intent-mandates", json={
+        "agent_id": "leak11", "merchant_id": "lahori-grill",
+        "intent": {"items": [{"item_id": "seekh_kebab", "qty": 2},
+                             {"item_id": "butter_naan", "qty": 1}]},
+    }).json()["intent_mandate"]
+    assert mandate["status"] == "requires_human"
+
+    out = client.post(f"/ap2/intent-mandates/{mandate['id']}/settle-pending-confirmation")
+    assert out.status_code == 200
+    event_id = mandate["decision_detail"]["event_id"]
+
+    cart_mandate = client.post(
+        f"/ap2/intent-mandates/{mandate['id']}/cart-mandate"
+    ).json()["cart_mandate"]
+    client.post(f"/ap2/cart-mandates/{cart_mandate['id']}/payment-mandate")
+    assert mcp_orders.status_of(event_id) == mcp_orders.AWAITING_PAYMENT
+
+    # Stands in for the Razorpay webhook confirming the capture -- webhook
+    # signature verification is exercised elsewhere; what this test needs
+    # is the same on_payment_captured() a real delivery calls.
+    order = mcp_orders.get_order(event_id)
+    mcp_orders.on_payment_captured(order, "pay_test_leak11")
+    assert mcp_orders.status_of(event_id) == mcp_orders.PENDING_MERCHANT_APPROVAL
+
+    rows = audit_log.get_order_rows(event_id, db_path=audit_log.DEFAULT_DB_PATH)
+    assert len(rows) >= 3, "expected the ESCALATE row plus at least two lifecycle rows"
+    assert all(r["merchant_id"] == "lahori-grill" for r in rows), rows
+
+    pending = mcp_orders.pending_orders(merchant_id="lahori-grill")
+    assert event_id in [o["id"] for o in pending]
+    assert event_id not in [o["id"] for o in mcp_orders.pending_orders(merchant_id="ammas-kitchen")]

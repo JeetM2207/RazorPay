@@ -17,15 +17,15 @@
     "flexible_margin_pct": 0.1
   },
   "velocity": {
-    "max_orders_per_hour": 7,
-    "max_spend_per_day_inr": 5000
+    "max_orders_per_hour": 5,
+    "max_spend_per_day_inr": 4000
   },
   "menu": {
     "seekh_kebab": {
       "name": "seekh_kebab",
       "category": "grill",
       "price_inr": 280,
-      "stock": 18,
+      "stock": 16,
       "list_price_inr": 280,
       "sale": false
     },
@@ -57,7 +57,7 @@
       "name": "butter_naan",
       "category": "breads",
       "price_inr": 45,
-      "stock": 70,
+      "stock": 69,
       "list_price_inr": 45,
       "sale": false
     },
