@@ -441,7 +441,7 @@ Rather than be caught out by them:
 
 ## 🎬 Demo
 
-**Watch the 5-minute walkthrough:** *[add your video link here]*
+**Watch the 5-minute walkthrough:** *https://drive.google.com/file/d/1y2MMTL_xwML6rWe_pwkRAnQTqy6XgCIe/view?usp=sharing*
 
 Two people, two screens, one core: a customer's agent gets refused by its own rules before the kitchen is ever contacted, an escalation reaches the merchant's phone mid-conversation, the buyer's screen unblocks itself the instant she answers, and a real Claude connection — not a script anyone here wrote — places an order through the identical gate everything else goes through.
 
