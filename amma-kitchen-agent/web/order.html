@@ -2446,7 +2446,15 @@ function countUp(el, target, { duration = 1100, prefix = "", suffix = "" } = {})
   // Once per page load. These panels poll, and a number that restarts
   // from zero every few seconds is a distraction, not an animation.
   if (el.dataset.counted === String(target)) return;
+  // Where this number actually sits right now, not zero -- see
+  // merchant.html's copy of this function for why: without it, any KPI
+  // here that can legitimately go DOWN (a refund landing, a decline)
+  // flashed to 0 and counted back up to the lower figure instead of
+  // visibly counting down, which reads as the board resetting rather
+  // than as the number the viewer just watched change.
+  const from = Number(el.dataset.rawValue || 0);
   el.dataset.counted = String(target);
+  el.dataset.rawValue = String(target);
   if (REDUCED_MOTION) { el.textContent = prefix + target + suffix; return; }
 
   /* requestAnimationFrame does not fire in a background tab. Without
@@ -2462,7 +2470,8 @@ function countUp(el, target, { duration = 1100, prefix = "", suffix = "" } = {})
   const start = performance.now();
   const tick = (now) => {
     const p = Math.min(1, (now - start) / duration);
-    el.textContent = prefix + Math.round((1 - Math.pow(1 - p, 3)) * target) + suffix;
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = prefix + Math.round(from + (target - from) * eased) + suffix;
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);

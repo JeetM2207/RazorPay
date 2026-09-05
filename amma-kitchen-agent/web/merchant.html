@@ -616,7 +616,16 @@ function countUp(el, target, { duration = 1000, prefix = "", suffix = "" } = {})
   // Once per value. This board refetches constantly, and a KPI that
   // restarts from zero every two seconds is noise.
   if (el.dataset.counted === String(target)) return;
+  // Where THIS number actually sits right now, not zero. A decline
+  // refunds an order and today's revenue drops -- with a fixed zero
+  // start every animation counted UP, so a merchant watching the KPI
+  // fall after Decline instead saw it flash to ₹0 and climb back to the
+  // lower figure, which reads as the board glitching rather than as the
+  // number she just caused to drop. Read from the last real value this
+  // element animated to, defaulting to 0 only the first time it is set.
+  const from = Number(el.dataset.rawValue || 0);
   el.dataset.counted = String(target);
+  el.dataset.rawValue = String(target);
   if (REDUCED_MOTION) { el.textContent = fmt(target); return; }
 
   /* requestAnimationFrame does not fire in a background tab. Without
@@ -632,7 +641,8 @@ function countUp(el, target, { duration = 1000, prefix = "", suffix = "" } = {})
   const start = performance.now();
   const tick = (now) => {
     const p = Math.min(1, (now - start) / duration);
-    el.textContent = fmt(Math.round((1 - Math.pow(1 - p, 3)) * target));
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = fmt(Math.round(from + (target - from) * eased));
     if (p < 1) requestAnimationFrame(tick);
   };
   requestAnimationFrame(tick);
